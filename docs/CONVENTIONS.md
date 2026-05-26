@@ -8,7 +8,7 @@
 
 | Tool | Minimum Version |
 |---|---|
-| Python | 3.10+ |
+| Python | 3.11+ |
 | Node.js | 20.9+ (LTS) |
 | TypeScript | 5.1+ |
 
@@ -30,8 +30,8 @@
 
 ### Style
 - Follows **PEP 8** strictly
-- **Black** for formatting (line length: 88)
-- **isort** for import ordering
+- **Ruff** for both linting and formatting (line length: 88)
+- **isort** via Ruff for import ordering
 - **Type hints on every function signature** — no bare `def func(x):`
 
 ### Naming

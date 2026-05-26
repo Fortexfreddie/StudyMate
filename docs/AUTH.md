@@ -92,33 +92,39 @@ def decode_token(token: str) -> dict:
 ## Route Protection
 
 ```python
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt.exceptions import InvalidTokenError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.security import decode_token
 from core.errors import AuthenticationError
 from models.database import User, get_db
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+security = HTTPBearer()
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """FastAPI dependency — extracts and validates the current user from JWT."""
+    token = credentials.credentials
     try:
         payload = decode_token(token)
-        user_id: str = payload.get("sub")
-        token_type: str = payload.get("type")
+        user_id = payload.get("sub")
+        token_type = payload.get("type")
 
         if user_id is None or token_type != "access":
             raise AuthenticationError("Invalid token.")
 
-    except JWTError:
-        raise AuthenticationError("Token has expired or is invalid.")
+    except InvalidTokenError:
+        raise AuthenticationError("Token has expired or is invalid.") from None
 
-    user = await db.get(User, user_id)
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
     if user is None:
         raise AuthenticationError("User not found.")
 

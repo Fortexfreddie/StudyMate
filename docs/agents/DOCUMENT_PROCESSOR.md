@@ -84,13 +84,18 @@ class DocumentChunk:
 
 ## Configuration Constants
 
+All values are loaded from `apps/api/core/config.py` via `pydantic-settings`:
+
 ```python
-# apps/api/services/pdf_processor.py
+# apps/api/core/config.py (defaults)
 
 DEFAULT_CHUNK_SIZE = 500        # tokens
 DEFAULT_CHUNK_OVERLAP = 50      # tokens
 MIN_CHUNK_LENGTH = 50           # characters — discard chunks shorter than this
+MAX_UPLOAD_SIZE_MB = 20         # maximum PDF upload size
 ```
+
+The `PDFProcessor` class reads `settings.DEFAULT_CHUNK_SIZE` and `settings.DEFAULT_CHUNK_OVERLAP` in its constructor.
 
 ---
 

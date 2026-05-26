@@ -29,7 +29,7 @@ Upload and process a PDF. Triggers: extraction → chunking → embedding → st
 **Request:** `multipart/form-data`
 - `file`: PDF binary (required)
 
-**Response 200:**
+**Response 201:**
 ```json
 {
   "doc_id": "uuid-v4-string",
@@ -98,7 +98,7 @@ Ask a question grounded in an uploaded document. Response is saved to chat histo
 - `doc_id` — optional. Omit to search all documents.
 - `top_k` — optional. Default: 5.
 
-**Response 200:**
+**Response 201:**
 ```json
 {
   "answer": "Cognitive load theory posits that...",
@@ -138,7 +138,7 @@ Generate a structured summary of a topic from a document. Response is saved to c
 - `doc_id` — optional. Omit to search all documents.
 - `top_k` — optional. Default: 5.
 
-**Response 200:**
+**Response 201:**
 ```json
 {
   "summary": "A vector embedding converts text into a high-dimensional numerical...",
@@ -180,7 +180,7 @@ Generate multiple-choice questions from a topic in a document. Creates a quiz se
 - `num_questions` — optional. Default: 5, max: 10.
 - `top_k` — optional. Default: 5.
 
-**Response 200:**
+**Response 201:**
 ```json
 {
   "session_id": "uuid",
@@ -362,7 +362,7 @@ Get the current user's chat history, paginated.
 
 **Query params:**
 - `doc_id` — optional. Filter by document.
-- `limit` — optional. Default: 20, max: 100.
+- `limit` — optional. Default: 10, max: 100.
 - `offset` — optional. Default: 0.
 
 **Response 200:**
@@ -391,7 +391,7 @@ Get the current user's quiz session history.
 
 **Query params:**
 - `doc_id` — optional. Filter by document.
-- `limit` — optional. Default: 20, max: 100.
+- `limit` — optional. Default: 10, max: 100.
 - `offset` — optional. Default: 0.
 
 **Response 200:**

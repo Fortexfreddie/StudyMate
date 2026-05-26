@@ -258,6 +258,10 @@ StudyMate/
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Health check |
+| POST | `/auth/signup` | Create a new account |
+| POST | `/auth/login` | Authenticate and receive tokens |
+| POST | `/auth/refresh` | Get a new access token |
+| GET | `/auth/me` | Get current user profile |
 | POST | `/documents/upload` | Upload + process a PDF |
 | GET | `/documents` | List all uploaded documents |
 | DELETE | `/documents/{doc_id}` | Remove a document and its chunks |
@@ -265,6 +269,9 @@ StudyMate/
 | POST | `/quiz/generate` | Generate N MCQs from a topic/document |
 | POST | `/quiz/{session_id}/submit` | Submit answers and calculate score |
 | POST | `/summary/generate` | Generate a summary of a topic |
+| GET | `/history/chat` | Get paginated chat history |
+| GET | `/history/quizzes` | Get paginated quiz history |
+| GET | `/history/quizzes/{session_id}` | Get detailed quiz session results |
 
 ---
 

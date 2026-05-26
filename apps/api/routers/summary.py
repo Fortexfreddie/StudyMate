@@ -14,7 +14,7 @@ from services.retriever import Retriever
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/summary", tags=["Summary"])
+router = APIRouter(tags=["Summary"])
 
 
 @router.post(

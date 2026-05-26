@@ -15,7 +15,7 @@ bcrypt==4.3.0
 # Config
 pydantic-settings==2.14.1
 
-# AI / RAG (installed now, wired in Phase 2)
+# AI / RAG
 langchain==0.3.25
 langchain-google-genai==2.1.4
 qdrant-client==1.14.2

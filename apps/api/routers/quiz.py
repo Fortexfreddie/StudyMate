@@ -22,7 +22,7 @@ from services.retriever import Retriever
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/quiz", tags=["Quiz"])
+router = APIRouter(tags=["Quiz"])
 
 
 @router.post(

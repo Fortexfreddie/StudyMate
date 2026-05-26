@@ -14,7 +14,7 @@ from services.retriever import Retriever
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/chat", tags=["Chat"])
+router = APIRouter(tags=["Chat"])
 
 
 @router.post(

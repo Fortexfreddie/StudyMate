@@ -99,10 +99,10 @@ async def health_check() -> HealthResponse:
     )
 
 
-# Router includes (Phase 2)
+# Router includes
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])
-app.include_router(chat.router, prefix="/chat")
-app.include_router(summary.router, prefix="/summary")
-app.include_router(quiz.router, prefix="/quiz")
-app.include_router(history.router, prefix="/history")
+app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(summary.router, prefix="/summary", tags=["Summary"])
+app.include_router(quiz.router, prefix="/quiz", tags=["Quiz"])
+app.include_router(history.router, prefix="/history", tags=["History"])

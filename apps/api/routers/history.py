@@ -22,7 +22,7 @@ from models.schemas import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/history", tags=["History"])
+router = APIRouter(tags=["History"])
 
 
 @router.get(

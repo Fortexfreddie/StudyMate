@@ -100,12 +100,14 @@ This ensures all errors follow the API contract: `{ "detail": "Human-readable er
 
 ### Document Processor (`services/pdf_processor.py`)
 
+The PDF processor raises `ValueError` for validation failures. The router catches these and converts them to `HTTPException(400)`.
+
 | Condition | Exception | HTTP Code |
 |---|---|---|
-| Not a PDF file | `DocumentProcessingError("File must be a PDF document.")` | 400 |
-| Empty PDF (0 pages) | `DocumentProcessingError("PDF contains no readable pages.")` | 400 |
-| Image-only PDF | `DocumentProcessingError("PDF appears to be a scanned image. Text extraction is not supported.")` | 400 |
-| File too large | `DocumentProcessingError("File exceeds the 20MB upload limit.")` | 400 |
+| Not a PDF file | `ValueError("File must be a PDF document.")` | 400 |
+| Empty PDF (0 pages) | `ValueError("PDF contains no readable pages.")` | 400 |
+| Image-only PDF | `ValueError("PDF appears to be a scanned image. Text extraction is not supported.")` | 400 |
+| File too large | `HTTPException(413, "File too large...")` — checked in router | 413 |
 
 ### Embedder (`services/embedder.py`)
 
