@@ -1,0 +1,111 @@
+"""Chat API Router — implements the RAG conversation endpoint."""
+
+import logging
+from typing import Any
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.dependencies import get_current_user, get_generator, get_retriever
+from models.database import ChatMessage, User, get_db
+from models.schemas import ChatRequest, ChatResponse, SourceInfo
+from services.generator import Generator
+from services.retriever import Retriever
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+@router.post(
+    "",
+    response_model=ChatResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Chat with documents using RAG",
+)
+async def chat_with_docs(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    retriever: Retriever = Depends(get_retriever),  # noqa: B008
+    generator: Generator = Depends(get_generator),  # noqa: B008
+) -> ChatResponse:
+    """Submit a query to chat with uploaded study materials.
+
+    If `doc_id` is supplied, the conversation is grounded strictly within that document.
+    If `doc_id` is omitted, the retrieval executes globally across all user documents.
+    """
+    logger.info(
+        "User %s initiated chat query: '%s' (doc_id: %s)",
+        current_user.id,
+        request.query,
+        request.doc_id,
+    )
+
+    # 1. Retrieve the most relevant chunks from Qdrant
+    matched_chunks = await retriever.retrieve_relevant_chunks(
+        query=request.query,
+        doc_id=request.doc_id,
+        top_k=request.top_k,
+    )
+
+    # 2. Synthesize the grounded response using Gemini
+    answer, context_sufficient = await generator.generate_answer(
+        query=request.query,
+        context=matched_chunks,
+    )
+
+    # 3. Format matched chunks into API response sources
+    sources: list[SourceInfo] = []
+    sources_dict: list[dict[str, Any]] = []
+
+    for chunk in matched_chunks:
+        filename = chunk.get("filename") or "Unknown Document"
+        page = int(chunk.get("page_number") or 1)
+        score = float(chunk.get("score") or 0.0)
+        text = chunk.get("text") or ""
+
+        # Map to Pydantic schema
+        sources.append(
+            SourceInfo(
+                filename=filename,
+                page_number=page,
+                similarity_score=score,
+                text_preview=text[:200] + "..." if len(text) > 200 else text,
+            )
+        )
+
+        # Build list of raw dictionaries to persist in JSONB
+        sources_dict.append(
+            {
+                "filename": filename,
+                "page_number": page,
+                "similarity_score": score,
+                "text_preview": text,
+            }
+        )
+
+    # 4. Save the interaction into the PostgreSQL database history
+    db_message = ChatMessage(
+        user_id=current_user.id,
+        doc_id=request.doc_id,
+        query=request.query,
+        answer=answer,
+        context_sufficient=context_sufficient,
+        sources=sources_dict,
+    )
+    db.add(db_message)
+    await db.commit()
+    await db.refresh(db_message)
+
+    logger.info(
+        "Chat interaction saved to history (Message ID: %s, Context Sufficient: %s)",
+        db_message.id,
+        context_sufficient,
+    )
+
+    return ChatResponse(
+        answer=answer,
+        context_sufficient=context_sufficient,
+        sources=sources,
+    )

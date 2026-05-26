@@ -1,0 +1,292 @@
+"""Pydantic request/response models for all API endpoints.
+
+All route handlers must return typed Pydantic models — never raw dicts.
+Grouped by feature area matching the API contract in docs/API.md.
+"""
+
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field
+
+# Health
+
+
+class HealthResponse(BaseModel):
+    """GET /health response."""
+
+    status: str = "ok"
+    version: str = "1.0.0"
+
+
+# Auth
+
+
+class SignupRequest(BaseModel):
+    """POST /auth/signup request body."""
+
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    full_name: str = Field(..., min_length=1, max_length=255)
+
+
+class LoginRequest(BaseModel):
+    """POST /auth/login request body."""
+
+    email: EmailStr
+    password: str
+
+
+class RefreshRequest(BaseModel):
+    """POST /auth/refresh request body."""
+
+    refresh_token: str
+
+
+class UserResponse(BaseModel):
+    """User profile data returned in auth and /auth/me responses."""
+
+    id: UUID
+    email: str
+    full_name: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AuthResponse(BaseModel):
+    """POST /auth/signup response — user + tokens."""
+
+    user: UserResponse
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class TokenResponse(BaseModel):
+    """POST /auth/login and /auth/refresh response — tokens only."""
+
+    access_token: str
+    refresh_token: str | None = None
+    token_type: str = "bearer"
+
+
+# Documents
+
+
+class UploadResponse(BaseModel):
+    """POST /documents/upload response."""
+
+    doc_id: UUID
+    filename: str
+    page_count: int
+    chunk_count: int
+    status: str = "processed"
+
+
+class DocumentInfo(BaseModel):
+    """Single document entry in the document list."""
+
+    doc_id: UUID
+    filename: str
+    page_count: int
+    chunk_count: int
+    uploaded_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentListResponse(BaseModel):
+    """GET /documents response."""
+
+    documents: list[DocumentInfo]
+
+
+class DeleteResponse(BaseModel):
+    """DELETE /documents/{doc_id} response."""
+
+    doc_id: UUID
+    deleted: bool = True
+
+
+# Shared — Source info (used by chat, summary, quiz)
+
+
+class SourceInfo(BaseModel):
+    """A source chunk reference returned with generated responses."""
+
+    filename: str
+    page_number: int
+    similarity_score: float
+    text_preview: str
+
+
+# Chat
+
+
+class ChatRequest(BaseModel):
+    """POST /chat request body."""
+
+    query: str = Field(..., min_length=1)
+    doc_id: UUID | None = None
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class ChatResponse(BaseModel):
+    """POST /chat response."""
+
+    answer: str
+    context_sufficient: bool
+    sources: list[SourceInfo]
+
+
+# Summary
+
+
+class SummaryRequest(BaseModel):
+    """POST /summary/generate request body."""
+
+    topic: str = Field(..., min_length=1)
+    doc_id: UUID | None = None
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class SummaryResponse(BaseModel):
+    """POST /summary/generate response."""
+
+    summary: str
+    context_sufficient: bool
+    sources: list[SourceInfo]
+
+
+# Quiz
+
+
+class QuizGenerateRequest(BaseModel):
+    """POST /quiz/generate request body."""
+
+    topic: str = Field(..., min_length=1)
+    doc_id: UUID | None = None
+    num_questions: int = Field(default=5, ge=1, le=10)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class QuizQuestion(BaseModel):
+    """A single multiple-choice question in a quiz."""
+
+    question: str
+    options: list[str] = Field(..., min_length=4, max_length=4)
+    correct_index: int = Field(..., ge=0, le=3)
+    explanation: str
+
+
+class QuizGenerateResponse(BaseModel):
+    """POST /quiz/generate response."""
+
+    session_id: UUID
+    topic: str
+    questions: list[QuizQuestion]
+    sources: list[SourceInfo]
+
+
+class AnswerSubmission(BaseModel):
+    """A single answer within a quiz submission."""
+
+    question_index: int = Field(..., ge=0)
+    selected_index: int = Field(..., ge=0, le=3)
+
+
+class QuizSubmitRequest(BaseModel):
+    """POST /quiz/{session_id}/submit request body."""
+
+    answers: list[AnswerSubmission] = Field(..., min_length=1)
+
+
+class AnswerResult(BaseModel):
+    """Result for a single question after submission."""
+
+    question_index: int
+    selected_index: int
+    correct_index: int
+    is_correct: bool
+    explanation: str
+
+
+class QuizSubmitResponse(BaseModel):
+    """POST /quiz/{session_id}/submit response."""
+
+    session_id: UUID
+    score: int
+    total_questions: int
+    results: list[AnswerResult]
+
+
+# History
+
+
+class ChatHistoryItem(BaseModel):
+    """Single chat message in history."""
+
+    id: UUID
+    doc_id: UUID | None
+    query: str
+    answer: str
+    context_sufficient: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChatHistoryResponse(BaseModel):
+    """GET /history/chat response — paginated."""
+
+    messages: list[ChatHistoryItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class QuizHistoryItem(BaseModel):
+    """Single quiz session in history list."""
+
+    id: UUID
+    doc_id: UUID | None
+    topic: str
+    total_questions: int
+    score: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QuizHistoryResponse(BaseModel):
+    """GET /history/quizzes response — paginated."""
+
+    sessions: list[QuizHistoryItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class QuizAnswerDetail(BaseModel):
+    """Answer detail within a quiz session detail response."""
+
+    question_index: int
+    selected_index: int
+    correct_index: int
+    is_correct: bool
+
+    model_config = {"from_attributes": True}
+
+
+class QuizDetailResponse(BaseModel):
+    """GET /history/quizzes/{session_id} response."""
+
+    id: UUID
+    topic: str
+    total_questions: int
+    score: int
+    answers: list[QuizAnswerDetail]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

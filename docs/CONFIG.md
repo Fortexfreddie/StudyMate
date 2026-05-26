@@ -1,0 +1,191 @@
+# Configuration Reference
+
+**File:** `apps/api/core/config.py`  
+**Role:** Single source of truth for all environment variables and configuration constants.
+
+---
+
+## Implementation
+
+All configuration is loaded through `pydantic-settings`, which validates env vars at startup and provides typed access throughout the application.
+
+```python
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    # --- API ---
+    APP_NAME: str = "StudyMate API"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = False
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    # --- Database ---
+    DATABASE_URL: str  # required — e.g., postgresql+asyncpg://...
+
+    # --- JWT ---
+    JWT_SECRET_KEY: str  # required — long random string
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # --- Google AI ---
+    GOOGLE_API_KEY: str  # required — no default
+
+    # --- Gemini Models ---
+    GEMINI_PRIMARY_MODEL: str = "gemini-3-flash-preview"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3.1-flash-lite"
+    GENERATION_TEMPERATURE: float = 0.3
+    MAX_RETRIES: int = 2
+    RETRY_DELAY_SECONDS: int = 2
+
+    # --- Embedding ---
+    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+    EMBEDDING_BATCH_SIZE: int = 50
+
+    # --- Qdrant ---
+    QDRANT_URL: str  # required — no default
+    QDRANT_API_KEY: str  # required — no default
+    COLLECTION_NAME: str = "studymate_chunks"
+    VECTOR_SIZE: int = 3072
+    UPSERT_BATCH_SIZE: int = 100
+
+    # --- Document Processing ---
+    DEFAULT_CHUNK_SIZE: int = 500
+    DEFAULT_CHUNK_OVERLAP: int = 50
+    MIN_CHUNK_LENGTH: int = 50
+    MAX_UPLOAD_SIZE_MB: int = 20
+
+    # --- Retrieval ---
+    DEFAULT_TOP_K: int = 5
+    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.60
+
+    # --- Quiz ---
+    DEFAULT_QUIZ_QUESTIONS: int = 5
+    MAX_QUIZ_QUESTIONS: int = 10
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": True,
+    }
+
+
+# Singleton instance — import this everywhere
+settings = Settings()
+```
+
+---
+
+## Environment Variables
+
+### Required (no defaults — app crashes at startup if missing)
+
+| Variable | Type | Description |
+|---|---|---|
+| `DATABASE_URL` | `str` | PostgreSQL connection string (local pgAdmin or Neon) |
+| `JWT_SECRET_KEY` | `str` | Secret key for JWT token signing (long random string) |
+| `GOOGLE_API_KEY` | `str` | Google AI Studio API key for Gemini and embedding calls |
+| `QDRANT_URL` | `str` | Qdrant Cloud cluster URL |
+| `QDRANT_API_KEY` | `str` | Qdrant Cloud API key |
+
+### Optional (have defaults)
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_ALGORITHM` | `"HS256"` | JWT signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime |
+| `APP_NAME` | `"StudyMate API"` | Application name for health check |
+| `APP_VERSION` | `"1.0.0"` | Version string for health check |
+| `DEBUG` | `false` | Enable debug logging |
+| `CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins (comma-separated in .env) |
+| `GEMINI_PRIMARY_MODEL` | `"gemini-3-flash-preview"` | Primary LLM model |
+| `GEMINI_FALLBACK_MODEL` | `"gemini-3.1-flash-lite"` | Fallback LLM for rate-limit retries |
+| `GENERATION_TEMPERATURE` | `0.3` | LLM generation temperature |
+| `MAX_RETRIES` | `2` | Max retry attempts before raising error |
+| `RETRY_DELAY_SECONDS` | `2` | Seconds to wait between retries |
+| `EMBEDDING_MODEL` | `"models/gemini-embedding-001"` | Embedding model identifier |
+| `EMBEDDING_BATCH_SIZE` | `50` | Chunks per embedding API call |
+| `COLLECTION_NAME` | `"studymate_chunks"` | Qdrant collection name |
+| `VECTOR_SIZE` | `3072` | Embedding vector dimensions |
+| `UPSERT_BATCH_SIZE` | `100` | Points per Qdrant upsert call |
+| `DEFAULT_CHUNK_SIZE` | `500` | Token count per document chunk |
+| `DEFAULT_CHUNK_OVERLAP` | `50` | Overlap tokens between chunks |
+| `MIN_CHUNK_LENGTH` | `50` | Minimum characters to keep a chunk |
+| `MAX_UPLOAD_SIZE_MB` | `20` | Maximum PDF upload size |
+| `DEFAULT_TOP_K` | `5` | Default chunks to retrieve |
+| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.60` | Minimum similarity score |
+| `DEFAULT_QUIZ_QUESTIONS` | `5` | Default MCQs per quiz request |
+| `MAX_QUIZ_QUESTIONS` | `10` | Maximum MCQs per quiz request |
+
+---
+
+## `.env.example`
+
+```env
+# === REQUIRED ===
+DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/studymate
+JWT_SECRET_KEY=your-very-long-random-secret-key-at-least-32-chars
+GOOGLE_API_KEY=your-google-api-key
+QDRANT_URL=https://your-cluster-id.cloud.qdrant.io
+QDRANT_API_KEY=your-qdrant-api-key
+
+# === OPTIONAL (uncomment to override defaults) ===
+# DEBUG=true
+# CORS_ORIGINS=["http://localhost:3000","https://your-app.vercel.app"]
+# ACCESS_TOKEN_EXPIRE_MINUTES=30
+# REFRESH_TOKEN_EXPIRE_DAYS=7
+# GEMINI_PRIMARY_MODEL=gemini-3-flash-preview
+# GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite
+# GENERATION_TEMPERATURE=0.3
+# COLLECTION_NAME=studymate_chunks
+```
+
+### Local Dev vs Production
+
+```env
+# Local (pgAdmin)
+DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/studymate
+
+# Production (Neon)
+DATABASE_URL=postgresql+asyncpg://user:pass@ep-xxx.us-east-2.aws.neon.tech/studymate?sslmode=require
+```
+
+Same env var — just change the connection string when deploying.
+
+---
+
+## Frontend Environment Variables
+
+The Next.js frontend has its own `.env.local`:
+
+```env
+# apps/web/.env.local
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+Only `NEXT_PUBLIC_` prefixed variables are exposed to the browser. The API URL is the only one needed.
+
+---
+
+## Usage Rules
+
+1. **Import `settings` — never `os.getenv()`**
+   ```python
+   # ✅ Correct
+   from core.config import settings
+   model = settings.GEMINI_PRIMARY_MODEL
+
+   # ❌ Wrong
+   import os
+   model = os.getenv("GEMINI_PRIMARY_MODEL")
+   ```
+
+2. **Inject via `Depends()` in routers** — services receive settings through dependency injection, not direct imports (for testability).
+
+3. **`.env` is always in `.gitignore`** — never commit secrets.
+
+4. **`.env.example` is committed** — shows all available variables with placeholder values.

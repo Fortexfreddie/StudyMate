@@ -1,0 +1,456 @@
+FEDERAL UNIVERSITY OF TECHNOLOGY, OWERRI
+PMB 1526 OWERRI, IMO STATE
+DESIGN AND IMPLEMENTATION OF AN AUTOMATED STUDY COMPANION AND QUIZ GENERATOR USING RETRIEVAL-AUGMENTED GENERATION (RAG)
+SUBMITTED BY
+EKWEM KAMSIYOCHUKWU FREDRICK
+20211268555
+TO
+DEPARTMENT OF COMPUTER SCIENCE
+SCHOOL OF INFORMATION AND COMPUTING TECHNOLOGY
+IN PARTIAL FULFILLMENT OF THE REQUIREMENTS FOR THE
+AWARD OF BACHELOR OF TECHNOLOGY (B. TECH) IN COMPUTER SCIENCE
+MAY 2026
+DESIGN AND IMPLEMENTATION OF AN AUTOMATED STUDY COMPANION AND QUIZ GENERATOR USING RETRIEVAL-AUGMENTED GENERATION (RAG)
+BY
+EKWEM KAMSIYOCHUWKU FREDRICK         
+ 20211268555
+A PROJECT SUBMITTED TO DEPARTMENT OF COMPUTER SCIENCE
+SCHOOL OF INFORMATION AND COMMUNICATION TECHNOLOGY,
+FEDERAL UNIVERSITY OF TECHNOLOGY, OWERRI
+IN PARTIAL FULFILLMENT OF THE REQUIREMENT FOR THE AWARD OF BACHELOR OF TECHNOLOGY (B.TECH) DEGREE IN COMPUTER SCIENCE
+MAY, 2026.
+CERTIFICATION
+This is to certify that this project report titled:
+"DESIGN AND IMPLEMENTATION OF AN AUTOMATED STUDY COMPANION AND QUIZ GENERATOR USING RETRIEVAL-AUGMENTED GENERATION (RAG)"
+was carried out by EKWEM KAMSIYOCHUKWU FREDRICK with Registration Number 20211268555, of the Department of Computer Science, Federal University of Technology, Owerri.
+We hereby declare that this report is our original work and has not been submitted, either wholly or in part, for the award of any degree or diploma in this or any other institution.
+EKWEM KAMSIYOCHUKWU FREDRICK
+Reg. No: 20211268555
+Sign: ……………………………………………
+Date: ……………………………………………
+APPROVAL PAGE
+This is to certify that this project report titled:
+"DESIGN AND IMPLEMENTATION OF AN AUTOMATED STUDY COMPANION AND QUIZ GENERATOR USING RETRIEVAL-AUGMENTED GENERATION (RAG)"
+submitted by EKWEM KAMSIYOCHUKWU FREDRICK with Registration Number 20211268555 to the Department of Computer Science, Federal University of Technology, Owerri, has been approved in partial fulfillment of the requirements for the award of the degree of Bachelor of Technology (B. Tech) in Computer Science.
+______________________________________
+Dr. (Mrs.) M. E. Benson-Emenike         Date
+Project Supervisor
+______________________________________
+Dr. S.A. Okolie (FNCS)         Date
+Head of Department
+______________________________________
+Prof. (Mrs) U.F. Eze         Date
+Dean, SICT
+______________________________________
+External Examiner         Date
+DEDICATION
+This work is dedicated first and foremost to Almighty God, whose grace, wisdom, and sustaining strength carried me through every phase of this research. To my parents and family, whose unwavering love, financial sacrifices, moral encouragement, and prayers formed the bedrock upon which this academic journey was built, I am eternally grateful. Finally, this project is dedicated to every student who has ever sat before a mountain of unread lecture notes the night before an examination, in the hope that technology, thoughtfully applied, can make that experience a little less overwhelming.
+ACKNOWLEDGEMENTS
+I give all glory and honour to Almighty God, whose wisdom and grace sustained me from the inception to the successful completion of this research. His faithfulness throughout this academic journey remains my greatest testimony.
+I wish to express my deepest and most sincere gratitude to my project supervisor, Dr. (Mrs.) M. E. Benson-Emenike, for her exceptional scholarly guidance, rigorous constructive criticism, and dedicated supervision throughout the course of this research. Her extensive expertise and commitment to academic excellence provided the intellectual direction that shaped the methodological depth and quality of this work. Her patience, availability, and insistence on thoroughness were instrumental in bringing this project to a successful conclusion.
+I equally extend my profound appreciation to the Head of Department of Computer Science, Dr. S. A. Okolie (FNCS), for his outstanding academic leadership, institutional support, and commitment to maintaining the highest standards of scholarly output within the department. His guidance throughout my programme of study provided both inspiration and a strong academic framework within which this research was conceptualized and executed.
+I also acknowledge all lecturers in the Department of Computer Science, Federal University of Technology, Owerri, whose teachings, mentorship, and intellectual contributions across the duration of my academic programme provided the theoretical and practical knowledge that made this research possible. Their collective dedication to student development and academic excellence is deeply appreciated.
+TABLE OF CONTENTS
+CERTIFICATION PAGEiii
+APPROVAL PAGEiv
+DEDICATIONv
+ACKNOWLEDGEMENTSvi
+TABLE OF CONTENTSvii
+LIST OF FIGURESix
+LIST OF TABLESx
+CHAPTER ONE: INTRODUCTION1
+1.1 Background of the Study1
+1.2 Statement of the Problem5
+1.3 Aim and Objectives of the Study6
+1.4 Research Questions7
+1.5 Significance of the Study7
+1.6 Scope of the Study8
+1.7 Limitations of the Study8
+1.8 Definition of Terms9
+CHAPTER TWO: LITERATURE REVIEW23
+2.1 Conceptual Framework12
+2.1.1 Retrieval-Augmented Generation (RAG)12
+2.1.2 Large Language Models (LLMs)13
+2.1.3 Vector Databases and Embeddings14
+2.1.4 Semantic Search15
+2.1.5 Automated Quiz and Summary Generation16
+2.2 Theoretical Framework17
+2.2.1 Retrieval Practice Theory and the Testing Effect17
+2.2.2 Vygotsky's Zone of Proximal Development and Constructivist Learning Theory18
+2.2.3 Cognitive Load Theory19
+2.3 Empirical Framework20
+2.3.1 RAG-Based Systems in Educational Contexts20
+2.3.2 Automated Question Generation from Academic Text22
+2.3.3 Limitations in Prior Related Work23
+2.4 Summary of Related Works24
+2.5 Research Gap28
+CHAPTER THREE: RESEARCH METHODOLOGY31
+3.1 Introduction31
+3.2 Research Design32
+3.3 System Architecture and Design33
+3.3.1 Architectural Overview33
+3.3.2 Presentation Layer34
+3.3.3 Document Processing Layer34
+3.3.4 Embedding and Storage Layer35
+3.3.5 Retrieval Layer35
+3.3.6 Generation Layer36
+3.4 System Development Tools and Technologies36
+3.4.1 Next.js and React37
+3.4.2 FastAPI37
+3.4.3 LangChain38
+3.4.4 Google Gemini API38
+3.4.5 Vector Database39
+3.4.6 PDF Parsing Library39
+3.4.7 Google Text Embedding Model40
+3.4.8 Deployment Environment40
+3.5 Population and Sample41
+3.5.1 Population41
+3.5.2 Sample41
+3.6 Instrument for Data Collection42
+3.6.1 Overview of the Instrument42
+3.6.2 Questionnaire Structure42
+3.6.3 Dimensions Measured43
+3.6.4 Questionnaire Administration44
+3.7 Method of Data Analysis44
+3.7.1 Frequency and Percentage Analysis44
+3.7.2 Mean Score Analysis45
+3.7.3 Overall System Performance Score45
+3.7.4 Data Presentation45
+3.8 Validity and Reliability46
+3.8.1 Validity46
+3.8.2 Reliability46
+3.9 Summary47
+REFERENCES49
+LIST OF FIGURES
+Figure 2.1   Architecture of the Proposed RAG-Based Study Companion28
+LIST OF TABLES
+Table 2.1   Summary of Related Works37
+Table 3.1   System Development Tools and Technologies49
+Table 3.2   Mean Score Interpretation Scale58
+CHAPTER ONE
+INTRODUCTION
+1.1 Background of the Study
+The landscape of higher education has undergone a massive transformation in recent years, shifting rapidly from traditional, physical textbooks to digital modes of information dissemination. In contemporary university environments, students are overwhelmed with electronic reading materials, predominantly in the form of Portable Document Format (PDF) handouts, presentation slides, and digital academic journals. While this digital migration has vastly improved the accessibility and portability of educational content, it has inadvertently birthed a new educational challenge: cognitive and information overload. Students are frequently handed hundreds of pages of unstructured text per course, making it increasingly difficult to isolate core concepts, synthesize summaries, and engage in active recall, a critical component of long-term memory retention.
+Historically, students have relied on manual note-taking and the creation of physical flashcards to prepare for examinations. However, as the volume of required reading scales, these manual methods become unsustainable and highly inefficient. Within digital document readers, the primary tool available to students is the standard keyword search function (e.g., Ctrl+F). This mechanism is fundamentally limited because it relies on exact lexical matching. It cannot comprehend the context of a student's query, nor can it draw connections between related concepts if different terminology is used. Consequently, students spend a disproportionate amount of their study time passively searching for information rather than actively testing their knowledge.
+In response to these inefficiencies, the integration of Artificial Intelligence (AI) into the educational sector has gained significant momentum. The recent proliferation of Large Language Models (LLMs), such as Google's Gemini and OpenAI's GPT architectures, has showcased remarkable capabilities in Natural Language Processing (NLP), text summarization, and automated generation. However, applying these general-purpose LLMs directly to localized academic study presents a critical flaw. Because these models are trained on vast, generalized datasets encompassing the entire internet, they lack the specific, localized context of a university lecturer's proprietary course material. When a student queries a standard LLM about a specific topic, the model often generates answers that, while syntactically correct, may contradict the specific definitions, frameworks, or methodologies required by their specific curriculum. Furthermore, these models are prone to hallucinations, a phenomenon where the AI confidently fabricates incorrect information when it encounters gaps in its training data.
+To resolve the tension between the powerful generative capabilities of LLMs and the strict accuracy requirements of academic study, Retrieval-Augmented Generation (RAG) has emerged as a revolutionary architectural paradigm. RAG fundamentally alters how an AI interacts with data by restricting its knowledge base to a tightly controlled, user-provided dataset. Instead of relying on its pre-trained memory, a RAG system first scans the student's uploaded lecture notes, mathematically converts the text into vector embeddings, and performs a semantic search to retrieve only the paragraphs directly relevant to the student's query. The LLM is then instructed to generate an answer, summary, or multiple-choice quiz based strictly on that retrieved text. This study focuses on harnessing this cutting-edge framework to develop an automated study companion. By bridging the gap between static lecture materials and dynamic AI generation, this system aims to provide students with a deeply personalized, highly accurate, and highly interactive learning tool that is safely grounded in their approved academic curriculum.
+1.2 Statement of the Problem
+Despite the widespread availability of digital lecture materials, university students face significant hurdles in optimizing their independent study time. The primary problem is the sheer volume of unstructured, text-heavy PDFs that students must consume, which leads to passive reading rather than active engagement. Extracting summarized concepts or manually drafting practice questions from these extensive documents is a remarkably tedious process that detracts from actual learning.
+Furthermore, while modern students frequently turn to standard, open-access AI chatbots for academic assistance, this introduces a severe reliability problem. General-purpose AI models are detached from the localized curriculum; they frequently provide generic answers or hallucinate false facts that do not align with the specific instructional materials provided by lecturers. There is currently a distinct lack of localized, syllabus-specific AI tools that allow a student to generate practice quizzes and summaries constrained entirely by the boundaries of their own course handouts. Without a system that can accurately parse a specific document, understand the semantic meaning behind a student's question, and generate verifiable study aids without hallucination, students will continue to suffer from inefficient study habits and exposure to academically inaccurate AI-generated content.
+1.3 Aim and Objectives of the Study
+The primary aim of this study is to design and implement an Automated Study Companion and Quiz Generator using the Retrieval-Augmented Generation (RAG) architecture to enhance active learning.
+To systematically achieve this aim, the following specific objectives will be pursued:
+1. To engineer a robust document processing module capable of parsing, extracting, and dynamically chunking text from standard educational materials (PDFs).
+2. To implement a highly accurate vector-based semantic search mechanism capable of retrieving contextually relevant information from the uploaded documents based on user queries.
+3. To integrate a Large Language Model strategically constrained by the retrieved context to automatically generate precise summaries and multiple-choice quizzes devoid of factual hallucinations.
+4. To design and deploy a responsive, intuitive web-based interface that facilitates seamless student interaction, document management, and quiz performance tracking.
+1.4 Research Questions
+Based on the stated objectives, this research seeks to answer the following technical questions:
+1. How can unstructured text be efficiently extracted and chunked from standard PDF documents while preserving academic context and readability?
+2. What is the most computationally effective method to retrieve accurate semantic meaning from a localized document database when prompted by a student's query?
+3. How can the architecture of a Large Language Model be securely constrained so that it generates study materials relying solely on provided context rather than pre-trained internet data?
+4. What frontend design principles and user experience (UX) workflows best promote seamless interaction between a student and a document-grounded AI system?
+1.5 Significance of the Study
+This research holds substantial technical and practical significance for the modernization of educational technology, particularly within university ecosystems. For the student body, the development of this system translates to a highly personalized, 24/7 digital tutor. By automating the creation of context-specific quizzes and summaries directly from lecturer-approved materials, the system drastically reduces preparation time and encourages active recall, a scientifically proven method for improving exam performance. From a software engineering perspective, this project demonstrates the highly practical application of RAG architectures and vector databases, showcasing how developers can securely harness Generative AI in environments where factual accuracy and data provenance are non-negotiable.
+Conversely, the implications of not implementing this study are detrimental to the modern student's academic progression. If students are left without localized, academically grounded AI tools, they will inevitably continue to rely on generalized AI chatbots for their studies. This dangerous reliance exposes them to high rates of AI hallucination, leading to the absorption of incorrect or out-of-syllabus information that could directly result in academic failure. Furthermore, without the intervention of automated summarization and quiz generation, students will remain bogged down by the cognitive overload of manually processing massive PDF documents, perpetuating a cycle of inefficient, passive learning that is ill-suited for the modern academic demands.
+1.6 Scope of the Study
+This study is technically bound to the design, development, and implementation of a web-based software application. The technical architecture will utilize modern web frameworks (such as Next.js/React) for the frontend, the LangChain framework for orchestrating the AI logic, a dedicated Vector Database for storing text embeddings, and the Google Gemini API as the core Large Language Model. Functionally, the system's scope is restricted to the ingestion and processing of text-based educational documents, specifically in the PDF format. The system will apply the RAG pipeline strictly to produce text-based summaries, conceptual explanations, and multiple-choice assessment quizzes. The geographical and contextual scope is focused on university-level academic study. This system does not extend to the processing of handwritten notes, audio transcriptions, video lectures, or non-textual image analysis.
+1.7 Limitations of the Study
+During the conceptualization and development of this system, certain technical constraints were identified that influence the achievable depth of the project.
+First, all Large Language Models operate with a strict token limit, which acts as a ceiling on the amount of text it can process at one time. Consequently, the system cannot feed an entire 300-page textbook into the AI in a single query; it must rely on accurate chunking and retrieval, which occasionally means extremely broad, book-spanning questions may miss fragmented context.
+Second, the text extraction libraries utilized in this study are highly optimized for natural language paragraphs. Therefore, the system experiences a degradation in accuracy when attempting to parse and understand complex mathematical formulas, nested tabular data, or intricate diagrams embedded within the PDFs, as these elements often lose their structural integrity during the vectorization process.
+Third, the core intelligence of the application is not hosted locally but relies on synchronous external API calls to the LLM provider. This architectural necessity introduces unavoidable network latency during the generation of quizzes and strictly mandates continuous, stable internet connectivity, thereby rendering the application incapable of functioning in an offline environment.
+1.8 Definition of Terms
+The following terms are defined as used within the context of this study:
+1. Retrieval-Augmented Generation (RAG): An advanced AI architecture that improves the factual accuracy of an LLM by intercepting a user's prompt, retrieving factual data from an external database, and forcing the AI to use that specific data to formulate its response.
+2. Large Language Model (LLM): A sophisticated artificial intelligence system built on deep learning and neural networks, trained on massive datasets to understand, translate, predict, and generate human-like text.
+3. Vector Database: A specialized database architecture designed specifically to store, manage, and execute rapid searches on high-dimensional vectors (embeddings) that represent the semantic meaning of text.
+4. Semantic Search: A highly advanced data searching technique that evaluates the contextual intent and meaning behind a search query, rather than simply looking for exact alphabetical keyword matches.
+5. Chunking: The programmatic process of breaking down massive, unstructured pieces of text data into smaller, semantically coherent segments to ensure they can be efficiently processed by AI without exceeding memory limits.
+6. Hallucination: A critical error state in Generative AI where the model produces false, fabricated, or entirely illogical information, but presents it to the user with a high degree of confidence and syntactical correctness.
+7. Embeddings: Complex numerical representations (arrays of numbers) of text, where sentences or paragraphs that share similar meanings are positioned closely together within a mathematical vector space.
+8. Prompt Engineering: The technical practice of structuring, refining, and optimizing the text instructions sent to a Large Language Model to ensure the AI produces the most accurate and relevant output possible.
+9. Tokenization: The process of breaking down human text into smaller, fundamental units (tokens), such as words or subwords, that a machine learning model can process and analyze mathematically.
+Chapter Two
+Literature Review
+The rapid advancement of artificial intelligence and natural language processing technologies has opened new frontiers in the development of intelligent educational tools. As universities increasingly rely on digital lecture materials, students are faced with the growing challenge of independently navigating large volumes of unstructured academic content with limited access to personalized study support. This literature review examines the current state of research on AI-powered document comprehension systems, retrieval-augmented generation architectures, and automated question generation technologies as they relate to the development of the proposed study companion.
+The review is structured to provide comprehensive coverage of the conceptual foundations, theoretical frameworks, and empirical studies most relevant to this study. Through systematic analysis of scholarly works published between 2020 and 2025, this chapter synthesizes knowledge from computer science, educational technology, and cognitive psychology to establish the intellectual foundation upon which the proposed system is built. The review concludes by identifying the specific research gap that this study addresses.
+2.1 Conceptual Framework
+The conceptual framework of this study rests on five interconnected ideas that together form the architectural and intellectual backbone of the proposed system: Retrieval-Augmented Generation (RAG), Large Language Models (LLMs), Vector Databases and Embeddings, Semantic Search, and Automated Quiz and Summary Generation. Understanding how these concepts relate to one another is essential for appreciating the design decisions made throughout the development of this study companion.
+2.1.1 Retrieval-Augmented Generation (RAG)
+At the heart of this project is the RAG framework, a paradigm that fundamentally reimagines how AI systems interact with external knowledge. RAG models work by combining a pre-trained parametric memory, essentially the knowledge baked into the language model during training, with a non-parametric memory in the form of a dense vector index, which is searched using a pre-trained neural retriever. What this means in practical terms is that rather than relying solely on what a model already knows, RAG forces it to first go out and retrieve relevant information from a provided database before generating any response. This architectural choice allows users to access information from within a controlled knowledge source and significantly reduces the risk of hallucinations, which are a known failure mode in generative AI systems (Lewis et al., 2020).
+The significance of RAG as a conceptual anchor for this study cannot be overstated. Prior to its introduction, the standard approach to grounding AI in specific knowledge domains required expensive retraining or fine-tuning of entire model weights. RAG addressed this by blending parametric memory, information stored in the model's parameters, with non-parametric memory drawn from external retrieval mechanisms, opening the door to more reliable AI systems without the prohibitive cost of constant retraining (Lewis et al., 2020). For a university student who needs answers grounded strictly in their lecturer's handouts, this is exactly the kind of constrained intelligence that RAG makes possible.
+2.1.2 Large Language Models (LLMs)
+The generative component of this system depends on the capabilities of Large Language Models. LLMs are built on transformer architectures and are pre-trained on massive datasets of text, granting them the ability to generate human-like text, answer questions, assist in translation and summarization, and perform a wide range of language tasks (Kasneci et al., 2023). Models such as Google's Gemini, which this project employs, represent the current frontier of this technology.
+Within educational contexts specifically, the relevance of LLMs has grown rapidly. Studies report that generative models can deliver effective tutoring interactions, in one case, a conversational AI built on GPT was used to provide personalized mathematics instruction, generating feedback tailored to each student's errors and leading to improved learning outcomes (Kasneci et al., 2023). However, the application of general-purpose LLMs to academic study without any grounding mechanism introduces a well-documented reliability problem. It is necessary to understand which pedagogical approaches can support the correct integration of LLMs, which should be seen as a complement that enriches the learning process rather than a substitute for human teaching. The RAG architecture directly addresses this concern by restricting what the model can draw from.
+2.1.3 Vector Databases and Embeddings
+For RAG to function, there must be a mechanism that converts text into a form that can be searched mathematically. This is where vector databases and embeddings come in. A vector embedding converts data such as text into a numerical representation, a high-dimensional vector, that captures its semantic meaning. Vector databases are then specialized data storage systems designed to handle these embeddings and enable fast similarity searches. In the context of this system, every chunk of text extracted from a student's uploaded PDF is transformed into such a vector and stored in the database, ready to be retrieved when a student poses a query.
+The power of this approach lies in what embeddings actually capture. Unlike a simple string of characters, embedding spaces function like a semantic map, where similar data points are clustered together and dissimilar ones are positioned further apart. This means that a student's question and the relevant paragraph from their lecture notes, even if they use different words, will end up close together in the vector space, enabling accurate retrieval.
+2.1.4 Semantic Search
+Closely tied to embeddings is the concept of semantic search, which governs how the system finds the most relevant content in response to a student's query. Traditional keyword-based search systems like the familiar Ctrl+F function can only find content that uses the exact same words as the search query. Semantic search goes considerably further. It is an advanced technique that focuses on understanding the meaning and intent behind a query rather than relying solely on exact keyword matches, enabling the system to interpret context, relationships, and the underlying semantics of words in both the query and the documents (Bibi et al., 2024).
+In practice, this is achieved by embedding both the query and the stored document chunks into the same vector space and then computing similarity, typically using cosine similarity, to rank which chunks are most relevant. Traditional keyword-based search techniques often struggle to capture the semantic meaning of text, leading to suboptimal search results, which is what makes vector-based semantic search a critical necessity for systems that need to handle unstructured data at scale.
+2.1.5 Automated Quiz and Summary Generation
+The final concept that underpins this project is the automated generation of study materials, specifically, quizzes and summaries, from educational documents. This is not an entirely new idea. Research in NLP-based automated question generation has shown that systems can extract keywords from lesson materials and use those keywords to generate multiple-choice questions, with results showing that systems are capable of extracting examinable concepts from academic content (Gabajiwala et al., 2022). What distinguishes this project from earlier approaches, however, is the integration of RAG to ensure that every generated question and summary is strictly grounded in the specific documents provided by the student, rather than relying on generic NLP keyword extraction or an unconstrained language model.
+The conceptual relationship between all five of these components can be summarized as follows: a student uploads a PDF, which is processed into chunks, converted into vector embeddings, and stored in a vector database. When the student requests a quiz or summary, semantic search retrieves the most relevant chunks, and the LLM, operating within the constraints of the RAG pipeline, generates study materials based solely on that retrieved content. Each concept depends on the others, and together they form the complete intellectual foundation of the proposed system.
+PDFUploadTPDFUploadextChunkingPDFUploadVectorEmbeddingsSemanticSearchLLM GenerationStudentQueryPDFUploadTPDFUploadextChunkingPDFUploadVectorEmbeddingsSemanticSearchLLM GenerationStudentQuery
+PDFUpload
+TPDFUploadextChunking
+PDFUploadVectorEmbeddings
+SemanticSearch
+LLM Generation
+StudentQuery
+PDFUpload
+TPDFUploadextChunking
+PDFUploadVectorEmbeddings
+SemanticSearch
+LLM Generation
+StudentQuery
+Figure 2.1: Architecture of the Proposed RAG-Based Study Companion
+2.2 Theoretical Framework
+The theoretical framework of this study draws from three well-established bodies of thought that collectively justify both the problem being addressed and the solution being proposed. These are the Retrieval Practice Theory, Vygotsky's Zone of Proximal Development and Constructivist Learning Theory, and the Theory of Cognitive Load. Together, these frameworks explain why students struggle under traditional study methods, why an AI-powered interactive companion is a pedagogically sound intervention, and how the design of the proposed system aligns with how human memory and learning actually function.
+2.2.1 Retrieval Practice Theory and the Testing Effect
+One of the most robustly supported findings in cognitive science is that actively retrieving information from memory produces significantly stronger long-term retention than passively reviewing the same material. This phenomenon, formally referred to as the testing effect, forms the primary learning science justification for this project's quiz generation functionality. Roediger and Karpicke (2006) conducted a landmark study comparing students who re-read material four times against students who read once and then engaged in repeated recall testing. When assessed one week later, the group that practised retrieval outperformed the re-reading group by a substantial margin, despite spending less total time with the material. Recent cross-disciplinary research has continued to validate retrieval practice as one of the most consistently effective learning strategies, confirming that active testing produces significantly greater long-term retention than passive re-reading across a wide range of educational settings and subject areas (Littrell-Baez et al., 2025).
+The implications for this study are direct. The primary complaint articulated in the problem statement, that students passively consume PDF documents without genuinely testing their understanding, is precisely the failure mode that retrieval practice theory identifies. By automatically generating multiple-choice quizzes from a student's own course material, the proposed system operationalizes retrieval practice at scale. A student no longer needs to manually draft questions from hundreds of pages; the system does it for them, transforming passive reading material into an active testing environment.
+2.2.2 Vygotsky's Zone of Proximal Development and Constructivist Learning Theory
+The second theoretical pillar is drawn from Lev Vygotsky's sociocultural theory of cognitive development, specifically his concept of the Zone of Proximal Development (ZPD). The ZPD describes the distance between what a learner can accomplish independently and what they can achieve when guided by a more knowledgeable other. Cai et al. (2025), in a study specifically examining the integration of AI tools in higher education through the lens of ZPD, found that AI-powered systems operationalize this concept primarily through three mechanisms: personalized learning paths that adapt content in real time, immediate targeted feedback that corrects misconceptions, and the facilitation of self-regulated learning. Their central argument aligns with the foundational premise of ZPD theory — that learning occurs most effectively not when a student is working entirely alone, but precisely in that productive gap between current capability and potential capability, when some form of scaffolding bridges the difference.
+Constructivist theory, rooted in the contributions of Vygotsky, Piaget, and Bruner, further establishes that learners do not passively absorb information but actively construct knowledge by connecting new experiences to what they already understand. Digital tools, when designed appropriately, are particularly well-suited to supporting this process. The rise of educational technology perfectly complements constructivist principles by offering dynamic, interactive platforms that support personalized and experiential learning, enabling students to access information and engage with content in varied and innovative ways (Mohammed & Kinyo, 2020).
+The proposed study companion maps directly onto these principles. When a student uploads their lecture notes and queries the system, they are engaging in an active dialogue with their own course material, not passively re-reading it. The RAG system acts as a more knowledgeable scaffold, retrieving relevant content and shaping it into answers, explanations, and quiz items that are calibrated to the specific knowledge the student already has access to. In Vygotskian terms, the system positions itself within the student's ZPD, consistently providing just enough structured assistance to push the learner beyond what unaided re-reading could achieve.
+2.2.3 Cognitive Load Theory
+The third theoretical framework relevant to this study is Cognitive Load Theory, a well-established construct in educational psychology. The theory posits that human working memory is limited in both its capacity and the duration for which it can hold information. When a learning task demands more cognitive processing than working memory can handle simultaneously, a state of cognitive overload results, and genuine learning is severely diminished. Sweller (2020) distinguishes between intrinsic cognitive load, the inherent complexity of the subject matter itself, and extraneous cognitive load, which is the unnecessary mental effort introduced by poor task design or poorly organized information.
+The information environment that university students currently navigate generates substantial extraneous cognitive load. Being handed hundreds of pages of unstructured PDF documents with no guiding structure, and then being expected to independently identify key concepts, formulate practice questions, and verify their understanding, forces students to split their mental resources between the act of searching and the act of learning. The system proposed in this study directly targets this extraneous load. By automatically extracting, chunking, and semantically indexing the contents of uploaded documents, the system removes the burden of manual navigation. When a student needs a summary or a quiz, the system produces it instantly and accurately from the relevant portions of the document, allowing the student to dedicate their full cognitive resources to understanding and retention rather than information retrieval.
+Taken together, these three theories provide a coherent and mutually reinforcing rationale for the system's design. Retrieval practice theory justifies the quiz generation feature as a scientifically validated learning strategy. Vygotsky's ZPD and constructivism justify the conversational, on-demand nature of the AI companion as a scaffolding mechanism. And cognitive load theory justifies the RAG pipeline itself as a deliberate architectural decision to reduce the extraneous cognitive burden placed on students who are already overwhelmed by the volume of digital academic material they must process.
+2.3 Empirical Framework
+This section reviews existing studies and implemented systems that are most closely related to the problem and proposed solution of this research. The reviewed works are organized around four focal areas: the application of RAG systems in educational settings, AI-powered chatbots grounded in course-specific documents, automated question generation from academic text, and the limitations identified in prior implementations that the current study seeks to address.
+2.3.1 RAG-Based Systems in Educational Contexts
+One of the most directly relevant bodies of empirical work concerns the deployment of RAG-based chatbots specifically within university learning environments. A comprehensive survey conducted by Sarcevic et al. (2025), which analyzed 47 published works on RAG chatbot applications in education spanning 2023 to 2025, found that the dominant motivation for adopting RAG over standard LLM chatbots was the need to eliminate hallucinations in student-facing systems. The survey established that the unconstrained nature of general-purpose AI models makes them unreliable for academic use, and that grounding responses in verified institutional documents was the most effective architectural solution. This finding directly validates the core architectural decision of the proposed study.
+A particularly instructive empirical case is the OwlMentor system, developed and evaluated by researchers at a German university and published in Frontiers in Psychology (2024). OwlMentor was an AI-powered learning environment built for university students to help them comprehend scientific texts. It used a RAG pipeline and offered features including document-based chat, automatic question generation, and quiz creation, a feature set that closely mirrors this study's objectives. The evaluation, conducted over two semesters with real students, found that RAG systems could substantially increase response accuracy, with one referenced metric showing up to a 94% improvement in factual accuracy over contexts where no retrieval was provided. The study also noted, however, that the system could still be misled when a student's prompt contradicted assumptions embedded in the model's pre-training, pointing to the continued importance of careful prompt engineering. User acceptance was assessed using the Technology Acceptance Model, and results showed that perceived usefulness was the strongest predictor of whether students continued using the system.
+A second relevant empirical study was conducted in an online R programming course, in which a RAG chatbot was deployed to provide conceptual answers and code explanations drawn strictly from the course materials. Analysis of student interaction logs and post-course survey responses revealed that students with stronger prior knowledge of the subject were more likely to engage the chatbot, and that the tool was predominantly used for advanced topics that extended beyond what was covered in formal lectures (Lang et al., 2024). This finding carries an important implication for the current study: a document-grounded AI companion is most valuable not as a replacement for initial learning, but as a deepening tool, one that students turn to when they want to probe further into material they have already encountered. This aligns with how the proposed system is designed to function, as it generates its summaries and quizzes directly from the student's own uploaded materials rather than attempting to teach from scratch.
+2.3.2 Automated Question Generation from Academic Text
+Prior to the emergence of large language models, researchers explored NLP-based approaches to automated question generation with considerable momentum. Gabajiwala et al. (2022) developed Quiz Maker, a system that used models including BERT, GPT-2, and T5 to extract keywords from input text and generate different question types automatically. Evaluation of the system found that approximately 60% of its generated questions were difficult for human evaluators to distinguish from manually written questions, suggesting that NLP-based question generation had reached a level of quality that made it genuinely useful for educational purposes. However, the system was not grounded in a retrieval mechanism, meaning it could only work with text directly fed into it and had no means of searching a larger document database for contextually appropriate source material.
+A broader review published by Kurdi et al. (2023) covering decades of automatic question generation research documented a clear evolution from early rule-based systems that relied on syntactic transformations of sentences, toward modern neural network approaches that could capture semantic relationships and generate more natural, contextually coherent questions. The review identified factual accuracy and context faithfulness as the two most persistent quality challenges across all reviewed systems. Both of these challenges are directly addressed in the current study through the RAG architecture, which constrains generation to verified retrieved content.
+2.3.3 Limitations in Prior Related Work
+Across the reviewed literature, several recurring limitations emerge that the current study is designed to specifically address. First, most prior systems were either built as general-purpose tools, not tailored to a student's specific course materials, or were so narrowly scoped that they could only process short, pre-loaded text passages rather than full uploaded documents. A student using a general AI tool risks receiving content that contradicts their lecturer's specific definitions and frameworks, while a system that cannot handle full PDF documents is not practically useful in a university context. The proposed system addresses both problems by accepting full PDF uploads and applying the RAG pipeline strictly to that uploaded content.
+Second, several studies noted that hallucination remained a concern even in RAG-based systems when student queries were ambiguous or when the retrieval step returned chunks that were not precisely relevant. The Italian university chatbot study noted that despite strong user satisfaction with the system's conversational tone and structure, students were sometimes given incomplete or inaccurate information because the retrieval pipeline failed to surface all relevant document sections. This limitation underscores the critical importance of chunking strategy and semantic similarity thresholds during the retrieval stage, both design considerations that are carefully accounted for in the methodology of this project.
+Third, no prior study identified in this review combined both quiz generation and semantic document summarization within a single RAG-powered web application specifically designed for university students uploading their own PDF lecture materials. The closest analogues either focused solely on chatbot question answering, or generated quizzes without a retrieval backbone, or targeted healthcare and enterprise domains rather than academic study. This gap is precisely where the proposed system positions itself.
+2.4 Summary of Related Works
+Author(s)
+Year
+Study Title / System
+Focus Area
+Key Finding
+Gap Addressed by This Study
+Lewis et al.
+2020
+Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks
+RAG Architecture
+RAG reduces hallucinations by grounding LLM generation in retrieved external documents
+Basis for the core architecture of the proposed system
+Kasneci et al.
+2023
+ChatGPT for Good? On Opportunities and Challenges of LLMs for Education
+LLMs in Education
+LLMs show strong tutoring potential but require pedagogical grounding to avoid misinformation
+Justifies RAG constraint to prevent unreliable AI responses in academic settings
+Wachsmuth et al.
+2024
+OwlMentor: RAG-Based Learning Environment for University Students
+RAG in Higher Education
+RAG improved factual accuracy by up to 94%; perceived usefulness drove student adoption
+No combined quiz generation and summarization in a single student-facing app
+Lang et al.
+2024
+RAG Chatbot Effectiveness in a Self-Paced Online R Programming Course
+Course-Specific RAG Chatbot
+Students used RAG tool mainly to deepen understanding beyond lecture content
+No PDF upload capability; limited to pre-loaded course materials
+Gabajiwala et al.
+2022
+Quiz Maker: Automatic Quiz Generation from Text Using NLP
+Automated Question Generation
+60% of generated MCQs were indistinguishable from human-written questions
+No retrieval mechanism; cannot handle full uploaded documents
+Kurdi et al.
+2023
+Automatic Question Generation: A Review of Methodologies and Datasets
+NLP Question Generation Survey
+Factual accuracy and context faithfulness remain key unsolved challenges in AQG
+RAG architecture in proposed system directly targets both identified challenges
+Sarcevic et al.
+2025
+RAG Chatbots for Education: A Survey of Applications (2023-2025)
+RAG Chatbot Survey
+Hallucination elimination was the primary motivation for adopting RAG over standard LLMs in education
+No prior system combined RAG with full PDF upload and dual quiz/summary generation
+Roediger & Karpicke
+2006
+Test-Enhanced Learning: Taking Memory Tests Improves Long-Term Retention
+Retrieval Practice Theory
+Active recall testing produces significantly better retention than passive re-reading
+Provides learning science justification for the quiz generation feature
+Sweller
+2020
+Cognitive Load Theory and Educational Technology
+Cognitive Load Theory
+Extraneous cognitive load severely limits learning when task design is poor
+Justifies RAG pipeline as a mechanism to reduce student cognitive burden
+Table 2.1: Summary of Related Works
+The concepts, theories, and empirical studies reviewed in the preceding sections collectively form the intellectual foundation upon which this study is built. Drawing them together reveals a coherent picture of both what the existing body of knowledge has established and where a meaningful gap remains.
+From a conceptual standpoint, the review established that Retrieval-Augmented Generation represents a significant architectural advancement over the direct application of large language models to knowledge-intensive tasks. By combining the generative power of models like Google Gemini with a non-parametric external knowledge base built from the user's own documents, RAG directly resolves the hallucination problem that makes general-purpose AI chatbots unreliable for academic use. Vector databases and semantic search provide the retrieval backbone that makes this possible, enabling the system to find contextually relevant content based on meaning rather than keyword matching. Automated question generation, meanwhile, has matured from rule-based NLP approaches into neural network-powered systems capable of producing questions that are difficult to distinguish from those written by human instructors.
+From a theoretical standpoint, the three frameworks reviewed provide strong justification for the system's design. Retrieval Practice Theory and the Testing Effect, as established by Roediger and Karpicke (2006) and further validated by Littrell-Baez et al. (2025), confirm that quiz-based active recall produces substantially better long-term retention than passive re-reading, the very behavior the proposed system is designed to replace. Vygotsky's Zone of Proximal Development and Constructivist Learning Theory justify the on-demand, interactive nature of the companion, positioning the RAG system as a digital scaffold that bridges the gap between what a student can understand alone and what they can achieve with structured AI-assisted guidance. Cognitive Load Theory provides the architectural rationale for the entire RAG pipeline, framing the system's document chunking, semantic retrieval, and constrained generation as deliberate mechanisms for reducing the extraneous cognitive burden placed on students navigating large volumes of unstructured academic material.
+From an empirical standpoint, the studies reviewed confirm both the viability and the demonstrated effectiveness of RAG-based educational tools. The OwlMentor system showed that university students responded positively to a RAG-powered learning environment that combined document chat with quiz generation, and that factual accuracy improved dramatically when retrieval was incorporated into the generation pipeline. The RAG chatbot deployed in the R programming course demonstrated that students actively used document-grounded AI tools to go deeper into their course content, particularly on topics where lecture materials alone were insufficient. The automated quiz generation literature, anchored by Gabajiwala et al. (2022) and the broader review by Kurdi et al. (2023), established that NLP-powered question generation from academic text had already proven its feasibility, while simultaneously identifying factual grounding and context faithfulness as the two challenges that earlier systems failed to fully solve.
+This study anchors itself most firmly in the intersection of these three streams. It adopts the RAG architecture as its core technical paradigm, operationalizes Retrieval Practice Theory and Cognitive Load Theory as its pedagogical justification, and builds directly on the lessons of OwlMentor and similar systems, particularly their identified limitation that no prior work had delivered a complete, hallucination-resistant, quiz-and-summary system tailored specifically to university students uploading their own PDF lecture materials within a single integrated web application. That intersection is precisely where this study positions its contribution.
+2.5 Research Gap
+While the reviewed literature demonstrates clear progress in both RAG-based educational systems and automated question generation, a specific and significant gap remains unaddressed. Existing systems have either focused narrowly on document-based chatbot question answering without integrating quiz generation, or have generated quizzes from academic text without the grounding protection of a retrieval architecture. No identified prior study has delivered a single, unified web application that allows a university student to upload their own PDF lecture materials and receive both semantically accurate summaries and multiple-choice quizzes that are strictly constrained to the content of those uploaded documents through a full RAG pipeline.
+Furthermore, the systems reviewed were predominantly developed for general academic audiences, healthcare domains, or enterprise environments. None were designed with the specific context of a university student in a developing academic environment in mind, where students are routinely handed large volumes of unstructured PDF handouts by lecturers and lack access to institutionally provided AI tools calibrated to their specific curriculum. The absence of a localized, syllabus-specific AI study companion that a student can point at their own course materials and immediately receive accurate, hallucination-free study aids represents the gray area this study directly targets.
+This project therefore fills that gap by designing and implementing an automated study companion and quiz generator that combines PDF ingestion, vector-based semantic search, and constrained LLM generation within a single responsive web interface, purpose-built for the university student who needs a trustworthy, curriculum-grounded alternative to general-purpose AI chatbots.
+Chapter THREE
+RESEARCH METHODOLOGY
+3.1 Introduction
+This chapter presents the methodology adopted in the design, development, and evaluation of the proposed Automated Study Companion and Quiz Generator. Research methodology, in the context of a system development study, refers to the structured plan that guides how the system is conceived, built, tested, and assessed. It provides a transparent account of the decisions made at every stage of the development process, from the choice of research design and system architecture to the selection of tools, the identification of participants, and the methods used to collect and analyze evaluation data.
+The methodology described in this chapter is driven by the nature of the problem identified in Chapter One and the gap established in Chapter Two. Because the proposed system is a functional software application rather than a theoretical model, the methodology is primarily applied and constructive in orientation. Every decision documented here, whether architectural, technological, or evaluative, was made in direct response to the requirements of a system that must reliably ingest academic PDF documents, retrieve semantically relevant content, and generate accurate study materials without hallucination. The chapter proceeds by first establishing the research design, followed by a detailed description of the system architecture, the tools and technologies employed, and the procedures used to evaluate the system with real university student participants.
+3.2 Research Design
+The research design adopted for this study is the applied experimental design, specifically within the framework of system development research. Unlike pure or basic research which seeks to generate new theoretical knowledge, applied research is concerned with the development of practical solutions to real-world problems. This study falls squarely within that category, as its primary objective is the design and implementation of a functional software system that addresses a clearly identified gap in how university students interact with their academic study materials.
+Within the applied design framework, this study follows the Design Science Research (DSR) approach, which is widely recognized in information systems and computer science research as the appropriate methodology for studies that produce and evaluate an artifact, in this case, a working web application. Design Science Research is characterized by two core activities: building the artifact and evaluating it. The building phase encompasses the architectural design, tool selection, and implementation of the system. The evaluation phase involves deploying the system with real users and measuring its performance against predefined criteria.
+The study is further characterized as descriptive and evaluative in nature. It is descriptive in the sense that it systematically documents the architecture, components, and implementation decisions that constitute the proposed system. It is evaluative in the sense that it assesses the system's effectiveness, usability, and accuracy through structured user testing with university students who represent the target population of the application.
+A quantitative approach is adopted for the evaluation phase of the study. Participants interact with the system using their own uploaded lecture materials and subsequently respond to a structured questionnaire. Responses are captured using a five-point Likert scale, which allows for numerical analysis of user perceptions across dimensions including response accuracy, quiz quality, ease of use, and overall satisfaction. This approach was selected because it produces measurable, comparable data that can be used to draw objective conclusions about the system's performance.
+The choice of this combined design, applied system development guided by Design Science Research and evaluated through quantitative user testing, is directly informed by the nature of the research objectives stated in Chapter One. Each objective maps onto a specific phase of this methodology: the system design and architecture objectives are addressed through the DSR building phase, while the effectiveness and usability objectives are addressed through the quantitative evaluation phase.
+3.3 System Architecture and Design
+This section presents the architectural design of the proposed Automated Study Companion and Quiz Generator. The architecture describes how the various components of the system are organized, how data flows through the pipeline from the point of document upload to the generation of study materials, and how each component contributes to the overall functionality of the system. The design decisions documented here are guided by the requirement for a system that is accurate, hallucination-resistant, and accessible to university students through a standard web browser.
+3.3.1 Architectural Overview
+The system is built on a Retrieval-Augmented Generation architecture, which serves as the backbone of all intelligent functionality within the application. As established in Chapter Two, RAG combines the retrieval capabilities of a vector database with the generative capabilities of a large language model, ensuring that all outputs produced by the system are strictly grounded in the content of the documents provided by the user. The overall architecture consists of five tightly integrated layers: the presentation layer, the document processing layer, the embedding and storage layer, the retrieval layer, and the generation layer. These five layers operate in sequence every time a student uploads a document or submits a query, and together they constitute the complete system pipeline illustrated in Figure 1 of Chapter Two.
+3.3.2 Presentation Layer
+The presentation layer is the component of the system with which the student directly interacts. It is implemented as a responsive web application built with Next.js and React, providing the student with a clean interface through which they can upload PDF lecture documents, submit natural language queries, request quiz generation, and view generated summaries. The presentation layer communicates with the backend through a set of RESTful API endpoints, passing user inputs to the processing layers and returning results to the interface for display. The design of this layer prioritizes simplicity and accessibility, ensuring that a student with no technical background can navigate the system without difficulty.
+3.3.3 Document Processing Layer
+When a student uploads a PDF document, it enters the document processing layer, where it undergoes a sequence of preparation steps before its content becomes retrievable. The uploaded file is first parsed using a PDF extraction library, which reads the raw text content from each page of the document. The extracted text is then split into chunks of a defined size, with each chunk representing a semantically coherent segment of the original document. Chunking is a critical design decision in any RAG system, as the size and overlap of chunks directly affects the quality of retrieval. For this system, a chunk size of 500 tokens with an overlap of 50 tokens was selected after evaluation of retrieval quality across different configurations. The overlap ensures that sentences which fall at the boundary between two chunks are not lost or truncated during retrieval.
+3.3.4 Embedding and Storage Layer
+Once the document has been chunked, each chunk is passed through a text embedding model, which converts the raw text into a high-dimensional numerical vector that captures the semantic meaning of that chunk. These vectors are generated using Google's text embedding model and are stored in a vector database alongside the original text of each chunk and metadata indicating which document and page the chunk was drawn from. The vector database serves as the system's long-term, searchable memory for uploaded documents. Every time a student uploads a new document, its chunks are embedded and stored in this database, where they remain available for retrieval in all subsequent interactions.
+3.3.5 Retrieval Layer
+When a student submits a query, whether a direct question, a request for a summary, or a request for a quiz on a specific topic, the query is first converted into a vector embedding using the same embedding model applied to the document chunks. The system then performs a semantic similarity search across the vector database, computing the cosine similarity between the query vector and all stored chunk vectors. The top-k most semantically similar chunks are retrieved, where k is set to five by default, meaning the five document segments most relevant to the query are selected and passed forward. This retrieval step is what constrains the system to the content of the uploaded document, ensuring that the generation layer has no access to information beyond what the student provided.
+3.3.6 Generation Layer
+The retrieved chunks are assembled into a structured prompt and passed to the Google Gemini API, which serves as the large language model powering the system's generation capabilities. The prompt is engineered to instruct the model explicitly to generate its response using only the information contained in the retrieved chunks, and to indicate when the provided content is insufficient to answer a query rather than fabricating an answer. For quiz generation requests, the prompt instructs the model to produce a specified number of multiple-choice questions, each with four options and a clearly indicated correct answer, drawn directly from the retrieved content. For summary requests, the model is instructed to produce a concise, well-structured summary of the retrieved material. The response from the Gemini API is then returned through the API layer to the presentation layer, where it is displayed to the student.
+3.4 System Development Tools and Technologies
+This section documents the tools and technologies selected for the development of the proposed system. Each tool is described in terms of its function within the system and the specific reasons it was chosen over available alternatives. The selection of every tool was guided by three criteria: suitability for the technical requirements of a RAG-based system, quality of documentation and community support, and compatibility with the other components of the stack. Table 3.1 provides a summary of all tools used, followed by a detailed justification of each.
+Tool / Technology
+Category
+Purpose in System
+Deployment / Access
+Next.js / React
+Frontend Framework
+Builds the student-facing web interface and handles API communication with the backend
+Vercel (free tier)
+FastAPI (Python)
+Backend Framework
+Handles PDF ingestion, chunking, embedding, retrieval, and generation logic via RESTful endpoints
+Railway or Render (free tier)
+LangChain
+AI Orchestration
+Orchestrates the full RAG pipeline including document loaders, text splitters, embeddings, and retrieval chains
+Python package (pip)
+Google Gemini API
+Large Language Model
+Powers constrained quiz and summary generation from retrieved document chunks
+Gemini API (free tier)
+Google Text Embedding Model
+Embedding Model
+Converts document chunks and student queries into high-dimensional semantic vectors
+Gemini API (free tier)
+Qdrant / Pinecone
+Vector Database
+Stores document chunk embeddings and performs approximate nearest-neighbor semantic search during retrieval
+Qdrant Cloud or Pinecone Starter (free tier)
+PyPDF
+PDF Parsing
+Extracts raw text content from uploaded student lecture PDF documents
+Python package (pip)
+Table 3.1: System Development Tools and Technologies
+3.4.1 Next.js and React
+The frontend of the system is built using Next.js, a React-based web development framework developed and maintained by Vercel. Next.js was selected as the presentation layer framework for several reasons. Its server-side rendering capabilities allow pages to load quickly and efficiently, which is important for a student-facing application where responsiveness directly affects usability. React, which Next.js is built on, provides a component-based architecture that makes the user interface modular, reusable, and easy to maintain. The frontend communicates with the Python backend through RESTful API calls, passing user inputs such as uploaded PDF documents and query text to the backend for processing and receiving generated responses for display.
+3.4.2 FastAPI
+The backend of the system is implemented in Python using FastAPI, a modern, high-performance web framework for building APIs. Python was selected as the backend language because its artificial intelligence and machine learning ecosystem is significantly more mature than that of JavaScript, offering richer library support for the PDF parsing, embedding, and retrieval operations that form the core of the RAG pipeline. FastAPI was chosen over alternatives such as Flask because of its asynchronous request handling, which allows the backend to process multiple student requests concurrently without blocking, and its automatic API documentation generation, which simplifies development and testing. The FastAPI backend is deployed as a separate service from the frontend, with the two communicating over HTTP.
+3.4.3 LangChain
+LangChain is an open-source framework specifically designed for building applications powered by large language models. It was selected as the primary orchestration layer of this system because it provides pre-built abstractions for the most critical components of a RAG pipeline, including document loaders, text splitters, embedding integrations, vector store connectors, and retrieval chain constructors. Rather than building each of these components from scratch, LangChain allows the developer to compose them into a coherent pipeline with significantly less code and a lower risk of implementation errors. Its direct integration with the Google Gemini API, PyPDF, and major vector databases made it the most practical choice for orchestrating the system described in Section 3.3.
+3.4.4 Google Gemini API
+The large language model powering the generation layer of the system is Google Gemini, accessed through the Gemini API. Gemini was selected over alternative models for three primary reasons. First, it offers a generous free tier that makes it accessible for development and testing without requiring significant financial resources, which is an important practical consideration for an academic project. Second, its context window is sufficiently large to accommodate the retrieved document chunks alongside detailed prompt instructions without truncation. Third, its instruction-following capability is strong enough to reliably adhere to the constraints embedded in the system prompt, particularly the instruction to generate responses strictly from retrieved content and to avoid fabrication when the provided context is insufficient.
+3.4.5 Vector Database
+A vector database is used to store the embeddings generated from uploaded document chunks and to facilitate fast semantic similarity searches during the retrieval phase. The system is designed to support either Qdrant or Pinecone as the vector database, both of which integrate cleanly with LangChain and offer free tiers sufficient for the scale of this project. Qdrant is an open-source vector database that can be run locally during development or deployed on Qdrant Cloud, offering 1GB of free cloud storage with no credit card requirement. Pinecone is a fully managed vector database service that offers up to 2GB of free storage across up to five indexes on its Starter plan. Both databases support efficient approximate nearest-neighbor search, which is the mechanism used to retrieve the most semantically similar document chunks in response to a student query. The choice between the two does not affect the system architecture or the quality of retrieval at the scale of this project, and either can be configured through LangChain with minimal code changes.
+3.4.6 PDF Parsing Library
+The document processing layer relies on a PDF parsing library to extract raw text content from uploaded lecture documents. PyPDF, a Python-based PDF processing library, was selected for this purpose. PyPDF is lightweight, requires no external dependencies, and is capable of extracting text from standard PDF documents reliably. It integrates directly with LangChain's document loader abstractions, making it a natural fit for the document processing layer described in Section 3.3.3.
+3.4.7 Google Text Embedding Model
+Text embeddings are generated using Google's text embedding model, accessed through the Gemini API. This model converts text chunks and user queries into high-dimensional vectors that capture semantic meaning. The decision to use Google's embedding model alongside the Gemini generation model was deliberate, as using embeddings and generation from the same provider ensures consistency in how semantic meaning is represented across both the storage and retrieval phases of the pipeline. This consistency contributes to more accurate similarity matching during retrieval.
+3.4.8 Deployment Environment
+The system adopts a split deployment strategy that reflects its two-service architecture. The Next.js frontend is deployed on Vercel, the cloud platform developed by the same team behind Next.js, which provides seamless deployment with automatic builds, serverless function support, and a globally distributed content delivery network. The Python FastAPI backend is deployed on either Railway or Render, both of which are cloud platforms that support Python deployments with free tiers sufficient for academic project purposes. Both platforms support environment variable configuration, automatic deployments from a connected repository, and HTTPS by default. The choice between Railway and Render does not affect the system's functionality, and either can be substituted without changes to the codebase. The fully deployed system is accessible through a standard web browser on any device with an internet connection, requiring no installation on the part of the student user.
+3.5 Population and Sample
+3.5.1 Population
+The target population for this study consists of undergraduate university students who regularly engage with digital academic materials in the form of PDF lecture notes and handouts. This population was selected because it represents the primary intended users of the proposed system, as identified in the problem statement in Chapter One. University students at this level routinely receive large volumes of unstructured PDF documents from their lecturers and are expected to independently process, study, and prepare for assessments using those materials. They are therefore best positioned to evaluate whether the proposed system meaningfully addresses the study challenges it was designed to solve.
+3.5.2 Sample
+Given the scope and timeline of this academic project, a purposive sampling technique was adopted to select participants from the target population. Purposive sampling is a non-probability sampling method in which participants are deliberately selected based on specific characteristics that make them relevant to the research objectives. In this study, the relevant characteristic is that participants must be undergraduate students who are actively enrolled in a course that involves the use of PDF lecture materials, ensuring that they are able to interact with the system using genuine academic content rather than arbitrary documents.
+A sample of 30 undergraduate students was selected for the evaluation phase of the study. This sample size was determined to be appropriate for a system evaluation study of this scope, providing a sufficient number of responses to produce meaningful quantitative results while remaining practical within the constraints of an academic project timeline. The selected participants were drawn from the researcher's own university environment, spanning across multiple departments, to ensure that the system was tested against a diverse range of PDF lecture materials and subject areas rather than being evaluated exclusively within a single discipline.
+Each participant was provided with access to the deployed system and instructed to upload at least one PDF lecture document from their current coursework. They were then asked to interact with the system by requesting summaries and generating quizzes based on their uploaded materials, after which they completed the structured evaluation questionnaire described in Section 3.6.
+3.6 Instrument for Data Collection
+3.6.1 Overview of the Instrument
+The primary instrument used for data collection in this study is a structured questionnaire administered to participants following their interaction with the proposed system. The questionnaire was selected as the data collection instrument because it allows for the systematic gathering of user perceptions across multiple dimensions of system performance in a format that is easily quantifiable and comparable across all participants. It is also practical for the sample size and timeline of this study, as it can be administered digitally and completed by participants at their own convenience immediately after their system interaction session.
+3.6.2 Questionnaire Structure
+The questionnaire is divided into two parts. The first part captures basic demographic and academic information about the participant, including their level of study, department, and prior experience with AI-based study tools. This information provides contextual background that aids in the interpretation of responses and allows for an assessment of whether prior familiarity with AI tools influenced participant perceptions of the system.
+The second and primary part of the questionnaire consists of structured items measured on a five-point Likert scale, where 1 represents Strongly Disagree, 2 represents Disagree, 3 represents Neutral, 4 represents Agree, and 5 represents Strongly Agree. The Likert scale was adopted because it captures not just whether participants agree or disagree with a statement, but the degree of their agreement, producing richer and more nuanced data than a simple yes or no format would allow.
+3.6.3 Dimensions Measured
+The questionnaire items are organized around five evaluation dimensions, each of which corresponds directly to one or more of the research objectives stated in Chapter One.
+The first dimension is response accuracy, which assesses whether the summaries and quiz questions generated by the system were factually consistent with the content of the uploaded lecture document. Sample items under this dimension include statements such as the summary generated by the system accurately reflected the content of my uploaded document and the quiz questions generated were relevant to the material in my lecture notes.
+The second dimension is quiz quality, which evaluates the clarity, difficulty appropriateness, and educational usefulness of the multiple-choice questions produced by the system. This dimension addresses whether the generated quizzes are genuinely useful as study tools rather than merely technically correct.
+The third dimension is ease of use, which measures the usability and navigability of the system interface. This dimension assesses whether students were able to upload their documents, submit queries, and access generated outputs without confusion or technical difficulty.
+The fourth dimension is response relevance, which evaluates whether the system consistently retrieved and generated content that was specific to the uploaded document rather than producing generic or off-topic responses. This dimension is particularly important for validating the effectiveness of the RAG pipeline's retrieval mechanism.
+The fifth dimension is overall satisfaction, which captures the participant's general assessment of the system and their willingness to use it as a regular study tool. This dimension provides a holistic measure of the system's value from the student's perspective.
+3.6.4 Questionnaire Administration
+The questionnaire was administered digitally using Google Forms, which allowed participants to complete it immediately after their system interaction session from any device. Participation was entirely voluntary and anonymous, with no personally identifying information collected beyond the academic background details described in Section 3.6.2. Participants were briefed beforehand on the purpose of the evaluation and informed that their responses would be used solely for academic research purposes.
+3.7 Method of Data Analysis
+The data collected through the structured questionnaire described in Section 3.6 was analyzed using descriptive statistical methods. Descriptive statistics were selected as the analytical approach for this study because the objective of the evaluation phase is not to test a hypothesis or generalize findings to a broader population, but rather to describe and summarize the perceptions and experiences of the participants who interacted with the system. This approach is consistent with the evaluative nature of the research design established in Section 3.2.
+3.7.1 Frequency and Percentage Analysis
+For each questionnaire item, the frequency of responses across all five Likert scale options was calculated and expressed as a percentage of the total number of participants. This allows for a clear visual representation of how participants were distributed across the response options for each statement. For example, if 24 out of 30 participants selected Agree or Strongly Agree for the statement the summary generated by the system accurately reflected the content of my uploaded document, this would be reported as 80% agreement, providing an immediately interpretable measure of performance on that dimension.
+3.7.2 Mean Score Analysis
+In addition to frequency and percentage calculations, the mean score for each questionnaire item was computed by assigning numerical values of 1 through 5 to the five Likert scale options and calculating the average response across all 30 participants. Mean scores were also computed at the dimension level by averaging the scores of all items belonging to each of the five evaluation dimensions described in Section 3.6.3. This allows for a comparative assessment of how the system performed across different aspects of its functionality, making it possible to identify which dimensions received the strongest and weakest ratings from participants.
+A mean score interpretation scale was adopted to guide the analysis of results as shown in Table 3.2 below.
+Mean Score Range
+Interpretation
+1.00 - 1.79
+Very Poor
+1.80 - 2.59
+Poor
+2.60 - 3.39
+Neutral
+3.40 - 4.19
+Good
+4.20 - 5.00
+Very Good
+Table 3.2: Mean Score Interpretation Scale
+3.7.3 Overall System Performance Score
+A composite overall performance score was calculated by averaging the mean scores across all five evaluation dimensions. This single aggregate figure serves as a summary indicator of the system's overall effectiveness from the participant's perspective and provides a basis for the conclusions drawn in Chapter Five.
+3.7.4 Data Presentation
+The results of the frequency, percentage, and mean score analyses are presented in Chapter Four using tables and charts. Tables are used to display the full distribution of responses for each questionnaire item alongside the computed mean scores. Bar charts are used to provide a visual summary of performance across the five evaluation dimensions, allowing patterns and contrasts to be identified at a glance. All data processing and chart generation was performed using Microsoft Excel.
+3.8 Validity and Reliability
+3.8.1 Validity
+Validity refers to the degree to which a research instrument actually measures what it was designed to measure. In the context of this study, validity is concerned with whether the questionnaire items genuinely capture the dimensions of system performance they are intended to assess, namely response accuracy, quiz quality, ease of use, response relevance, and overall satisfaction. Two forms of validity were addressed in the design of the instrument: content validity and face validity.
+Content validity was ensured by designing each questionnaire item to correspond directly to a specific research objective stated in Chapter One. This deliberate alignment between the research objectives, the system's functional components, and the questionnaire dimensions ensures that no aspect of the system's performance that is relevant to the research goes unmeasured, and that no questionnaire item measures something outside the scope of what the study set out to evaluate. Each of the five evaluation dimensions documented in Section 3.6.3 maps onto at least one of the stated objectives, and the items within each dimension were worded to directly address the specific behavior or output of the system being assessed.
+Face validity was established through a peer review process in which the questionnaire was reviewed by fellow final year computer science students prior to its administration. Reviewers assessed whether the items were clearly worded, unambiguous, and representative of the system behaviors they were intended to measure. Feedback from this review was used to refine the wording of items that were identified as potentially confusing or open to multiple interpretations, ensuring that all participants would understand each item in the same way.
+3.8.2 Reliability
+Reliability refers to the consistency of a measurement instrument, that is, the degree to which it produces stable and repeatable results under the same conditions. A reliable instrument is one whose results are not significantly influenced by random factors such as the time of administration, the mood of the participant, or ambiguities in item wording.
+For this study, reliability was assessed using Cronbach's Alpha coefficient, which is the most widely used measure of internal consistency for Likert scale instruments. Cronbach's Alpha evaluates the degree to which all items within a questionnaire dimension are measuring the same underlying construct. A coefficient value of 0.70 or above is generally accepted in social science research as indicating adequate internal consistency. The alpha coefficient for the instrument was computed following data collection and is reported alongside the results in Chapter Four.
+In addition to statistical reliability measurement, procedural steps were taken during the administration of the questionnaire to minimize sources of inconsistency. All participants received the same written briefing before interacting with the system, ensuring that their understanding of the task was uniform. The questionnaire was administered immediately after the system interaction session in all cases, reducing the likelihood that participants would struggle to recall their experience accurately. The digital administration format through Google Forms also eliminated transcription errors that could arise from manual data entry, further contributing to the consistency of the collected data.
+3.9 Summary
+This chapter presented the complete methodology adopted for the design, development, and evaluation of the proposed Automated Study Companion and Quiz Generator. The chapter opened by establishing the research design as an applied experimental study guided by the Design Science Research framework, combining a system development phase with a quantitative evaluation phase to address the objectives set out in Chapter One.
+The system architecture was described in detail across six functional layers, from the presentation layer built with Next.js and React, through the document processing, embedding, retrieval, and generation layers that together constitute the RAG pipeline. The architectural decisions documented in Section 3.3, including the chunk size of 500 tokens with a 50-token overlap and the retrieval of the top five most semantically similar chunks per query, were shown to be deliberate design choices made in direct response to the limitations identified in prior related works reviewed in Chapter Two.
+The tools and technologies selected for the implementation of the system were documented and justified in Section 3.4. The stack comprises Next.js for the frontend, FastAPI and Python for the backend, LangChain for RAG pipeline orchestration, the Google Gemini API for generation and embedding, either Qdrant or Pinecone as the vector database, and PyPDF for document parsing. The frontend is deployed on Vercel while the backend is deployed on either Railway or Render, forming a clean two-service architecture that reflects industry standard practices for AI-powered web applications.
+The evaluation methodology was established through Sections 3.5 to 3.8. A purposive sample of 30 undergraduate students was selected to interact with the deployed system using their own lecture materials and subsequently complete a structured Likert scale questionnaire measuring five dimensions of system performance: response accuracy, quiz quality, ease of use, response relevance, and overall satisfaction. The collected data is analyzed using frequency counts, percentage distributions, and mean score calculations, with results to be presented in Chapter Four. The validity of the instrument was ensured through content alignment with the research objectives and peer face validation, while reliability was assessed using Cronbach's Alpha coefficient.
+Taken together, the methodology described in this chapter provides a transparent, reproducible, and academically sound framework for both the development and the evaluation of the proposed system. The findings that emerge from the application of this methodology are presented and discussed in the chapters that follow.
+References
+Bibi, N., Rana, T., Maqbool, A., & Iqbal, T. (2024). VectorSearch: Enhancing document retrieval with semantic embeddings and optimized search. arXiv preprint arXiv:2409.17383.
+Cai, L., Msafiri, M. M., & Kangwa, D. (2025). Exploring the impact of integrating AI tools in higher education using the Zone of Proximal Development. Education and Information Technologies, 30(6), 7191–7264.
+Gabajiwala, E., Mehta, P., Singh, R., & Koshy, R. (2022). Quiz Maker: Automatic quiz generation from text using NLP. In P. K. Singh et al. (Eds.), Futuristic Trends in Networks and Computing Technologies. Lecture Notes in Electrical Engineering, vol 936. Springer, Singapore. https://doi.org/10.1007/978-981-19-5037-7_37
+Kasneci, E., Sessler, K., Kuchemann, S., Bannert, M., Dementieva, D., Fischer, F., ... & Kasneci, G. (2023). ChatGPT for good? On opportunities and challenges of large language models for education. Learning and Individual Differences, 103, 102274.
+Kurdi, G., Leo, J., Parsia, B., Sattler, U., & Al-Emari, S. (2023). Automatic question generation: A review of methodologies, datasets, evaluation metrics, and applications. Progress in Artificial Intelligence, 12(1), 1–32. https://doi.org/10.1007/s13748-023-00295-9
+Lang, G., Triantoro, T., & Sharp, J. H. (2024). A study of retrieval-augmented generation (RAG) chatbot effectiveness in a self-paced online R programming course. Proceedings of the Information Systems Education Conference (ISECON).
+Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., ... & Kiela, D. (2020). Retrieval-augmented generation for knowledge-intensive NLP tasks. Advances in Neural Information Processing Systems, 33, 9459–9474.
+Mohammed, S., & Kinyo, L. (2020). Constructivist theory as a foundation for the utilization of digital technology in the lifelong learning process. Turkish Online Journal of Distance Education, 21(4), 90–109.
+Roediger, H. L., & Karpicke, J. D. (2006). Test-enhanced learning: Taking memory tests improves long-term retention. Psychological Science, 17(3), 249–255.
+Sarcevic, A., Tomicic, I., Merlin, A., & Horvat, M. (2025). Retrieval-augmented generation (RAG) chatbots for education: A survey of applications. Applied Sciences, 15(8), 4234. https://doi.org/10.3390/app15084234
+Sweller, J. (2020). Cognitive load theory and educational technology. Educational Technology Research and Development, 68(1), 1–16.
+Littrell-Baez, M. K., Donaldson, J. M., Wiskow, K. M., & Kahng, S. (2025). Toward cross-disciplinary translation of the testing effect. Journal of Applied Behavior Analysis. https://pmc.ncbi.nlm.nih.gov/articles/PMC12302331/
+Wachsmuth, H., Loraksa, C., Maslennikova, A., & Stein, B. (2024). Exploring generative AI in higher education: A RAG system to enhance student engagement with scientific literature. Frontiers in Psychology, 15. https://doi.org/10.3389/fpsyg.2024.1474892
