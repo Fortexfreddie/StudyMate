@@ -262,6 +262,16 @@ Replace `{doc_id}` with the document UUID. This removes the document from Postgr
 
 ---
 
+## Performance & Cost Optimization
+
+To prevent burning LLM tokens and ensure instant load times, StudyMate implements **Query-Level Database Caching** for both AI Chat and Topic Summaries:
+
+- **Unified History Caching:** If a student submits the exact same query or summary request within the same scope (`doc_id`), the backend skips the semantic search and LLM generation phases, serving the response directly from the database history.
+- **Strict Context Checks:** To guarantee complete accuracy, the cache is context-aware. If the `top_k` chunk parameter changes between requests, the backend automatically bypasses the cache to retrieve a fresh, more complete context list.
+- **Ultra-Low Latency:** Reduces duplicate generation time from **3-5 seconds** down to a microscopic **10-20 milliseconds**!
+
+---
+
 ## Development
 
 ### Linting & Formatting

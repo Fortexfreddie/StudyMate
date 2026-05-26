@@ -34,12 +34,72 @@ async def generate_summary(
 
     The summary is synthesized strictly from the context of the selected document (or globally if doc_id is null).
     """
-    logger.info(
-        "User %s requested topic summary: '%s' (doc_id: %s)",
-        current_user.id,
-        request.topic,
-        request.doc_id,
+    # 0. Check for a cached response for the exact same summary topic (case-insensitive and trimmed)
+    # in the context of this specific user, document scope, and top_k context limit.
+    from sqlalchemy import func, select
+
+    summary_query = f"Summary request: {request.topic}"
+
+    stmt = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.user_id == current_user.id,
+            ChatMessage.doc_id == request.doc_id,
+            func.lower(func.trim(ChatMessage.query)) == summary_query.strip().lower(),
+            ChatMessage.context_sufficient,
+            func.jsonb_array_length(ChatMessage.sources) == request.top_k,
+        )
+        .order_by(ChatMessage.created_at.desc())
+        .limit(1)
     )
+    result = await db.execute(stmt)
+    cached_msg = result.scalar_one_or_none()
+
+    if cached_msg:
+        logger.info(
+            "Cache HIT for topic summary '%s' (User: %s, Doc: %s, Top-K: %s). Reusing cached summary.",
+            request.topic,
+            current_user.id,
+            request.doc_id,
+            request.top_k,
+        )
+
+        # Save a new history entry reflecting this duplicate interaction
+        new_msg = ChatMessage(
+            user_id=current_user.id,
+            doc_id=request.doc_id,
+            query=summary_query,
+            answer=cached_msg.answer,
+            context_sufficient=cached_msg.context_sufficient,
+            sources=cached_msg.sources,
+        )
+        db.add(new_msg)
+        await db.commit()
+        await db.refresh(new_msg)
+
+        # Map DB sources back to Pydantic schemas
+        cached_sources = []
+        if cached_msg.sources:
+            for s in cached_msg.sources:
+                p_val = s.get("page_number")
+                s_val = s.get("similarity_score")
+                page = int(p_val) if isinstance(p_val, int | str) else 1
+                score = float(s_val) if isinstance(s_val, float | int | str) else 0.0
+
+                cached_sources.append(
+                    SourceInfo(
+                        filename=str(s.get("filename") or "Unknown Document"),
+                        page_number=page,
+                        similarity_score=score,
+                        text_preview=str(s.get("text_preview") or ""),
+                    )
+                )
+
+        return SummaryResponse(
+            summary=cached_msg.answer,
+            context_sufficient=cached_msg.context_sufficient,
+            sources=cached_sources,
+        )
 
     # 1. Retrieve matching chunks from Qdrant for context
     matched_chunks = await retriever.retrieve_relevant_chunks(

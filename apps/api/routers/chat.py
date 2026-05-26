@@ -35,12 +35,69 @@ async def chat_with_docs(
     If `doc_id` is supplied, the conversation is grounded strictly within that document.
     If `doc_id` is omitted, the retrieval executes globally across all user documents.
     """
-    logger.info(
-        "User %s initiated chat query: '%s' (doc_id: %s)",
-        current_user.id,
-        request.query,
-        request.doc_id,
+    # 0. Check for a cached response for the exact same query (case-insensitive and trimmed)
+    # in the context of this specific user and document scope.
+    from sqlalchemy import func, select
+
+    stmt = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.user_id == current_user.id,
+            ChatMessage.doc_id == request.doc_id,
+            func.lower(func.trim(ChatMessage.query)) == request.query.strip().lower(),
+            ChatMessage.context_sufficient,
+            func.jsonb_array_length(ChatMessage.sources) == request.top_k,
+        )
+        .order_by(ChatMessage.created_at.desc())
+        .limit(1)
     )
+    result = await db.execute(stmt)
+    cached_msg = result.scalar_one_or_none()
+
+    if cached_msg:
+        logger.info(
+            "Cache HIT for query '%s' (User: %s, Doc: %s). Reusing cached answer.",
+            request.query,
+            current_user.id,
+            request.doc_id,
+        )
+
+        # Save a new history entry reflecting this duplicate interaction
+        new_msg = ChatMessage(
+            user_id=current_user.id,
+            doc_id=request.doc_id,
+            query=request.query,
+            answer=cached_msg.answer,
+            context_sufficient=cached_msg.context_sufficient,
+            sources=cached_msg.sources,
+        )
+        db.add(new_msg)
+        await db.commit()
+        await db.refresh(new_msg)
+
+        # Map DB sources back to Pydantic schemas
+        cached_sources = []
+        if cached_msg.sources:
+            for s in cached_msg.sources:
+                p_val = s.get("page_number")
+                s_val = s.get("similarity_score")
+                page = int(p_val) if isinstance(p_val, int | str) else 1
+                score = float(s_val) if isinstance(s_val, float | int | str) else 0.0
+
+                cached_sources.append(
+                    SourceInfo(
+                        filename=str(s.get("filename") or "Unknown Document"),
+                        page_number=page,
+                        similarity_score=score,
+                        text_preview=str(s.get("text_preview") or ""),
+                    )
+                )
+
+        return ChatResponse(
+            answer=cached_msg.answer,
+            context_sufficient=cached_msg.context_sufficient,
+            sources=cached_sources,
+        )
 
     # 1. Retrieve the most relevant chunks from Qdrant
     matched_chunks = await retriever.retrieve_relevant_chunks(
