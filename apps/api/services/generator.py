@@ -324,9 +324,22 @@ class Generator:
                     )
 
                 response = await client.ainvoke(messages)
+                content = str(response.content).strip()
 
-                # Return the plain text response content
-                return str(response.content)
+                # Treat empty response as a retryable failure
+                if not content:
+                    raise ValueError("LLM returned an empty or whitespace response.")
+
+                # If JSON is required, validate it now to trigger retry on malformed outputs
+                if require_json:
+                    try:
+                        json.loads(content)
+                    except json.JSONDecodeError as json_err:
+                        raise ValueError(
+                            f"LLM returned malformed JSON: {json_err}"
+                        ) from json_err
+
+                return content
 
             except Exception as e:
                 err_str = str(e)
