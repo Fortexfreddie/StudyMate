@@ -38,7 +38,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Node.js (for future frontend)
+# Node.js
 node_modules/
 .next/
 .turbo/
