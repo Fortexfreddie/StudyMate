@@ -176,7 +176,7 @@ local `isLoading`/`error` state in the component.
 | **Quiz** | — | `quiz.generate` → `quiz.submit` | presets 5/10/15/20/30 (cap 30) with a "larger quizzes take longer" hint; **server-graded**; per-question review with explanations |
 | **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text |
 | **History** | `history.chatHistory`, `history.quizHistory` | — | merges chat/summary/quiz into one sortable, filterable, searchable timeline |
-| **Profile** | `auth` (context), `stats.get` | `auth.updateProfile` | name + major persist server-side; stats + streak real; theme saved to `localStorage` |
+| **Profile** | `auth` (context), `stats.get`, `usage.get` | `auth.updateProfile` | name + major persist server-side; stats + streak real; daily token usage telemetry card; theme + performance saved to `localStorage` |
 
 ### Example flow — Quiz (the most involved)
 
@@ -229,6 +229,15 @@ context" notice — it's a valid state, not an error.
 
 Theme selection persists to **localStorage** (a pure client preference — no backend
 needed).
+
+---
+
+## Performance & Token Budget System
+
+The web app integrates the newly introduced backend performance-tier system:
+1. **Header Injection:** The API client automatically reads the current performance level from `localStorage` and injects it as `X-Performance-Mode` on every outgoing RAG request (`/chat`, `/summary`, `/quiz`).
+2. **Dedicated Settings Screen:** A new "Performance Level" page inside the profile allows users to pick between `Low`, `Medium`, `High`, `Very High`, and `Max` tiers with custom micro-copy details and toasts.
+3. **TelemetryProgressCard:** Renders real-time, daily token usage progress indicator relative to the student's account limit (Free vs. Pro). If the limit is reached, users see warnings and recommendations.
 
 ---
 

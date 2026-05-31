@@ -1,6 +1,6 @@
 import { type SVGProps } from "react";
 import Link from "next/link";
-import { Eye, Settings } from "lucide-react";
+import { Eye, Trash2 } from "lucide-react";
 
 interface DocumentCardProps {
   id: string;
@@ -15,6 +15,7 @@ interface DocumentCardProps {
     | "engineering-math"
     | "history-humanities"
     | "general";
+  onDeleteClick?: (id: string, title: string) => void;
 }
 
 function ComputerScienceSvg(props: SVGProps<SVGSVGElement>) {
@@ -317,6 +318,7 @@ export function DocumentCard({
   bgColor,
   textColor,
   type = "general",
+  onDeleteClick,
 }: DocumentCardProps) {
   return (
     <div
@@ -333,9 +335,18 @@ export function DocumentCard({
           >
             Study Guide
           </span>
-          <button className="flex items-center justify-center h-7 w-7 rounded-full bg-white/35 hover:bg-white/50 transition">
-            <Settings style={{ color: textColor }} className="h-3.5 w-3.5" />
-          </button>
+          {onDeleteClick && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDeleteClick(id, title);
+              }}
+              className="flex items-center justify-center h-7 w-7 rounded-full bg-white/35 hover:bg-white/50 transition cursor-pointer"
+            >
+              <Trash2 style={{ color: textColor }} className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         <h3

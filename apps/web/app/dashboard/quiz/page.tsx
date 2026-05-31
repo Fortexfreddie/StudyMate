@@ -33,6 +33,9 @@ function QuizContent() {
   const [step, setStep] = useState<Step>("setup");
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [topic, setTopic] = useState<string>(topicParam);
+  const [topK, setTopK] = useState<number>(10);
+  const [maxK, setMaxK] = useState<number>(20);
+  const [perfMode, setPerfMode] = useState<string>("high");
   const [error, setError] = useState<string | null>(null);
 
   // Generated session
@@ -54,6 +57,23 @@ function QuizContent() {
   const activeQuestion = questions[currentIndex];
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
+  useState(() => {
+    if (typeof window !== "undefined") {
+      const mode = localStorage.getItem("studymate_performance_mode") || "high";
+      const config: Record<string, { default: number; max: number }> = {
+        low: { default: 5, max: 10 },
+        medium: { default: 8, max: 15 },
+        high: { default: 10, max: 20 },
+        very_high: { default: 15, max: 25 },
+        max: { default: 20, max: 30 },
+      };
+      const activeConf = config[mode] ?? config.high;
+      setTopK(activeConf.default);
+      setMaxK(activeConf.max);
+      setPerfMode(mode);
+    }
+  });
+
   const startQuiz = async () => {
     setError(null);
     setStep("generating");
@@ -62,6 +82,7 @@ function QuizContent() {
         topic: topic.trim() || "Key concepts from this document",
         doc_id: docId,
         num_questions: questionCount,
+        top_k: topK,
       });
       if (res.questions.length === 0) {
         setError("No questions could be generated from this document.");
@@ -199,6 +220,29 @@ function QuizContent() {
                 placeholder="e.g. Binary search trees"
                 className="w-full bg-surface border border-border-subtle rounded-2xl py-3.5 px-4 text-sm font-semibold text-white placeholder:text-text-muted/65 focus:outline-none focus:border-brand-primary/30 transition"
               />
+            </div>
+
+            {/* Context Depth (K) */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-text-muted">
+                  Context Window Depth (K)
+                </span>
+                <span className="text-xs font-extrabold text-brand-primary">
+                  {topK} / {maxK} Chunks
+                </span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={maxK}
+                value={topK}
+                onChange={(e) => setTopK(Number(e.target.value))}
+                className="w-full h-1 bg-surface-raised rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+              <span className="text-[10px] text-text-muted leading-tight">
+                Adjust the number of document chunks analyzed. Your current performance tier (<span className="text-brand-primary font-bold uppercase">{perfMode}</span>) limits this to a maximum of <span className="text-white font-bold">{maxK}</span>.
+              </span>
             </div>
 
             {/* Count */}

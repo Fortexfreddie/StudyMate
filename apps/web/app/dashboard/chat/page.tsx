@@ -29,9 +29,29 @@ function ChatContent() {
   const [docName, setDocName] = useState<string>("Chat");
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [inputText, setInputText] = useState("");
+  const [topK, setTopK] = useState<number>(10);
+  const [maxK, setMaxK] = useState<number>(20);
+  const [perfMode, setPerfMode] = useState<string>("high");
   const [isTyping, setIsTyping] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const mode = localStorage.getItem("studymate_performance_mode") || "high";
+      const config: Record<string, { default: number; max: number }> = {
+        low: { default: 5, max: 10 },
+        medium: { default: 8, max: 15 },
+        high: { default: 10, max: 20 },
+        very_high: { default: 15, max: 25 },
+        max: { default: 20, max: 30 },
+      };
+      const activeConf = config[mode] ?? config.high;
+      setTopK(activeConf.default);
+      setMaxK(activeConf.max);
+      setPerfMode(mode);
+    }
+  }, []);
 
   // Load the document name (for the header) and prior chat history for this doc.
   useEffect(() => {
@@ -104,7 +124,7 @@ function ChatContent() {
     setIsTyping(true);
 
     try {
-      const res = await api.chat.send({ query, doc_id: docId });
+      const res = await api.chat.send({ query, doc_id: docId, top_k: topK });
       setMessages((prev) => [
         ...prev,
         {
@@ -254,7 +274,26 @@ function ChatContent() {
         <div ref={chatEndRef} />
       </div>
 
-      <form onSubmit={handleSendMessage} className="w-full shrink-0 pt-2">
+      <form onSubmit={handleSendMessage} className="w-full shrink-0 pt-2 flex flex-col gap-2">
+        <div className="flex items-center justify-between px-3 text-[10px] text-text-muted select-none">
+          <div className="flex items-center gap-1.5">
+            <span>Context Depth (K):</span>
+            <span className="font-extrabold text-brand-primary">{topK} / {maxK} Chunks</span>
+            <span className="text-[8px] text-text-muted">({perfMode.toUpperCase()} limit)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="scale-75 origin-right">
+              <input
+                type="range"
+                min={5}
+                max={maxK}
+                value={topK}
+                onChange={(e) => setTopK(Number(e.target.value))}
+                className="w-24 h-1 bg-surface rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+            </span>
+          </div>
+        </div>
         <div className="w-full bg-surface-raised border border-border-subtle rounded-full p-2 pl-4 flex items-center gap-3 shadow-md">
           <div className="h-7 w-7 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0 select-none">
             <MessageSquare className="h-3.5 w-3.5 fill-current" />

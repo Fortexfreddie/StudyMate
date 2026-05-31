@@ -2,14 +2,14 @@
 
 import logging
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import InvalidTokenError
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
+from core.config import PERFORMANCE_MODES, settings
 from core.errors import AuthenticationError
 from core.security import decode_token
 from models.database import User, get_db
@@ -25,6 +25,9 @@ security = HTTPBearer()
 
 # Shared client singletons
 _qdrant_client: AsyncQdrantClient | None = None
+
+# Valid performance mode keys
+_VALID_MODES = frozenset(PERFORMANCE_MODES.keys())
 
 
 async def get_current_user(
@@ -51,6 +54,15 @@ async def get_current_user(
         raise AuthenticationError("User not found.")
 
     return user
+
+
+def get_performance_mode(request: Request) -> str:
+    """Extract performance mode from the X-Performance-Mode header.
+
+    Falls back to 'high' if the header is missing or contains an invalid value.
+    """
+    mode = request.headers.get("X-Performance-Mode", "high").lower().strip()
+    return mode if mode in _VALID_MODES else "high"
 
 
 def get_qdrant_client() -> AsyncQdrantClient:
@@ -92,6 +104,8 @@ def get_retriever(
     return Retriever(vector_store, embedder)
 
 
-def get_generator() -> Generator:
-    """Dependency injector for Generator."""
-    return Generator(api_key=settings.GOOGLE_API_KEY)
+def get_generator(
+    performance_mode: str = Depends(get_performance_mode),  # noqa: B008
+) -> Generator:
+    """Dependency injector for Generator — uses request's performance mode."""
+    return Generator(api_key=settings.GOOGLE_API_KEY, performance_mode=performance_mode)

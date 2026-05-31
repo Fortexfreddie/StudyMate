@@ -32,10 +32,10 @@ A full-stack web application that lets students upload PDF lecture notes and int
 | Backend | Python 3.11 + FastAPI |
 | Database | PostgreSQL (Neon) + SQLAlchemy 2.0 + Alembic |
 | Auth | JWT (PyJWT) + bcrypt |
-| LLM | Google Gemini API (`gemini-3-flash-preview`) |
+| LLM | Google Gemini API (`gemini-3.1-pro-preview` with `gemini-3-flash-preview` fallback) |
 | Embeddings | `gemini-embedding-001` |
 | Vector DB | Qdrant Cloud |
-| RAG | LangChain |
+| RAG | LangChain + Dynamic performance-based retrieval |
 
 ---
 
@@ -80,6 +80,7 @@ StudyMate/
 | GET | `/history/quizzes` | ✅ | Get paginated quiz history |
 | GET | `/history/quizzes/{session_id}` | ✅ | Get detailed quiz session results |
 | GET | `/stats` | ✅ | Aggregate study metrics (counts, streak, avg score) |
+| GET | `/usage` | ✅ | Get current daily token usage and account limits |
 
 > Full request/response examples for every endpoint live in
 > [apps/api/README.md](apps/api/README.md) and [docs/API.md](docs/API.md).
@@ -395,8 +396,28 @@ Key guarantees:
 
 ## Performance & Cost Optimization
 
-To prevent burning LLM tokens and ensure instant load times, StudyMate implements **Query-Level Database Caching** for both AI Chat and Topic Summaries:
+To prevent burning excessive LLM tokens, balance generation quality with execution speed, and ensure high-availability under load, StudyMate implements several performance engineering mechanisms:
 
+### 1. Dynamic Performance-Tier System
+Users can toggle between five performance modes inside their profile (persisted in local storage and attached via the `X-Performance-Mode` header):
+*   **Low Level (Flash Lite):** Uses `gemini-3.1-flash-lite` with thinking turned off. Dynamic RAG settings: `default_top_k=5`, `max_top_k=10`. Optimized for rapid, lightweight operations.
+*   **Medium Level (Flash):** Uses `gemini-3-flash-preview` with lightweight thinking. Dynamic RAG settings: `default_top_k=8`, `max_top_k=15`.
+*   **High Level (Pro - Default):** Uses `gemini-3.1-pro-preview` with medium thinking. Dynamic RAG settings: `default_top_k=10`, `max_top_k=20`. Highly recommended for optimal academic reasoning.
+*   **Very High Level (Pro + Deep Thinking):** Uses `gemini-3.1-pro-preview` with deep reasoning settings. Dynamic RAG settings: `default_top_k=15`, `max_top_k=25`.
+*   **Max Level (Pro + Max Thinking):** Uses `gemini-3.1-pro-preview` with maximum reasoning/depth. Dynamic RAG settings: `default_top_k=20`, `max_top_k=30` for extensive data extraction.
+
+### 2. Interactive Context Depth (K) Control
+*   **Real-time Override:** In Chat, Summary, and Quiz screens, the user can manually override the dynamic default `top_k` value using an interactive slider.
+*   **Dynamic Sliders:** The slider's range dynamically adjusts to clamp between a minimum of `5` chunks and the **performance tier's absolute maximum (`max_top_k`)**, ensuring that users are visually guided within the bounds of their active performance capabilities.
+
+### 3. Tiered Daily Token Limits
+To prevent database strain and manage LLM API pricing:
+*   **Free Users:** Capped at **50,000** total daily tokens.
+*   **Pro Users:** Capped at **500,000** total daily tokens.
+*   **Budget Validation:** Verification happens synchronously on all generative requests (`/chat`, `/summary`, `/quiz`). Exceeding the quota issues a premium upgrade prompt modal or toast notice.
+
+### 4. Query-Level Database Caching
+For repetitive questions and summaries:
 - **Unified History Caching:** If a student submits the exact same query or summary request within the same scope (`doc_id`), the backend skips the semantic search and LLM generation phases, serving the response directly from the database history.
 - **Strict Context Checks:** To guarantee complete accuracy, the cache is context-aware. If the `top_k` chunk parameter changes between requests, the backend automatically bypasses the cache to retrieve a fresh, more complete context list.
 - **Ultra-Low Latency:** Reduces duplicate generation time from **3-5 seconds** down to a microscopic **10-20 milliseconds**!

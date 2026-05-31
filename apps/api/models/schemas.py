@@ -53,6 +53,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     major: str | None = None
+    is_pro: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -144,7 +145,7 @@ class ChatRequest(BaseModel):
 
     query: str = Field(..., min_length=1)
     doc_id: UUID | None = None
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=5, ge=1, le=30)
 
 
 class ChatResponse(BaseModel):
@@ -175,7 +176,7 @@ class SummaryRequest(BaseModel):
 
     topic: str = Field(..., min_length=1)
     doc_id: UUID | None = None
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=5, ge=1, le=30)
     format: SummaryFormat = "bullets"
 
 
@@ -276,7 +277,7 @@ class QuizGenerateRequest(BaseModel):
     topic: str = Field(..., min_length=1)
     doc_id: UUID | None = None
     num_questions: int = Field(default=settings.DEFAULT_QUIZ_QUESTIONS, ge=1)
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=5, ge=1, le=30)
 
     @field_validator("num_questions")
     @classmethod
@@ -432,3 +433,20 @@ class StatsResponse(BaseModel):
     chats_count: int
     current_streak: int
     average_quiz_score: float
+    tokens_used_today: int = 0
+    token_limit: int = 0
+    is_pro: bool = False
+
+
+# Usage
+
+
+class UsageResponse(BaseModel):
+    """GET /usage response — daily token consumption for the current user."""
+
+    tokens_used_today: int
+    token_limit: int
+    tokens_remaining: int
+    is_pro: bool
+    usage_by_type: dict[str, int]
+    reset_time: str

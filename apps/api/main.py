@@ -21,7 +21,7 @@ from core.dependencies import get_qdrant_client
 from core.errors import StudyMateError
 from models.database import engine
 from models.schemas import HealthResponse
-from routers import auth, chat, documents, history, quiz, stats, summary
+from routers import auth, chat, documents, history, quiz, stats, summary, usage
 from services.vector_store import VectorStore
 
 # Logging
@@ -107,3 +107,4 @@ app.include_router(summary.router, prefix="/summary", tags=["Summary"])
 app.include_router(quiz.router, prefix="/quiz", tags=["Quiz"])
 app.include_router(history.router, prefix="/history", tags=["History"])
 app.include_router(stats.router, prefix="/stats", tags=["Stats"])
+app.include_router(usage.router, prefix="/usage", tags=["Usage"])

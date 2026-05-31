@@ -43,6 +43,9 @@ function SummaryContent() {
   const [docName, setDocName] = useState("Document");
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<SummaryFormat>("bullets");
+  const [topK, setTopK] = useState<number>(10);
+  const [maxK, setMaxK] = useState<number>(20);
+  const [perfMode, setPerfMode] = useState<string>("high");
   const [step, setStep] = useState<"setup" | "generating" | "completed">("setup");
   const [result, setResult] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +55,23 @@ function SummaryContent() {
   const [flippedCards, setFlippedCards] = useState<Record<number, boolean>>({});
 
   const { bgColor, textColor } = getDocumentColor(docId ?? "default");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const mode = localStorage.getItem("studymate_performance_mode") || "high";
+      const config: Record<string, { default: number; max: number }> = {
+        low: { default: 5, max: 10 },
+        medium: { default: 8, max: 15 },
+        high: { default: 10, max: 20 },
+        very_high: { default: 15, max: 25 },
+        max: { default: 20, max: 30 },
+      };
+      const activeConf = config[mode] ?? config.high;
+      setTopK(activeConf.default);
+      setMaxK(activeConf.max);
+      setPerfMode(mode);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -76,6 +96,7 @@ function SummaryContent() {
         topic: topic.trim() || "Overview of this document",
         doc_id: docId,
         format,
+        top_k: topK,
       });
       setResult(res);
       setExpandedConcept(0);
@@ -143,6 +164,29 @@ function SummaryContent() {
                 placeholder="e.g. Data structures overview"
                 className="w-full bg-surface border border-border-subtle rounded-2xl py-3.5 px-4 text-sm font-semibold text-white placeholder:text-text-muted/65 focus:outline-none focus:border-accent-coral/30 transition"
               />
+            </div>
+
+            {/* Context Depth (K) */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-text-muted">
+                  Context Window Depth (K)
+                </span>
+                <span className="text-xs font-extrabold text-brand-primary">
+                  {topK} / {maxK} Chunks
+                </span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={maxK}
+                value={topK}
+                onChange={(e) => setTopK(Number(e.target.value))}
+                className="w-full h-1 bg-surface-raised rounded-lg appearance-none cursor-pointer accent-brand-primary"
+              />
+              <span className="text-[10px] text-text-muted leading-tight">
+                Adjust the number of document chunks analyzed. Your current performance tier (<span className="text-brand-primary font-bold uppercase">{perfMode}</span>) limits this to a maximum of <span className="text-white font-bold">{maxK}</span>.
+              </span>
             </div>
 
             {/* Format */}

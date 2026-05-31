@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import get_current_user, get_generator, get_retriever
+from core.errors import StudyMateError
 from models.database import ChatMessage, User, get_db
 from models.schemas import ChatRequest, ChatResponse, SourceInfo
 from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
+from services.token_service import check_token_budget, record_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +38,17 @@ async def chat_with_docs(
     If `doc_id` is supplied, the conversation is grounded strictly within that document.
     If `doc_id` is omitted, the retrieval executes globally across all user documents.
     """
-    # 0. Check for a cached response for the exact same query (case-insensitive and trimmed)
-    # in the context of this specific user and document scope.
+    # 0. Check token budget before any expensive work
+    allowed, remaining, limit = await check_token_budget(
+        db, current_user.id, current_user.is_pro
+    )
+    if not allowed:
+        raise StudyMateError(
+            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
+            status_code=403,
+        )
+
+    # 1. Check for a cached response
     from sqlalchemy import func, select
 
     stmt = (
@@ -101,20 +112,28 @@ async def chat_with_docs(
             sources=cached_sources,
         )
 
-    # 1. Retrieve the most relevant chunks from Qdrant
+    # 2. Use performance-mode-aware top_k
+    effective_top_k = request.top_k if request.top_k != 5 else generator.default_top_k
+
+    # 3. Retrieve the most relevant chunks from Qdrant
     matched_chunks = await retriever.retrieve_relevant_chunks(
         query=request.query,
         doc_id=request.doc_id,
-        top_k=request.top_k,
+        top_k=effective_top_k,
     )
 
-    # 2. Synthesize the grounded response using Gemini
-    answer, context_sufficient = await generator.generate_answer(
+    # 4. Synthesize the grounded response using Gemini
+    answer, context_sufficient, usage = await generator.generate_answer(
         query=request.query,
         context=matched_chunks,
     )
 
-    # 3. Format matched chunks into API response sources
+    # 5. Record token usage (best-effort)
+    await record_token_usage(
+        db, current_user.id, usage, "chat", generator.performance_mode
+    )
+
+    # 6. Format matched chunks into API response sources
     sources: list[SourceInfo] = []
     sources_dict: list[dict[str, Any]] = []
 
@@ -124,7 +143,6 @@ async def chat_with_docs(
         score = float(chunk.get("score") or 0.0)
         text = chunk.get("text") or ""
 
-        # Map to Pydantic schema
         sources.append(
             SourceInfo(
                 filename=filename,
@@ -134,7 +152,6 @@ async def chat_with_docs(
             )
         )
 
-        # Build list of raw dictionaries to persist in JSONB
         sources_dict.append(
             {
                 "filename": filename,
@@ -144,7 +161,7 @@ async def chat_with_docs(
             }
         )
 
-    # 4. Save the interaction into the PostgreSQL database history
+    # 7. Save the interaction into the PostgreSQL database history
     db_message = ChatMessage(
         user_id=current_user.id,
         doc_id=request.doc_id,

@@ -43,9 +43,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "user_id", "activity_date", name="uq_user_activity_day"
-        ),
+        sa.UniqueConstraint("user_id", "activity_date", name="uq_user_activity_day"),
     )
     # Index to make per-user streak scans fast (ordered by date)
     op.create_index(

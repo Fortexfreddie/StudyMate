@@ -112,20 +112,20 @@ paste `Bearer <access_token>` after signup/login.
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `users` | Accounts | `id`, `email` (unique), `password_hash`, `full_name`, **`major`** (nullable), timestamps |
+| `users` | Accounts | `id`, `email` (unique), `password_hash`, `full_name`, `major` (nullable), **`is_pro`** (bool, defaults to False), timestamps |
 | `documents` | Uploaded PDFs (metadata only; vectors live in Qdrant) | `id` (= Qdrant key), `user_id`, `filename`, `page_count`, `chunk_count`, `uploaded_at` |
 | `chat_history` | Q&A pairs **and** summaries | `id`, `user_id`, `doc_id`, `query`, `answer`, `context_sufficient`, `sources` (JSONB) |
 | `quiz_sessions` | A generated quiz | `id`, `user_id`, `doc_id`, `topic`, `total_questions`, `questions` (JSONB), `score` |
 | `quiz_answers` | Per-question grade after submit | `session_id`, `question_index`, `selected_index`, `correct_index`, `is_correct` |
-| **`user_activity`** | One row per user per active day (for streaks) | `user_id`, `activity_date`, unique `(user_id, activity_date)` |
+| `user_activity` | One row per user per active day (for streaks) | `user_id`, `activity_date`, unique `(user_id, activity_date)` |
+| **`token_usage`** | Granular per-request LLM token consumption tracking | `id`, `user_id`, `tokens_used`, `model_used`, `performance_mode`, `request_type` (chat/summary/quiz), `created_at` |
 
 > **Summaries share `chat_history`.** A summary row's `query` is prefixed
 > `Summary request: <topic> [format=<fmt>]`. The `/stats` summary count and the
 > history timeline key on that prefix to separate summaries from chats.
 
-**Migration for this integration:** `migrations/versions/a1b2c3d4e5f6_add_major_and_user_activity.py`
-adds `users.major` and the `user_activity` table. Run `alembic upgrade head` before
-starting the updated server.
+**Migration for this integration:** `migrations/versions/369f827eaf12_add_user_is_pro_and_token_usage_table.py`
+adds `users.is_pro` and the `token_usage` table. Run `alembic upgrade head` before starting the server.
 
 ---
 
@@ -225,8 +225,35 @@ Skipped questions default to index 0 and are graded as answered.
 
 **`GET /stats`** → 200
 ```json
-{ "documents_uploaded": 3, "quizzes_taken": 5, "summaries_generated": 2,
-  "chats_count": 11, "current_streak": 4, "average_quiz_score": 82.0 }
+{ 
+  "documents_uploaded": 3, 
+  "quizzes_taken": 5, 
+  "summaries_generated": 2,
+  "chats_count": 11, 
+  "current_streak": 4, 
+  "average_quiz_score": 82.0,
+  "tokens_used_today": 12500,
+  "token_limit": 50000,
+  "is_pro": false
+}
+```
+
+### Usage Telemetry
+
+**`GET /usage`** → 200
+```json
+{
+  "tokens_used_today": 12500,
+  "token_limit": 50000,
+  "tokens_remaining": 37500,
+  "is_pro": false,
+  "usage_by_type": {
+    "chat": 4500,
+    "summary": 8000,
+    "quiz": 0
+  },
+  "reset_time": "2026-06-01T00:00:00Z"
+}
 ```
 
 ---

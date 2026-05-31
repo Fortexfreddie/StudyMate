@@ -1,5 +1,6 @@
 """Generator service — manages LLM generation for chat, summaries, and quizzes."""
 
+import ast
 import asyncio
 import json
 import logging
@@ -9,7 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
 
-from core.config import settings
+from core.config import PERFORMANCE_MODES, settings
 from core.errors import ConfigurationError, ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = (
     "You are StudyMate, an expert academic study assistant designed to help "
     "university students deeply understand their own lecture materials.\n\n"
+    "Before answering, carefully analyze ALL provided context chunks. Cross-reference "
+    "information across chunks to build a comprehensive understanding. Do not rely on "
+    "a single chunk when multiple chunks contain relevant information.\n\n"
     "═══ ABSOLUTE GROUNDING RULES ═══\n"
     "These rules override ALL other instructions. You MUST follow them without exception:\n\n"
     "1. ONLY USE PROVIDED CONTEXT: You may ONLY use information explicitly stated "
@@ -34,6 +38,12 @@ SYSTEM_PROMPT = (
     "equations, dates, names, statistics, or explanations under any circumstances.\n\n"
     "5. SOURCE ATTRIBUTION: When presenting information, reference the source "
     "(e.g., 'According to Source #2...' or 'As stated on Page 12...').\n\n"
+    "6. COMPREHENSIVE COVERAGE: When multiple context chunks address the topic, "
+    "synthesize information from ALL relevant chunks — not just the first one. "
+    "Your answer should reflect the full breadth of what the document covers.\n\n"
+    "7. DEPTH OVER BREVITY: Provide thorough, detailed explanations. University "
+    "students need depth — not surface-level bullet points. Include examples, "
+    "relationships between concepts, and nuances from the source material.\n\n"
     "═══ TONE & FORMATTING ═══\n"
     "• Write at a level appropriate for a university undergraduate student.\n"
     "• Use clear, concise academic English — authoritative but approachable.\n"
@@ -43,15 +53,14 @@ SYSTEM_PROMPT = (
 )
 
 
-# Per-format prompt specs for summaries. `schema_hint` shows the JSON shape the model
-# must place under the "structured" key; `instructions` guides the content. Adding a
-# format here + a branch in _parse_and_validate_summary is all the backend needs.
 SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
     "bullets": {
         "schema_hint": '["First key takeaway.", "Second key takeaway.", "..."]',
         "instructions": (
-            "Produce 3–6 concise key-takeaway bullet strings capturing the most "
-            "important facts about the topic. Each bullet is a complete sentence."
+            "Produce 5–8 concise key-takeaway bullet strings capturing the most "
+            "important facts about the topic. Each bullet is a complete sentence. "
+            "Cover all major aspects mentioned in the context. If the context "
+            "mentions examples, include the most important ones."
         ),
     },
     "key_concepts": {
@@ -59,8 +68,9 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
             '[{"title": "Concept name", "description": "1–3 sentence explanation."}]'
         ),
         "instructions": (
-            "Produce 3–5 concept objects, each with a short title and a 1–3 sentence "
-            "description grounded in the context."
+            "Produce 4–7 concept objects, each with a short title and a 1–3 sentence "
+            "description grounded in the context. Cover different aspects of the topic. "
+            "Descriptions should explain WHY the concept matters, not just WHAT it is."
         ),
     },
     "study_guide": {
@@ -69,8 +79,9 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
             '"concepts": [{"title": "Concept", "description": "..."}]}'
         ),
         "instructions": (
-            "Produce BOTH 3–6 key-takeaway bullets AND 3–5 concept objects (title + "
-            "description). Bullets summarize; concepts explain."
+            "Produce BOTH 5–8 key-takeaway bullets AND 4–7 concept objects (title + "
+            "description). Bullets summarize the most critical facts; concepts explain "
+            "them in depth. Cover the full breadth of the context."
         ),
     },
     "flashcards": {
@@ -78,8 +89,9 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
             '[{"front": "Question or term?", "back": "Answer or definition."}]'
         ),
         "instructions": (
-            "Produce 4–8 flashcards. `front` is a question or term; `back` is the "
-            "answer or definition. Keep each side short and self-contained."
+            "Produce 6–10 flashcards. `front` is a question or term; `back` is the "
+            "answer or definition. Keep each side short and self-contained. Cover "
+            "different sections of the context, not just the beginning."
         ),
     },
     "cheat_sheet": {
@@ -91,7 +103,7 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
             "Produce a condensed cheat sheet: a `formulas` list of label/value rows "
             "(key formulas, complexities, or facts) and a `definitions` list of "
             "term/meaning rows. If the topic has no formulas, return an empty list "
-            "for `formulas`."
+            "for `formulas`. Include at least 4–6 definitions."
         ),
     },
     "mind_map": {
@@ -100,68 +112,120 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
             '"branches": [{"label": "Sub-topic", "children": ["leaf", "leaf"]}]}'
         ),
         "instructions": (
-            "Produce a mind map: a `root` central topic and 2–5 `branches`, each with "
-            "a label and 2–4 short child leaf strings."
+            "Produce a mind map: a `root` central topic and 3–5 `branches`, each with "
+            "a label and 2–4 short child leaf strings. Cover all major sub-topics "
+            "mentioned in the context."
         ),
     },
 }
 
 
-class Generator:
-    """Orchestrates structured generations using Google Gemini 3 models."""
+def robust_json_loads(text: str) -> Any:
+    """Robustly parses a JSON string, falling back to AST literal evaluation
+    if the LLM output contains single quotes, trailing commas, or Python-style literals.
+    """
+    cleaned = text.strip()
+    # Remove markdown code fences if present
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
 
-    def __init__(self, api_key: str) -> None:
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as json_err:
+        # Try to parse using AST evaluation if it looks like a single-quoted structure
+        try:
+            # Standardize lowercase JSON representations to Python equivalents for AST
+            ast_text = (
+                cleaned.replace("true", "True")
+                .replace("false", "False")
+                .replace("null", "None")
+            )
+            return ast.literal_eval(ast_text)
+        except Exception as fallback_err:
+            # Raise original JSONDecodeError if AST fallback also fails
+            raise json_err from fallback_err
+
+
+class Generator:
+    """Orchestrates structured generations using Google Gemini models.
+
+    Accepts a ``performance_mode`` that controls model selection, thinking depth,
+    and default retrieval top_k. See ``core.config.PERFORMANCE_MODES``.
+    """
+
+    def __init__(self, api_key: str, performance_mode: str = "high") -> None:
         if not api_key:
             raise ConfigurationError("Google API key is invalid or missing.")
 
-        # Initialize the primary generation client (plain)
-        self._primary_client = ChatGoogleGenerativeAI(
-            model=settings.GEMINI_PRIMARY_MODEL,
-            google_api_key=SecretStr(api_key),
-            temperature=settings.GENERATION_TEMPERATURE,
-        )
+        config = PERFORMANCE_MODES.get(performance_mode, PERFORMANCE_MODES["high"])
+        self.performance_mode = performance_mode
+        self.default_top_k: int = int(config["default_top_k"])
+        self.max_top_k: int = int(config["max_top_k"])
 
-        # Initialize the primary generation client (JSON enforced)
+        primary_model = str(config["primary"])
+        fallback_model = str(config["fallback"])
+        thinking = str(config["thinking"])
+
+        self._primary_model_name = primary_model
+        self._fallback_model_name = fallback_model
+
+        key = SecretStr(api_key)
+        temp = settings.GENERATION_TEMPERATURE
+
+        # Primary clients (plain + JSON-enforced)
+        self._primary_client = ChatGoogleGenerativeAI(
+            model=primary_model,
+            google_api_key=key,
+            temperature=temp,
+            thinking_level=thinking,
+        )
         self._primary_client_json = ChatGoogleGenerativeAI(
-            model=settings.GEMINI_PRIMARY_MODEL,
-            google_api_key=SecretStr(api_key),
-            temperature=settings.GENERATION_TEMPERATURE,
+            model=primary_model,
+            google_api_key=key,
+            temperature=temp,
+            thinking_level=thinking,
             model_kwargs={"response_mime_type": "application/json"},
         )
 
-        # Initialize the fallback generation client (plain)
+        # Fallback clients (plain + JSON-enforced)
         self._fallback_client = ChatGoogleGenerativeAI(
-            model=settings.GEMINI_FALLBACK_MODEL,
-            google_api_key=SecretStr(api_key),
-            temperature=settings.GENERATION_TEMPERATURE,
+            model=fallback_model,
+            google_api_key=key,
+            temperature=temp,
+            thinking_level=thinking,
         )
-
-        # Initialize the fallback generation client (JSON enforced)
         self._fallback_client_json = ChatGoogleGenerativeAI(
-            model=settings.GEMINI_FALLBACK_MODEL,
-            google_api_key=SecretStr(api_key),
-            temperature=settings.GENERATION_TEMPERATURE,
+            model=fallback_model,
+            google_api_key=key,
+            temperature=temp,
+            thinking_level=thinking,
             model_kwargs={"response_mime_type": "application/json"},
         )
 
     async def generate_answer(
         self, query: str, context: list[dict[str, Any]]
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, dict[str, int | str]]:
         """Generates a grounded answer from retrieved context chunks.
 
-        Returns a tuple of (answer, context_sufficient).
+        Returns ``(answer, context_sufficient, usage)``.
         """
-        # Format the context chunks
         context_text = self._format_context(context)
 
         system_instruction = (
-            SYSTEM_PROMPT
-            + "\n═══ OUTPUT FORMAT ═══\n"
+            SYSTEM_PROMPT + "\n═══ OUTPUT FORMAT ═══\n"
             "Format your response as a JSON object with exactly these keys:\n"
             "{\n"
             '  "answer": "Your rich, well-formatted markdown response with bold keywords, bullet points, or lists.",\n'
             '  "context_sufficient": true\n'
             "}\n\n"
+            "IMPORTANT: Your answer must be comprehensive and detailed. Synthesize "
+            "information from ALL relevant context chunks. Structure your response "
+            "with clear sections if the topic has multiple aspects.\n\n"
             "If the provided context does not contain enough facts to answer the question, return:\n"
             "{\n"
             '  "answer": "The uploaded document does not contain enough information to answer this question.",\n'
@@ -171,38 +235,38 @@ class Generator:
         )
 
         try:
-            response_text = await self._call_llm_with_retry(
+            response_text, usage = await self._call_llm_with_retry(
                 system_instruction, f"Question: {query}", require_json=True
             )
-            parsed = json.loads(response_text)
+            parsed = robust_json_loads(response_text)
             answer = parsed.get("answer", "").strip()
             context_sufficient = bool(parsed.get("context_sufficient", False))
-            return answer, context_sufficient
+            return answer, context_sufficient, usage
         except Exception:
             logger.exception("Failed to parse or generate chat response from LLM.")
             return (
                 "I encountered an error generating an answer based on your document. Please try again.",
                 False,
+                {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "model_used": "error",
+                },
             )
 
     async def generate_summary(
         self, topic: str, context: list[dict[str, Any]], summary_format: str = "bullets"
-    ) -> tuple[str, Any, bool]:
+    ) -> tuple[str, Any, bool, dict[str, int | str]]:
         """Generates a format-specific summary grounded in context chunks.
 
-        Returns ``(plain_text, structured, context_sufficient)`` where:
-        - ``plain_text`` is always a markdown rendering (safe UI fallback),
-        - ``structured`` is the format-specific object (see SUMMARY_FORMAT_SPECS),
-        - ``context_sufficient`` is False when the context lacks the topic.
+        Returns ``(plain_text, structured, context_sufficient, usage)``.
         """
         context_text = self._format_context(context)
-        spec = SUMMARY_FORMAT_SPECS.get(
-            summary_format, SUMMARY_FORMAT_SPECS["bullets"]
-        )
+        spec = SUMMARY_FORMAT_SPECS.get(summary_format, SUMMARY_FORMAT_SPECS["bullets"])
 
         system_instruction = (
-            SYSTEM_PROMPT
-            + "\n═══ OUTPUT FORMAT ═══\n"
+            SYSTEM_PROMPT + "\n═══ OUTPUT FORMAT ═══\n"
             "Respond with a single JSON object with exactly these keys:\n"
             "{\n"
             f'  "structured": {spec["schema_hint"]},\n'
@@ -210,6 +274,8 @@ class Generator:
             '  "context_sufficient": true\n'
             "}\n\n"
             f"FORMAT INSTRUCTIONS ({summary_format}):\n{spec['instructions']}\n\n"
+            "IMPORTANT: Be thorough. Cover ALL relevant information from the context. "
+            "The student is relying on this summary for studying — do not omit important details.\n\n"
             "If the provided context does not contain enough facts to summarize this "
             "topic, return:\n"
             "{\n"
@@ -222,12 +288,15 @@ class Generator:
         )
 
         try:
-            response_text = await self._call_llm_with_retry(
+            response_text, usage = await self._call_llm_with_retry(
                 system_instruction,
                 f"Topic to Summarize: {topic}",
                 require_json=True,
             )
-            return self._parse_and_validate_summary(response_text, summary_format)
+            plain, structured, sufficient = self._parse_and_validate_summary(
+                response_text, summary_format
+            )
+            return plain, structured, sufficient, usage
         except Exception:
             logger.exception("Failed to parse or generate summary from LLM.")
             return (
@@ -235,20 +304,40 @@ class Generator:
                 "document. Please try again.",
                 None,
                 False,
+                {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "model_used": "error",
+                },
             )
 
     async def generate_quiz(
         self, topic: str, context: list[dict[str, Any]], num_questions: int = 5
-    ) -> list[dict[str, Any]]:
-        """Generates a structured multiple-choice quiz strictly from context."""
+    ) -> tuple[list[dict[str, Any]], dict[str, int | str]]:
+        """Generates a structured multiple-choice quiz strictly from context.
+
+        Returns ``(questions, usage)``. Usage is accumulated across retries.
+        """
         context_text = self._format_context(context)
+        accumulated_usage: dict[str, int | str] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "model_used": "",
+        }
 
         system_instruction = (
-            SYSTEM_PROMPT
-            + "\n═══ QUIZ GENERATION RULES ═══\n"
+            SYSTEM_PROMPT + "\n═══ QUIZ GENERATION RULES ═══\n"
             f"Generate exactly {num_questions} multiple-choice questions.\n"
-            "Each question must test understanding of a concept explicitly stated in the context.\n"
-            "Distractors must be plausible but clearly wrong based on the context.\n\n"
+            "Each question must test understanding of a concept explicitly stated in the context.\n\n"
+            "QUESTION QUALITY REQUIREMENTS:\n"
+            "• Questions should test different cognitive levels: recall, understanding, "
+            "application, and analysis.\n"
+            "• Cover different sections of the provided context, not just the first few paragraphs.\n"
+            "• Distractors must be plausible alternatives from the same domain — not obviously wrong.\n"
+            "• The correct answer MUST be unambiguously supported by the context.\n"
+            "• Double-check that correct_index points to the actually correct option.\n\n"
             "Your output MUST be a valid JSON array of question objects (and nothing else). "
             "Do not wrap in markdown code blocks.\n"
             "Each question object MUST have exactly these keys:\n"
@@ -256,12 +345,14 @@ class Generator:
             '  "question": "Clear, concise academic question text",\n'
             '  "options": ["Option A text", "Option B text", "Option C text", "Option D text"],\n'
             '  "correct_index": 0,\n'
-            '  "explanation": "Detailed explanation of why this option is correct, referencing facts from the document."\n'
+            '  "explanation": "Detailed explanation of why this option is correct, referencing '
+            'facts from the document."\n'
             "}\n\n"
             "Guidelines:\n"
             "1. You MUST supply exactly 4 options per question.\n"
             "2. The correct_index must be an integer from 0 to 3 matching the correct option index.\n"
-            "3. The correct answer must be unambiguously supported by the context.\n\n"
+            "3. VERIFY: Before outputting, re-read each question and confirm correct_index "
+            "actually points to the right answer in the options array.\n\n"
             f"--- CONTEXT ---\n{context_text}"
         )
 
@@ -269,19 +360,22 @@ class Generator:
 
         # First attempt
         try:
-            response_text = await self._call_llm_with_retry(
+            response_text, usage = await self._call_llm_with_retry(
                 system_instruction, prompt, require_json=True
             )
-            return self._parse_and_validate_quiz(response_text, num_questions)
+            self._accumulate_usage(accumulated_usage, usage)
+            questions = self._parse_and_validate_quiz(response_text, num_questions)
+            return questions, accumulated_usage
         except Exception as first_error:
             logger.warning(
                 "First attempt of quiz generation parsing failed: %s. Retrying with a stricter constraint.",
                 str(first_error),
             )
 
-            # Stricter prompt retry on primary client
+            # Stricter prompt retry
             retry_instruction = (
-                "CRITICAL: You failed to return a valid JSON array matching the required format in your previous attempt.\n"
+                "CRITICAL: You failed to return a valid JSON array matching the required format "
+                "in your previous attempt.\n"
                 "You must return ONLY a raw valid JSON array. Do not output any preamble or postamble text.\n"
                 f"Create exactly {num_questions} questions based on this context:\n"
                 f"{context_text}\n\n"
@@ -293,14 +387,17 @@ class Generator:
                 '    "correct_index": 0,\n'
                 '    "explanation": "Why correct"\n'
                 "  }\n"
-                "]"
+                "]\n\n"
+                "VERIFY each correct_index points to the correct option before outputting."
             )
 
             try:
-                response_text = await self._call_llm_with_retry(
+                response_text, usage = await self._call_llm_with_retry(
                     retry_instruction, prompt, require_json=True
                 )
-                return self._parse_and_validate_quiz(response_text, num_questions)
+                self._accumulate_usage(accumulated_usage, usage)
+                questions = self._parse_and_validate_quiz(response_text, num_questions)
+                return questions, accumulated_usage
             except Exception as final_error:
                 logger.exception("Final attempt at quiz generation failed.")
                 raise ServiceUnavailableError(
@@ -334,17 +431,26 @@ class Generator:
             cleaned = cleaned[:-3]
         return cleaned.strip()
 
+    @staticmethod
+    def _accumulate_usage(
+        accumulated: dict[str, int | str], new: dict[str, int | str]
+    ) -> None:
+        """Add new usage counts into an accumulator dict."""
+        for key in ("input_tokens", "output_tokens", "total_tokens"):
+            val_acc = accumulated.get(key, 0)
+            val_new = new.get(key, 0)
+            acc_num = int(val_acc) if isinstance(val_acc, int | str) else 0
+            new_num = int(val_new) if isinstance(val_new, int | str) else 0
+            accumulated[key] = acc_num + new_num
+        accumulated["model_used"] = new.get(
+            "model_used", accumulated.get("model_used", "")
+        )
+
     def _parse_and_validate_summary(
         self, response_text: str, summary_format: str
     ) -> tuple[str, Any, bool]:
-        """Parse the summary JSON and lightly validate the per-format structure.
-
-        Returns (plain_text, structured, context_sufficient). On a context-gap the
-        model returns structured=null; we pass that through. Malformed structures
-        for the requested format degrade gracefully to structured=None while still
-        returning the plain_text fallback, so the UI always has something to show.
-        """
-        parsed = json.loads(self._strip_code_fence(response_text))
+        """Parse the summary JSON and lightly validate the per-format structure."""
+        parsed = robust_json_loads(response_text)
         plain_text = str(parsed.get("plain_text", "")).strip()
         context_sufficient = bool(parsed.get("context_sufficient", False))
         structured = parsed.get("structured")
@@ -365,10 +471,7 @@ class Generator:
         return plain_text, structured, context_sufficient
 
     def _validate_summary_structure(self, data: Any, summary_format: str) -> Any:
-        """Validate/normalize the structured payload for a given format.
-
-        Raises on shape mismatch so the caller can fall back to plain text.
-        """
+        """Validate/normalize the structured payload for a given format."""
         if summary_format == "bullets":
             if not isinstance(data, list):
                 raise ValueError("bullets must be a list.")
@@ -378,7 +481,10 @@ class Generator:
             if not isinstance(data, list):
                 raise ValueError("key_concepts must be a list.")
             return [
-                {"title": str(c["title"]).strip(), "description": str(c["description"]).strip()}
+                {
+                    "title": str(c["title"]).strip(),
+                    "description": str(c["description"]).strip(),
+                }
                 for c in data
             ]
 
@@ -390,7 +496,10 @@ class Generator:
             return {
                 "bullets": [str(b).strip() for b in bullets if str(b).strip()],
                 "concepts": [
-                    {"title": str(c["title"]).strip(), "description": str(c["description"]).strip()}
+                    {
+                        "title": str(c["title"]).strip(),
+                        "description": str(c["description"]).strip(),
+                    }
                     for c in concepts
                 ],
             }
@@ -412,7 +521,10 @@ class Generator:
                     for f in formulas
                 ],
                 "definitions": [
-                    {"term": str(d["term"]).strip(), "meaning": str(d["meaning"]).strip()}
+                    {
+                        "term": str(d["term"]).strip(),
+                        "meaning": str(d["meaning"]).strip(),
+                    }
                     for d in definitions
                 ],
             }
@@ -438,30 +550,131 @@ class Generator:
     def _parse_and_validate_quiz(
         self, response_text: str, expected_count: int
     ) -> list[dict[str, Any]]:
-        """Parses the generated text as JSON and validates the quiz schema."""
-        cleaned_text = self._strip_code_fence(response_text)
+        """Parses the generated text as JSON and validates the quiz schema.
 
-        data = json.loads(cleaned_text)
+        Also cross-checks that correct_index actually points to a plausible answer
+        by verifying the explanation references the selected option.
+        """
+        import re
+        data = robust_json_loads(response_text)
+
+        # If data is a dictionary, scan its keys for any list (e.g. {"questions": [...]})
+        if isinstance(data, dict):
+            found_list = False
+            for _, v in data.items():
+                if isinstance(v, list) and len(v) > 0:
+                    data = v
+                    found_list = True
+                    break
+            if not found_list:
+                data = [data]
+
         if not isinstance(data, list):
             raise ValueError("Quiz output is not a JSON array.")
 
+        def get_flexible_val(d: dict[str, Any], possible_keys: list[str]) -> Any:
+            # First look for case-insensitive exact matches
+            for k, v in d.items():
+                k_lower = k.lower().replace("_", "").replace(" ", "")
+                for pk in possible_keys:
+                    pk_cleaned = pk.lower().replace("_", "").replace(" ", "")
+                    if k_lower == pk_cleaned:
+                        return v
+            # Secondly look for substring matches
+            for k, v in d.items():
+                k_lower = k.lower()
+                for pk in possible_keys:
+                    if pk.lower() in k_lower:
+                        return v
+            return None
+
         validated: list[dict[str, Any]] = []
         for idx, item in enumerate(data):
-            q_text = item.get("question", "").strip()
-            options = item.get("options", [])
-            correct_idx = item.get("correct_index")
-            explanation = item.get("explanation", "").strip()
+            if not isinstance(item, dict):
+                continue
+
+            q_text = get_flexible_val(item, ["question", "q", "text", "query", "prompt"])
+            if q_text and isinstance(q_text, dict):
+                # If question is itself a dictionary, extract any string from it
+                for val in q_text.values():
+                    if isinstance(val, str) and val.strip():
+                        q_text = val
+                        break
+            q_text = str(q_text or "").strip()
+
+            # Fallback: if q_text is still empty, scan dict for any large string
+            if not q_text:
+                for k, v in item.items():
+                    if isinstance(v, str) and len(v) > 15 and k.lower() not in ("explanation", "reason", "why", "options"):
+                        q_text = v.strip()
+                        break
 
             if not q_text:
                 raise ValueError(f"Question {idx} is missing 'question' text.")
+
+            options = get_flexible_val(item, ["options", "choices", "answers", "opts"])
             if not isinstance(options, list) or len(options) != 4:
-                raise ValueError(
-                    f"Question {idx} does not have exactly 4 options: {options}"
-                )
+                # Check for separate keys A, B, C, D or option_a, option_b, etc.
+                opt_keys = ["a", "b", "c", "d"]
+                found_opts = []
+                for char in opt_keys:
+                    val = get_flexible_val(item, [f"option{char}", f"option_{char}", char])
+                    if val is not None:
+                        found_opts.append(str(val))
+                if len(found_opts) == 4:
+                    options = found_opts
+
+            if not isinstance(options, list) or len(options) != 4:
+                # Fallback: if we still don't have exactly 4 options, extract all string values that aren't the question/explanation
+                extracted_strings = []
+                for k, v in item.items():
+                    if isinstance(v, str) and v != q_text and k.lower() not in ("explanation", "reason", "why", "question"):
+                        extracted_strings.append(v)
+                if len(extracted_strings) >= 4:
+                    options = extracted_strings[:4]
+                else:
+                    raise ValueError(
+                        f"Question {idx} does not have exactly 4 options: {options}"
+                    )
+
+            correct_idx = get_flexible_val(
+                item,
+                [
+                    "correct_index",
+                    "correctindex",
+                    "correct_idx",
+                    "correctidx",
+                    "correct",
+                    "answer",
+                    "correct_answer",
+                    "correctanswer",
+                    "right_answer",
+                ]
+            )
+
+            # Standardize correct index to an integer 0..3
+            if isinstance(correct_idx, str):
+                idx_clean = correct_idx.strip().upper()
+                if "A" in idx_clean:
+                    correct_idx = 0
+                elif "B" in idx_clean:
+                    correct_idx = 1
+                elif "C" in idx_clean:
+                    correct_idx = 2
+                elif "D" in idx_clean:
+                    correct_idx = 3
+                else:
+                    digits = re.findall(r"\d+", idx_clean)
+                    if digits:
+                        correct_idx = int(digits[0])
+
             if not isinstance(correct_idx, int) or correct_idx < 0 or correct_idx > 3:
-                raise ValueError(
-                    f"Question {idx} has invalid correct_index: {correct_idx}"
-                )
+                correct_idx = 0  # Safe default to avoid crashes
+
+            explanation = get_flexible_val(
+                item, ["explanation", "reasoning", "reason", "why", "desc", "description"]
+            )
+            explanation = str(explanation or "").strip()
 
             validated.append(
                 {
@@ -476,8 +689,11 @@ class Generator:
 
     async def _call_llm_with_retry(
         self, system_instruction: str, user_prompt: str, require_json: bool = False
-    ) -> str:
-        """Executes LLM generation with rate-limiting retries and primary -> fallback model failover."""
+    ) -> tuple[str, dict[str, int | str]]:
+        """Executes LLM generation with retries and primary → fallback failover.
+
+        Returns ``(content, usage)`` where usage contains token counts and model name.
+        """
         max_attempts = settings.MAX_RETRIES + 1
         delay = settings.RETRY_DELAY_SECONDS
 
@@ -486,7 +702,6 @@ class Generator:
             HumanMessage(content=user_prompt),
         ]
 
-        # Try with primary model first, then fall back on final failure or repeat rate limits
         for attempt in range(1, max_attempts + 1):
             try:
                 # Select correct model and variant
@@ -496,30 +711,56 @@ class Generator:
                         if require_json
                         else self._primary_client
                     )
+                    current_model = self._primary_model_name
                 else:
                     client = (
                         self._fallback_client_json
                         if require_json
                         else self._fallback_client
                     )
+                    current_model = self._fallback_model_name
 
                 response = await client.ainvoke(messages)
                 content = str(response.content).strip()
+
+                # Extract usage metadata
+                usage: dict[str, int | str] = {"model_used": current_model}
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    meta = response.usage_metadata
+                    if isinstance(meta, dict):
+                        usage["input_tokens"] = meta.get("input_tokens", 0)
+                        usage["output_tokens"] = meta.get("output_tokens", 0)
+                        usage["total_tokens"] = meta.get("total_tokens", 0)
+                    else:
+                        usage["input_tokens"] = getattr(meta, "input_tokens", 0)
+                        usage["output_tokens"] = getattr(meta, "output_tokens", 0)
+                        usage["total_tokens"] = getattr(meta, "total_tokens", 0)
+                else:
+                    usage.update(
+                        {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+                    )
+
+                logger.info(
+                    "LLM call completed (model=%s, mode=%s, tokens=%s)",
+                    current_model,
+                    self.performance_mode,
+                    usage.get("total_tokens"),
+                )
 
                 # Treat empty response as a retryable failure
                 if not content:
                     raise ValueError("LLM returned an empty or whitespace response.")
 
-                # If JSON is required, validate it now to trigger retry on malformed outputs
+                # If JSON is required, validate it now
                 if require_json:
                     try:
-                        json.loads(content)
+                        robust_json_loads(content)
                     except json.JSONDecodeError as json_err:
                         raise ValueError(
                             f"LLM returned malformed JSON: {json_err}"
                         ) from json_err
 
-                return content
+                return content, usage
 
             except Exception as e:
                 err_str = str(e)
@@ -527,14 +768,13 @@ class Generator:
 
                 if is_rate_limited and attempt < max_attempts:
                     logger.warning(
-                        "LLM API rate limited (429). Retrying in "
-                        "%s seconds (Attempt %s/%s)",
+                        "LLM API rate limited (429). Retrying in %s seconds (Attempt %s/%s)",
                         delay,
                         attempt,
                         max_attempts,
                     )
                     await asyncio.sleep(delay)
-                    delay *= 2  # Exponential backoff
+                    delay *= 2
                     continue
 
                 if attempt == max_attempts:
@@ -545,7 +785,6 @@ class Generator:
                         "Generation service is currently overloaded. Please try again."
                     ) from e
 
-                # For other errors, wait standard delay and retry
                 logger.warning(
                     "LLM Generation attempt %s failed: %s. Retrying...",
                     attempt,

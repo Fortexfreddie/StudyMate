@@ -17,12 +17,16 @@ import {
   ArrowLeft,
   CheckCircle,
   Loader2,
+  Zap,
+  AlertCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { api, ApiClientError } from "@/lib/api";
+import { api, ApiClientError, getPerformanceMode, setPerformanceMode } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import type { PerformanceMode, UsageResponse } from "@/lib/types";
 
-type ScreenType = "main" | "edit" | "theme" | "help";
+type ScreenType = "main" | "edit" | "theme" | "help" | "performance";
 type ThemeKey = "midnight" | "obsidian" | "sepia";
 
 const THEME_STORAGE_KEY = "studymate_theme";
@@ -30,7 +34,7 @@ const THEME_STORAGE_KEY = "studymate_theme";
 export default function ProfilePage() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
-  const { data: stats } = useApi(() => api.stats.get(), []);
+  const { data: stats, refetch: reloadStats } = useApi(() => api.stats.get(), []);
 
   const [activeScreen, setActiveScreen] = useState<ScreenType>("main");
   const [fullName, setFullName] = useState(user?.full_name ?? "");
@@ -39,19 +43,35 @@ export default function ProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>("midnight");
+  const [selectedPerformanceMode, setSelectedPerformanceMode] = useState<PerformanceMode>("high");
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [faqOpenIndex, setFaqOpenIndex] = useState<number | null>(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Seed form + theme once the user/localStorage are available.
+  // Load initial settings and fetch usage data
   useEffect(() => {
     setFullName(user?.full_name ?? "");
     setMajor(user?.major ?? "");
   }, [user]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeKey | null;
-    if (saved) setSelectedTheme(saved);
-  }, []);
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeKey | null;
+    if (savedTheme) setSelectedTheme(savedTheme);
+
+    const savedPerf = getPerformanceMode() as PerformanceMode;
+    setSelectedPerformanceMode(savedPerf);
+
+    // Fetch daily token usage
+    const fetchUsage = async () => {
+      try {
+        const u = await api.usage.get();
+        setUsage(u);
+      } catch (err) {
+        console.error("Failed to load token usage stats:", err);
+      }
+    };
+    fetchUsage();
+  }, [activeScreen]); // Refresh usage when returning/switching screens
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -64,6 +84,7 @@ export default function ProfilePage() {
       router.push("/login");
     } else if (label === "Edit Profile") setActiveScreen("edit");
     else if (label === "Theme Preference") setActiveScreen("theme");
+    else if (label === "Performance Level") setActiveScreen("performance");
     else if (label === "Help & Support") setActiveScreen("help");
   };
 
@@ -97,6 +118,22 @@ export default function ProfilePage() {
       sepia: "Warm Sepia",
     };
     showToast(`Applied ${labels[selectedTheme]} theme!`);
+    setActiveScreen("main");
+  };
+
+  const handleApplyPerformance = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPerformanceMode(selectedPerformanceMode);
+
+    const labels: Record<PerformanceMode, string> = {
+      low: "Low — Fastest speed, shorter answers, uses low resources ⚡",
+      medium: "Medium — Balanced speed & quality, uses moderate resources ⚡⚡",
+      high: "High — Best quality, detailed reasoning, uses standard resources ⚡⚡⚡",
+      very_high: "Very High — High reasoning depth, comprehensive analysis 🧠⚡⚡⚡",
+      max: "Max — Full power, deepest logical reasoning, maximum resources 🧠🧠⚡⚡⚡",
+    };
+
+    showToast(`Configured ${labels[selectedPerformanceMode]}!`);
     setActiveScreen("main");
   };
 
@@ -192,6 +229,64 @@ export default function ProfilePage() {
                   <span className="text-[9px] font-bold text-accent-gold mt-1 uppercase tracking-wider">Days</span>
                 </div>
               </section>
+
+              {/* Token Usage Card */}
+              <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs sm:text-sm font-extrabold text-white">Daily Token Usage</h4>
+                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                      usage?.is_pro
+                        ? "bg-accent-gold/10 border-accent-gold text-accent-gold"
+                        : "bg-white/5 border-white/10 text-text-muted"
+                    }`}>
+                      {usage?.is_pro ? "Pro Plan" : "Free Plan"}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-extrabold text-accent-gold shrink-0">
+                    Resets in 24h
+                  </span>
+                </div>
+
+                {usage ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-end">
+                      <span className="text-lg font-black text-white leading-none">
+                        {usage.tokens_used_today.toLocaleString()}
+                        <span className="text-xs font-bold text-text-muted"> / {usage.token_limit.toLocaleString()}</span>
+                      </span>
+                      <span className="text-[10px] font-black text-text-muted">
+                        {usage.tokens_remaining.toLocaleString()} left
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="h-2 w-full bg-surface-raised border border-white/5 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          usage.tokens_used_today >= usage.token_limit
+                            ? "bg-accent-coral"
+                            : usage.tokens_used_today >= usage.token_limit * 0.8
+                            ? "bg-[#ffb03a]"
+                            : "bg-accent-gold"
+                        }`}
+                        style={{ width: `${Math.min(100, (usage.tokens_used_today / usage.token_limit) * 100)}%` }}
+                      />
+                    </div>
+
+                    <p className="text-[9px] font-bold text-text-muted leading-tight mt-1 flex items-start gap-1">
+                      <AlertCircle className="h-3 w-3 text-text-muted shrink-0 mt-0.5" />
+                      <span>
+                        Lower performance levels consume significantly fewer tokens and allow more requests per day.
+                      </span>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 text-accent-gold animate-spin" />
+                  </div>
+                )}
+              </section>
             </div>
 
             {/* Menu */}
@@ -199,6 +294,7 @@ export default function ProfilePage() {
               {[
                 { label: "Edit Profile", icon: User },
                 { label: "Theme Preference", icon: Palette },
+                { label: "Performance Level", icon: Zap },
                 { label: "Help & Support", icon: Headphones },
                 { label: "Logout", icon: LogOut },
               ].map((item, idx, arr) => {
@@ -343,6 +439,63 @@ export default function ProfilePage() {
 
           <button type="submit" className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm transition shadow cursor-pointer">
             Apply Theme
+          </button>
+        </form>
+      )}
+
+      {/* PERFORMANCE — dynamic localStorage settings */}
+      {activeScreen === "performance" && (
+        <form onSubmit={handleApplyPerformance} className="flex flex-col gap-5.5 w-full max-w-[520px] mx-auto animate-in fade-in duration-200">
+          <header className="flex items-center gap-3 w-full pb-3 border-b border-white/5">
+            <button type="button" onClick={() => setActiveScreen("main")} className="flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 transition cursor-pointer">
+              <ArrowLeft className="h-4.5 w-4.5 text-white" />
+            </button>
+            <h1 className="text-base sm:text-lg font-black text-white tracking-tight">Performance Level</h1>
+          </header>
+
+          <div className="grid grid-cols-1 gap-3.5 w-full">
+            {([
+              { key: "low", title: "Low Level", desc: "Fastest responses, shorter answers, uses low resources ⚡", badge: "Flash Lite" },
+              { key: "medium", title: "Medium Level", desc: "Balanced speed & quality, uses moderate resources ⚡⚡", badge: "Flash" },
+              { key: "high", title: "High Level (Default)", desc: "Best quality, detailed reasoning, uses standard resources ⚡⚡⚡", badge: "Pro" },
+              { key: "very_high", title: "Very High Level", desc: "High reasoning depth, comprehensive analysis 🧠⚡⚡⚡", badge: "Pro + Deep Thinking" },
+              { key: "max", title: "Max Level", desc: "Full power, deepest logical reasoning, maximum resources 🧠🧠⚡⚡⚡", badge: "Pro + Max Thinking" },
+            ] as const).map((mode) => (
+              <div
+                key={mode.key}
+                onClick={() => setSelectedPerformanceMode(mode.key)}
+                className={`bg-surface rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
+                  selectedPerformanceMode === mode.key ? "border-accent-gold shadow-[0_0_15px_rgba(243,196,148,0.1)]" : "border-white/5 hover:border-white/10"
+                }`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className={`h-7 w-7 rounded-full bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center shrink-0`}>
+                    <Zap className={`h-4 w-4 ${selectedPerformanceMode === mode.key ? "text-accent-gold" : "text-text-muted"}`} />
+                  </div>
+                  <div className="flex flex-col pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs sm:text-sm font-extrabold text-white">{mode.title}</span>
+                      <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-text-muted border border-white/5">
+                        {mode.badge}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-text-muted mt-1 leading-tight">{mode.desc}</span>
+                  </div>
+                </div>
+                {selectedPerformanceMode === mode.key && <Check className="h-4 w-4 text-accent-gold stroke-[3px]" />}
+              </div>
+            ))}
+          </div>
+
+          <p className="text-[10px] text-text-muted px-1 -mt-2 leading-relaxed flex items-start gap-1">
+            <AlertCircle className="h-3.5 w-3.5 text-text-muted shrink-0 mt-0.5" />
+            <span>
+              Higher levels provide more thorough and deeper academic responses using advanced reasoning, but consume significantly more daily tokens.
+            </span>
+          </p>
+
+          <button type="submit" className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm transition shadow cursor-pointer">
+            Apply Performance Settings
           </button>
         </form>
       )}

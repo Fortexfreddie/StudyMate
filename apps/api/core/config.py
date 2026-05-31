@@ -4,6 +4,8 @@ All configuration is centralised here via pydantic-settings.
 Import ``settings`` — never use ``os.getenv()`` directly.
 """
 
+from typing import Any
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -56,12 +58,20 @@ class Settings(BaseSettings):
     # Google AI
     GOOGLE_API_KEY: str  # required — no default
 
-    # Gemini Models
-    GEMINI_PRIMARY_MODEL: str = "gemini-3-flash-preview"
-    GEMINI_FALLBACK_MODEL: str = "gemini-3.1-flash-lite"
+    # Gemini Models — primary/fallback for the "high" performance tier (default)
+    GEMINI_PRIMARY_MODEL: str = "gemini-3.1-pro-preview"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3-flash-preview"
     GENERATION_TEMPERATURE: float = 0.3
     MAX_RETRIES: int = 2
     RETRY_DELAY_SECONDS: int = 2
+
+    # Performance tier model overrides (medium/low use cheaper, faster models)
+    GEMINI_MEDIUM_MODEL: str = "gemini-3-flash-preview"
+    GEMINI_LOW_MODEL: str = "gemini-3.1-flash-lite"
+
+    # Token usage limits (per 24-hour rolling window, per user)
+    FREE_DAILY_TOKEN_LIMIT: int = 50_000
+    PRO_DAILY_TOKEN_LIMIT: int = 500_000
 
     # Embedding
     EMBEDDING_MODEL: str = "models/gemini-embedding-001"
@@ -97,3 +107,45 @@ class Settings(BaseSettings):
 
 # Singleton instance — import this everywhere
 settings = Settings()  # type: ignore[call-arg]
+
+
+# Performance mode configuration — maps each mode to model, thinking, and top_k.
+# This is a module-level constant (not a Settings field) because it's a derived
+# lookup table, not an environment variable.
+PERFORMANCE_MODES: dict[str, dict[str, Any]] = {
+    "low": {
+        "primary": settings.GEMINI_LOW_MODEL,
+        "fallback": settings.GEMINI_LOW_MODEL,
+        "thinking": "minimal",
+        "default_top_k": 5,
+        "max_top_k": 10,
+    },
+    "medium": {
+        "primary": settings.GEMINI_MEDIUM_MODEL,
+        "fallback": settings.GEMINI_LOW_MODEL,
+        "thinking": "low",
+        "default_top_k": 8,
+        "max_top_k": 15,
+    },
+    "high": {
+        "primary": settings.GEMINI_PRIMARY_MODEL,
+        "fallback": settings.GEMINI_FALLBACK_MODEL,
+        "thinking": "medium",
+        "default_top_k": 10,
+        "max_top_k": 20,
+    },
+    "very_high": {
+        "primary": settings.GEMINI_PRIMARY_MODEL,
+        "fallback": settings.GEMINI_FALLBACK_MODEL,
+        "thinking": "high",
+        "default_top_k": 15,
+        "max_top_k": 25,
+    },
+    "max": {
+        "primary": settings.GEMINI_PRIMARY_MODEL,
+        "fallback": settings.GEMINI_PRIMARY_MODEL,
+        "thinking": "high",
+        "default_top_k": 20,
+        "max_top_k": 30,
+    },
+}

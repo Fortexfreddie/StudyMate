@@ -51,6 +51,11 @@ class User(Base):
     # Study major / institution — editable via PATCH /auth/me. Nullable: not
     # collected at signup, so existing accounts have no value until they set one.
     major: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Pro tier flag — False = free (50k tokens/day), True = pro (500k tokens/day).
+    # Flip manually or wire to a payment system later.
+    is_pro: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -62,6 +67,7 @@ class User(Base):
     chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="user")
     quiz_sessions: Mapped[list["QuizSession"]] = relationship(back_populates="user")
     activity: Mapped[list["UserActivity"]] = relationship(back_populates="user")
+    token_usage: Mapped[list["TokenUsage"]] = relationship(back_populates="user")
 
 
 class Document(Base):
@@ -188,6 +194,39 @@ class UserActivity(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="activity")
+
+
+class TokenUsage(Base):
+    """Per-request token usage log for billing and rate limiting.
+
+    Each LLM call (chat, summary, quiz) writes a row with the input/output
+    token counts returned by Gemini's usage_metadata. The daily aggregate
+    is checked before each request to enforce free/pro tier limits.
+    """
+
+    __tablename__ = "token_usage"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    request_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "chat" | "summary" | "quiz"
+    performance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="high"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="token_usage")
 
 
 # Async engine & session

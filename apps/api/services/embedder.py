@@ -23,7 +23,7 @@ class Embedder:
 
         self._client = GoogleGenerativeAIEmbeddings(
             model=settings.EMBEDDING_MODEL,
-            google_api_key=SecretStr(api_key),
+            google_api_key=SecretStr(api_key),  # type: ignore[call-arg]
         )
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:

@@ -21,6 +21,7 @@ import type {
   SummaryResponse,
   UpdateProfileRequest,
   UploadResponse,
+  UsageResponse,
   User,
 } from "./types";
 const API_BASE_URL =
@@ -28,6 +29,16 @@ const API_BASE_URL =
 
 const TOKEN_KEY = "studymate_access_token";
 const REFRESH_KEY = "studymate_refresh_token";
+const PERFORMANCE_KEY = "studymate_performance_mode";
+
+export function getPerformanceMode(): string {
+  if (typeof window === "undefined") return "high";
+  return localStorage.getItem(PERFORMANCE_KEY) || "high";
+}
+
+export function setPerformanceMode(mode: string): void {
+  localStorage.setItem(PERFORMANCE_KEY, mode);
+}
 
 export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -75,6 +86,9 @@ async function request<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
+
+  // Attach performance mode on every request
+  headers["X-Performance-Mode"] = getPerformanceMode();
 
   if (options.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
@@ -185,6 +199,12 @@ export const api = {
   stats: {
     get(): Promise<StatsResponse> {
       return request<StatsResponse>("/stats");
+    },
+  },
+
+  usage: {
+    get(): Promise<UsageResponse> {
+      return request<UsageResponse>("/usage");
     },
   },
 

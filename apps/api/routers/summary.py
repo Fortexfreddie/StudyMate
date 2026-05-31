@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import get_current_user, get_generator, get_retriever
+from core.errors import StudyMateError
 from models.database import ChatMessage, User, get_db
 from models.schemas import SourceInfo, SummaryRequest, SummaryResponse
 from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
+from services.token_service import check_token_budget, record_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +35,22 @@ async def generate_summary(
 ) -> SummaryResponse:
     """Request a rich markdown summary of a specific academic topic.
 
-    The summary is synthesized strictly from the context of the selected document (or globally if doc_id is null).
+    The summary is synthesized strictly from the context of the selected document
+    (or globally if doc_id is null).
     """
-    # 0. Check for a cached response for the exact same summary topic (case-insensitive and trimmed)
-    # in the context of this specific user, document scope, and top_k context limit.
+    # 0. Check token budget
+    allowed, remaining, limit = await check_token_budget(
+        db, current_user.id, current_user.is_pro
+    )
+    if not allowed:
+        raise StudyMateError(
+            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
+            status_code=403,
+        )
+
+    # 1. Check for a cached response
     from sqlalchemy import func, select
 
-    # Format-aware cache key: different formats of the same topic are distinct rows,
-    # so a cache hit always matches the requested format. The stored history `query`
-    # keeps the legacy "Summary request:" prefix (the /stats summary count keys on
-    # it) and appends the format for disambiguation.
     summary_query = f"Summary request: {request.topic} [format={request.format}]"
 
     stmt = (
@@ -62,14 +70,13 @@ async def generate_summary(
 
     if cached_msg:
         logger.info(
-            "Cache HIT for topic summary '%s' (User: %s, Doc: %s, Top-K: %s). Reusing cached summary.",
+            "Cache HIT for topic summary '%s' (User: %s, Doc: %s, Top-K: %s).",
             request.topic,
             current_user.id,
             request.doc_id,
             request.top_k,
         )
 
-        # Save a new history entry reflecting this duplicate interaction
         new_msg = ChatMessage(
             user_id=current_user.id,
             doc_id=request.doc_id,
@@ -83,7 +90,6 @@ async def generate_summary(
         await db.commit()
         await db.refresh(new_msg)
 
-        # Map DB sources back to Pydantic schemas
         cached_sources = []
         if cached_msg.sources:
             for s in cached_msg.sources:
@@ -91,7 +97,6 @@ async def generate_summary(
                 s_val = s.get("similarity_score")
                 page = int(p_val) if isinstance(p_val, int | str) else 1
                 score = float(s_val) if isinstance(s_val, float | int | str) else 0.0
-
                 cached_sources.append(
                     SourceInfo(
                         filename=str(s.get("filename") or "Unknown Document"),
@@ -101,8 +106,6 @@ async def generate_summary(
                     )
                 )
 
-        # Structured payload is not persisted, so a cache hit returns the cached
-        # plain text with structured=None; the frontend renders the text fallback.
         return SummaryResponse(
             summary=cached_msg.answer,
             format=request.format,
@@ -111,21 +114,29 @@ async def generate_summary(
             sources=cached_sources,
         )
 
-    # 1. Retrieve matching chunks from Qdrant for context
+    # 2. Use performance-mode-aware top_k
+    effective_top_k = request.top_k if request.top_k != 5 else generator.default_top_k
+
+    # 3. Retrieve matching chunks from Qdrant for context
     matched_chunks = await retriever.retrieve_relevant_chunks(
         query=request.topic,
         doc_id=request.doc_id,
-        top_k=request.top_k,
+        top_k=effective_top_k,
     )
 
-    # 2. Synthesize the format-specific topic summary using Gemini
-    summary, structured, context_sufficient = await generator.generate_summary(
+    # 4. Synthesize the format-specific topic summary using Gemini
+    summary, structured, context_sufficient, usage = await generator.generate_summary(
         topic=request.topic,
         context=matched_chunks,
         summary_format=request.format,
     )
 
-    # 3. Format matched chunks into API response sources
+    # 5. Record token usage (best-effort)
+    await record_token_usage(
+        db, current_user.id, usage, "summary", generator.performance_mode
+    )
+
+    # 6. Format matched chunks into API response sources
     sources: list[SourceInfo] = []
     sources_dict: list[dict[str, Any]] = []
 
@@ -143,7 +154,6 @@ async def generate_summary(
                 text_preview=text[:200] + "..." if len(text) > 200 else text,
             )
         )
-
         sources_dict.append(
             {
                 "filename": filename,
@@ -153,8 +163,7 @@ async def generate_summary(
             }
         )
 
-    # 4. Save the generated summary in the chat history table as a summary message.
-    # Reuse the format-aware key built at the top so the cache lookup matches.
+    # 7. Save the generated summary in the chat history table
     db_message = ChatMessage(
         user_id=current_user.id,
         doc_id=request.doc_id,

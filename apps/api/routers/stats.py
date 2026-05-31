@@ -15,6 +15,7 @@ from core.dependencies import get_current_user
 from models.database import ChatMessage, Document, QuizSession, User, get_db
 from models.schemas import StatsResponse
 from services.activity_service import compute_streak
+from services.token_service import get_usage_summary
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> StatsResponse:
-    """Return real document/quiz/summary/chat counts, streak, and average score."""
+    """Return real document/quiz/summary/chat counts, streak, average score, and token usage."""
     user_id = current_user.id
 
     # Documents uploaded
@@ -71,14 +72,19 @@ async def get_stats(
 
     current_streak = await compute_streak(db, user_id)
 
+    # Token usage for today
+    usage = await get_usage_summary(db, user_id, current_user.is_pro)
+
     logger.info(
-        "Stats for user %s: docs=%s quizzes=%s summaries=%s chats=%s streak=%s",
+        "Stats for user %s: docs=%s quizzes=%s summaries=%s chats=%s streak=%s tokens=%s/%s",
         user_id,
         documents_uploaded,
         quizzes_taken,
         summaries_generated,
         chats_count,
         current_streak,
+        usage.tokens_used_today,
+        usage.token_limit,
     )
 
     return StatsResponse(
@@ -88,4 +94,7 @@ async def get_stats(
         chats_count=chats_count,
         current_streak=current_streak,
         average_quiz_score=average_quiz_score,
+        tokens_used_today=usage.tokens_used_today,
+        token_limit=usage.token_limit,
+        is_pro=current_user.is_pro,
     )

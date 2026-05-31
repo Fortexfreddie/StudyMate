@@ -3,8 +3,11 @@ export interface User {
   email: string;
   full_name: string;
   major?: string | null;
+  is_pro?: boolean;
   created_at: string;
 }
+
+export type PerformanceMode = "low" | "medium" | "high" | "very_high" | "max";
 
 export interface UpdateProfileRequest {
   full_name?: string;
@@ -263,8 +266,20 @@ export interface StatsResponse {
   chats_count: number;
   current_streak: number;
   average_quiz_score: number;
+  tokens_used_today: number;
+  token_limit: number;
+  is_pro: boolean;
 }
 
 export interface ApiError {
   detail: string;
+}
+
+export interface UsageResponse {
+  tokens_used_today: number;
+  token_limit: number;
+  tokens_remaining: number;
+  is_pro: boolean;
+  usage_by_type: Record<string, number>;
+  reset_time: string;
 }
