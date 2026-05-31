@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Search, SlidersHorizontal, FileText, HelpCircle, MessageSquare, Layers, ExternalLink, Plus } from "lucide-react";
-import { DashboardNav } from "../components/DashboardNav";
+import { IconButton } from "@/components/shared/IconButton";
+import { EmptyState } from "@/components/shared/EmptyState";
 
 interface HistoryItem {
   id: number;
@@ -28,7 +29,7 @@ export default function HistoryPage() {
       title: "Data Structures and Algorithms.pdf",
       type: "document",
       status: "Document Uploaded",
-      statusColor: "bg-[#f3c494]/10 text-[#f3c494] border-brand-primary/10",
+      statusColor: "bg-accent-gold/10 text-accent-gold border-brand-primary/10",
       date: "May 20, 2024",
       time: "10:30 AM",
     },
@@ -64,7 +65,7 @@ export default function HistoryPage() {
       title: "Operating Systems Notes.pdf",
       type: "document",
       status: "Document Uploaded",
-      statusColor: "bg-[#f3c494]/10 text-[#f3c494] border-brand-primary/10",
+      statusColor: "bg-accent-gold/10 text-accent-gold border-brand-primary/10",
       date: "May 19, 2024",
       time: "09:45 PM",
     },
@@ -85,6 +86,8 @@ export default function HistoryPage() {
     return item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
            item.status.toLowerCase().includes(searchQuery.toLowerCase());
   };
+
+  const isFiltering = searchQuery.trim() !== "" || activeTab !== "All";
 
   // Filter & sort list items
   const filteredItems = initialItems
@@ -117,7 +120,7 @@ export default function HistoryPage() {
       case "chat":
         return "bg-sky-400/10 text-sky-400 border-sky-400/20";
       default:
-        return "bg-[#f3c494]/10 text-[#f3c494] border-brand-primary/20";
+        return "bg-accent-gold/10 text-accent-gold border-brand-primary/20";
     }
   };
 
@@ -134,28 +137,21 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white flex flex-col md:flex-row pb-28 md:pb-0">
-      
-      {/* Sidebar Navigation */}
-      <DashboardNav />
+    <div className="flex-1 flex flex-col max-w-[760px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5">
 
-      {/* Main History View */}
-      <div className="flex-1 flex flex-col max-w-[480px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5">
-        
         {/* Navigation bar header with Bell */}
         <header className="flex items-center justify-between w-full select-none">
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
             Study History
           </h1>
-          <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-[#131313] border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0">
-            <Bell className="h-4.5 w-4.5 text-white" />
-            <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-[#ef6868]" />
-          </button>
+          <IconButton aria-label="Notifications" icon={<Bell className="h-4.5 w-4.5 text-white" />}>
+            <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-accent-coral" />
+          </IconButton>
         </header>
 
         {/* SEARCH AND FILTER BAR */}
         <section className="w-full">
-          <div className="w-full bg-[#131313] border border-white/5 rounded-2xl p-3 px-4 flex items-center gap-3 shadow shadow-black/10">
+          <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4 flex items-center gap-3 shadow shadow-black/10">
             <Search className="h-4.5 w-4.5 text-text-muted shrink-0" />
             <input
               type="text"
@@ -177,8 +173,8 @@ export default function HistoryPage() {
             onClick={() => setActiveTab("All")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === "All"
-                ? "border border-[#f3c494] text-[#f3c494] bg-transparent"
-                : "bg-[#131313] border border-white/5 text-text-muted hover:text-white"
+                ? "border border-accent-gold text-accent-gold bg-transparent"
+                : "bg-surface border border-white/5 text-text-muted hover:text-white"
             }`}
           >
             All
@@ -189,8 +185,8 @@ export default function HistoryPage() {
             onClick={() => setActiveTab("Documents")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "Documents"
-                ? "border border-[#f3c494] text-[#f3c494] bg-transparent"
-                : "bg-[#131313] border border-white/5 text-text-muted hover:text-white"
+                ? "border border-accent-gold text-accent-gold bg-transparent"
+                : "bg-surface border border-white/5 text-text-muted hover:text-white"
             }`}
           >
             <FileText className="h-3.5 w-3.5" />
@@ -202,8 +198,8 @@ export default function HistoryPage() {
             onClick={() => setActiveTab("Quizzes")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "Quizzes"
-                ? "border border-[#f3c494] text-[#f3c494] bg-transparent"
-                : "bg-[#131313] border border-white/5 text-text-muted hover:text-white"
+                ? "border border-accent-gold text-accent-gold bg-transparent"
+                : "bg-surface border border-white/5 text-text-muted hover:text-white"
             }`}
           >
             <HelpCircle className="h-3.5 w-3.5" />
@@ -215,8 +211,8 @@ export default function HistoryPage() {
             onClick={() => setActiveTab("Summaries")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "Summaries"
-                ? "border border-[#f3c494] text-[#f3c494] bg-transparent"
-                : "bg-[#131313] border border-white/5 text-text-muted hover:text-white"
+                ? "border border-accent-gold text-accent-gold bg-transparent"
+                : "bg-surface border border-white/5 text-text-muted hover:text-white"
             }`}
           >
             <Layers className="h-3.5 w-3.5" />
@@ -228,8 +224,8 @@ export default function HistoryPage() {
             onClick={() => setActiveTab("Chats")}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               activeTab === "Chats"
-                ? "border border-[#f3c494] text-[#f3c494] bg-transparent"
-                : "bg-[#131313] border border-white/5 text-text-muted hover:text-white"
+                ? "border border-accent-gold text-accent-gold bg-transparent"
+                : "bg-surface border border-white/5 text-text-muted hover:text-white"
             }`}
           >
             <MessageSquare className="h-3.5 w-3.5" />
@@ -272,9 +268,9 @@ export default function HistoryPage() {
               </div>
 
               {/* Activity description card details on the right */}
-              <div className="flex-1 bg-[#131313] border border-white/5 rounded-2xl p-4.5 flex items-center justify-between gap-3 shadow-md shadow-black/10 hover:border-white/10 transition">
+              <div className="flex-1 bg-surface border border-white/5 rounded-2xl p-4.5 flex items-center justify-between gap-3 shadow-md shadow-black/10 hover:border-white/10 transition">
                 <div className="flex flex-col gap-1 min-w-0">
-                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate max-w-[260px]">
+                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">
                     {item.title}
                   </h4>
                   
@@ -294,7 +290,7 @@ export default function HistoryPage() {
                 {/* Right external exit button link */}
                 <button
                   onClick={() => handleActionClick(item)}
-                  className="h-8 w-8 rounded-full bg-white/5 hover:bg-[#f3c494]/10 hover:text-[#f3c494] text-text-muted flex items-center justify-center transition shrink-0 cursor-pointer focus:outline-none"
+                  className="h-8 w-8 rounded-full bg-white/5 hover:bg-accent-gold/10 hover:text-accent-gold text-text-muted flex items-center justify-center transition shrink-0 cursor-pointer focus:outline-none"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
@@ -303,71 +299,54 @@ export default function HistoryPage() {
             </div>
           ))}
 
-          {/* FALLBACK NO HISTORY CARD: Displayed elegantly below activity logs per design */}
-          <div className="w-full bg-[#131313] border border-white/5 rounded-3xl p-6.5 flex flex-col items-center text-center gap-4.5 shadow-md shadow-black/20 select-none mt-2.5">
-            
-            {/* Custom SVG open cardboard box with sliding papers and sparkles stars */}
-            <div className="relative h-20 w-32 select-none flex items-center justify-center">
-              {/* Star sparkles */}
-              <span className="absolute top-0 left-6 text-[#f3c494] text-sm animate-pulse font-mono">*</span>
-              <span className="absolute top-2 right-4 text-[#f3c494] text-xs animate-pulse font-mono">*</span>
-              <span className="absolute bottom-6 left-1 text-[#f3c494] text-xs animate-pulse font-mono">*</span>
-
-              {/* Custom Drawing Cardboard Box SVG */}
-              <svg className="h-16 w-24 overflow-visible" viewBox="0 0 100 80" fill="none">
-                {/* Paper sheet 1 sliding out */}
-                <path d="M28 20 L58 10 L68 25 L38 35 Z" fill="#f4d3b1" opacity="0.9" />
-                <line x1="34" y1="20" x2="48" y2="15" stroke="#3e230d" strokeWidth="0.8" />
-                <line x1="38" y1="24" x2="52" y2="19" stroke="#3e230d" strokeWidth="0.8" />
-
-                {/* Paper sheet 2 sliding out */}
-                <path d="M48 24 L78 16 L86 31 L56 39 Z" fill="#ebd0b5" opacity="0.85" />
-                <line x1="54" y1="24" x2="68" y2="20" stroke="#3e230d" strokeWidth="0.8" />
-                <line x1="58" y1="28" x2="72" y2="24" stroke="#3e230d" strokeWidth="0.8" />
-
-                {/* Cardboard box base - back side */}
-                <path d="M15 45 L50 30 L85 45 L50 60 Z" fill="#c38b55" />
-
-                {/* Left outer box flap open */}
-                <path d="M15 45 L50 30 L35 20 L5 32 Z" fill="#d29a63" />
-
-                {/* Right outer box flap open */}
-                <path d="M50 30 L85 45 L95 32 L65 20 Z" fill="#d29a63" />
-
-                {/* Cardboard box base - front left panel */}
-                <path d="M15 45 L50 60 L50 78 L15 62 Z" fill="#b17b46" />
-
-                {/* Cardboard box base - front right panel */}
-                <path d="M50 60 L85 45 L85 62 L50 78 Z" fill="#9e6c3a" />
-
-                {/* Front box flap open downward */}
-                <path d="M15 45 L50 60 L50 67 L15 52 Z" fill="#c38b55" opacity="0.95" />
-              </svg>
+          {/* EMPTY STATE: shown only when nothing matches */}
+          {filteredItems.length === 0 && (
+            <div className="w-full bg-surface border border-white/5 rounded-3xl p-6.5 shadow-md shadow-black/20 mt-2.5">
+              <EmptyState
+                title={isFiltering ? "No matching activity" : "No study history yet"}
+                description={
+                  isFiltering
+                    ? "Try a different search term or filter to find your activity."
+                    : "Upload documents, take quizzes, generate summaries or chat with AI to see your activity here."
+                }
+                icon={
+                  <div className="relative h-20 w-32 flex items-center justify-center">
+                    <span className="absolute top-0 left-6 text-accent-gold text-sm animate-pulse font-mono">*</span>
+                    <span className="absolute top-2 right-4 text-accent-gold text-xs animate-pulse font-mono">*</span>
+                    <span className="absolute bottom-6 left-1 text-accent-gold text-xs animate-pulse font-mono">*</span>
+                    <svg className="h-16 w-24 overflow-visible" viewBox="0 0 100 80" fill="none">
+                      <path d="M28 20 L58 10 L68 25 L38 35 Z" fill="#f4d3b1" opacity="0.9" />
+                      <line x1="34" y1="20" x2="48" y2="15" stroke="#3e230d" strokeWidth="0.8" />
+                      <line x1="38" y1="24" x2="52" y2="19" stroke="#3e230d" strokeWidth="0.8" />
+                      <path d="M48 24 L78 16 L86 31 L56 39 Z" fill="#ebd0b5" opacity="0.85" />
+                      <line x1="54" y1="24" x2="68" y2="20" stroke="#3e230d" strokeWidth="0.8" />
+                      <line x1="58" y1="28" x2="72" y2="24" stroke="#3e230d" strokeWidth="0.8" />
+                      <path d="M15 45 L50 30 L85 45 L50 60 Z" fill="#c38b55" />
+                      <path d="M15 45 L50 30 L35 20 L5 32 Z" fill="#d29a63" />
+                      <path d="M50 30 L85 45 L95 32 L65 20 Z" fill="#d29a63" />
+                      <path d="M15 45 L50 60 L50 78 L15 62 Z" fill="#b17b46" />
+                      <path d="M50 60 L85 45 L85 62 L50 78 Z" fill="#9e6c3a" />
+                      <path d="M15 45 L50 60 L50 67 L15 52 Z" fill="#c38b55" opacity="0.95" />
+                    </svg>
+                  </div>
+                }
+                action={
+                  !isFiltering && (
+                    <button
+                      onClick={() => router.push("/dashboard/upload")}
+                      className="py-3 px-5 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-full text-xs flex items-center justify-center gap-1.5 transition shadow shadow-accent-gold/10 cursor-pointer select-none focus:outline-none"
+                    >
+                      <Plus className="h-4 w-4 stroke-[3px]" />
+                      Upload Your First Document
+                    </button>
+                  )
+                }
+              />
             </div>
-
-            {/* Empty text descriptors */}
-            <div className="flex flex-col gap-1.5">
-              <h4 className="text-sm sm:text-base font-black text-white">
-                No study history yet
-              </h4>
-              <p className="text-[10px] sm:text-xs text-text-muted max-w-[260px] leading-relaxed">
-                Upload documents, take quizzes, generate summaries or chat with AI to see your activity here.
-              </p>
-            </div>
-
-            {/* Gold Action Button */}
-            <button
-              onClick={() => router.push("/dashboard/upload")}
-              className="py-3 px-5 bg-[#f3c494] hover:bg-[#e0a96d] text-[#3e230d] font-bold rounded-full text-xs flex items-center justify-center gap-1.5 transition shadow shadow-[#f3c494]/10 cursor-pointer select-none focus:outline-none"
-            >
-              <Plus className="h-4 w-4 stroke-[3px]" />
-              Upload Your First Document
-            </button>
-          </div>
+          )}
 
         </section>
 
-      </div>
     </div>
   );
 }

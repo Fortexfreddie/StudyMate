@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, FileText, HelpCircle, Flame, Check, ChevronRight, User, Palette, Headphones, LogOut, TrendingUp, ArrowLeft, Pencil, Camera, CheckCircle } from "lucide-react";
-import { DashboardNav } from "../components/DashboardNav";
+import { Toggle } from "@/components/shared/Toggle";
 
 type ScreenType = "main" | "edit" | "notifications" | "theme" | "help";
 
@@ -78,18 +78,12 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white flex flex-col md:flex-row pb-28 md:pb-0">
-      
-      {/* Sidebar Navigation */}
-      <DashboardNav />
-
-      {/* Main View Area */}
-      <div className="flex-1 flex flex-col max-w-[480px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5 relative">
+    <div className="flex-1 flex flex-col max-w-[820px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5 relative">
         
         {/* Absolute Toast alert notification popup */}
         {toastMessage && (
-          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-[#131313] border border-[#f3c494]/30 px-4 py-2.5 rounded-full flex items-center gap-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
-            <CheckCircle className="h-4 w-4 text-[#f3c494]" />
+          <div role="status" aria-live="polite" className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-surface border border-accent-gold/30 px-4 py-2.5 rounded-full flex items-center gap-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+            <CheckCircle className="h-4 w-4 text-accent-gold" />
             <span className="text-[11px] sm:text-xs font-black text-white">{toastMessage}</span>
           </div>
         )}
@@ -101,22 +95,22 @@ export default function ProfilePage() {
           <>
             {/* Top Header bar with Bell */}
             <header className="flex items-center justify-end w-full relative">
-              <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-[#131313] border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 select-none">
+              <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 select-none">
                 <Bell className="h-4.5 w-4.5 text-white" />
-                <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-[#ef6868]" />
+                <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-accent-coral" />
               </button>
             </header>
 
             {/* Glowing Avatar & Name Details */}
             <section className="flex flex-col items-center text-center gap-3 mt-1.5 select-none">
               <div className="relative">
-                <span className="absolute -top-3 -left-3 text-[#f3c494] text-xs opacity-60 animate-pulse font-mono">*</span>
-                <span className="absolute -top-1 -right-4 text-[#f3c494] text-sm opacity-55 animate-pulse font-mono">*</span>
-                <span className="absolute bottom-2 -left-5 text-[#f3c494] text-[10px] opacity-50 animate-pulse font-mono">*</span>
-                <span className="absolute bottom-4 -right-5 text-[#f3c494] text-xs opacity-45 animate-pulse font-mono">*</span>
+                <span className="absolute -top-3 -left-3 text-accent-gold text-xs opacity-60 animate-pulse font-mono">*</span>
+                <span className="absolute -top-1 -right-4 text-accent-gold text-sm opacity-55 animate-pulse font-mono">*</span>
+                <span className="absolute bottom-2 -left-5 text-accent-gold text-[10px] opacity-50 animate-pulse font-mono">*</span>
+                <span className="absolute bottom-4 -right-5 text-accent-gold text-xs opacity-45 animate-pulse font-mono">*</span>
 
-                <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-[#f3c494]/30 via-[#f3c494]/90 to-[#f3c494]/20 shadow-[0_0_20px_rgba(243,196,148,0.25)] flex items-center justify-center">
-                  <div className="h-full w-full rounded-full overflow-hidden bg-[#181818] border border-black/80">
+                <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-accent-gold/30 via-accent-gold/90 to-accent-gold/20 shadow-[0_0_20px_rgba(243,196,148,0.25)] flex items-center justify-center">
+                  <div className="h-full w-full rounded-full overflow-hidden bg-surface-raised border border-black/80">
                     <img
                       src="/avatar.png"
                       alt="Esther John Profile Avatar"
@@ -127,7 +121,7 @@ export default function ProfilePage() {
 
                 <button
                   onClick={() => setActiveScreen("edit")}
-                  className="absolute bottom-0 right-0 h-6 w-6 rounded-full bg-[#f3c494] hover:bg-[#e0a96d] flex items-center justify-center text-[#3e230d] transition shadow shadow-black/60 cursor-pointer focus:outline-none"
+                  className="absolute bottom-0 right-0 h-6 w-6 rounded-full bg-accent-gold hover:bg-accent-gold-hover flex items-center justify-center text-accent-gold-fg transition shadow shadow-black/60 cursor-pointer focus:outline-none"
                 >
                   <Pencil className="h-3 w-3 fill-current" />
                 </button>
@@ -143,43 +137,48 @@ export default function ProfilePage() {
               </div>
             </section>
 
+            {/* Desktop two-column content grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+
+            <div className="flex flex-col gap-5">
+
             {/* STUDY STATISTICS CARD */}
-            <section className="w-full bg-[#131313] border border-white/5 rounded-3xl p-5 flex flex-col gap-4 shadow-md shadow-black/20">
+            <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-4 shadow-md shadow-black/20">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs sm:text-sm font-extrabold text-white tracking-tight">
                   Study Statistics
                 </h3>
-                <div className="h-7 w-7 rounded-lg bg-[#202020] flex items-center justify-center text-[#f3c494]">
+                <div className="h-7 w-7 rounded-lg bg-surface-raised flex items-center justify-center text-accent-gold">
                   <TrendingUp className="h-4 w-4" />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-1 mt-1 text-center items-stretch justify-around">
                 <div className="flex flex-col items-center justify-between py-1">
-                  <div className="h-9 w-9 rounded-full bg-[#f3c494]/10 flex items-center justify-center text-[#f3c494]">
+                  <div className="h-9 w-9 rounded-full bg-accent-gold/10 flex items-center justify-center text-accent-gold">
                     <FileText className="h-4.5 w-4.5" />
                   </div>
-                  <span className="text-lg font-black text-[#f3c494] mt-2.5 leading-none">24</span>
+                  <span className="text-lg font-black text-accent-gold mt-2.5 leading-none">24</span>
                   <span className="text-[9px] font-bold text-text-muted mt-2 leading-tight max-w-[72px]">
                     Documents Uploaded
                   </span>
                 </div>
                 <div className="w-[1px] bg-white/5 h-20 self-center mx-auto" />
                 <div className="flex flex-col items-center justify-between py-1">
-                  <div className="h-9 w-9 rounded-full bg-[#f3c494]/10 flex items-center justify-center text-[#f3c494]">
+                  <div className="h-9 w-9 rounded-full bg-accent-gold/10 flex items-center justify-center text-accent-gold">
                     <HelpCircle className="h-4.5 w-4.5" />
                   </div>
-                  <span className="text-lg font-black text-[#f3c494] mt-2.5 leading-none">38</span>
+                  <span className="text-lg font-black text-accent-gold mt-2.5 leading-none">38</span>
                   <span className="text-[9px] font-bold text-text-muted mt-2 leading-tight max-w-[72px]">
                     Quizzes Taken
                   </span>
                 </div>
                 <div className="w-[1px] bg-white/5 h-20 self-center mx-auto" />
                 <div className="flex flex-col items-center justify-between py-1">
-                  <div className="h-9 w-9 rounded-full bg-[#f3c494]/10 flex items-center justify-center text-[#f3c494]">
+                  <div className="h-9 w-9 rounded-full bg-accent-gold/10 flex items-center justify-center text-accent-gold">
                     <FileText className="h-4.5 w-4.5" />
                   </div>
-                  <span className="text-lg font-black text-[#f3c494] mt-2.5 leading-none">16</span>
+                  <span className="text-lg font-black text-accent-gold mt-2.5 leading-none">16</span>
                   <span className="text-[9px] font-bold text-text-muted mt-2 leading-tight max-w-[72px]">
                     Summaries Generated
                   </span>
@@ -188,10 +187,10 @@ export default function ProfilePage() {
             </section>
 
             {/* STUDY STREAK CARD */}
-            <section className="w-full bg-[#131313] border border-white/5 rounded-3xl p-5 flex flex-col gap-5 shadow-md shadow-black/20">
+            <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-5 shadow-md shadow-black/20">
               <div className="flex items-center justify-between select-none">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full border-2 border-[#f3c494] bg-[#f3c494]/10 flex items-center justify-center text-[#f3c494] shadow shadow-[#f3c494]/10">
+                  <div className="h-12 w-12 rounded-full border-2 border-accent-gold bg-accent-gold/10 flex items-center justify-center text-accent-gold shadow shadow-accent-gold/10">
                     <Flame className="h-6 w-6 fill-current" />
                   </div>
                   <div className="flex flex-col gap-0.5">
@@ -204,8 +203,8 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end leading-none">
-                  <span className="text-xl font-black text-[#f3c494]">7</span>
-                  <span className="text-[9px] font-bold text-[#f3c494] mt-1 uppercase tracking-wider">Days</span>
+                  <span className="text-xl font-black text-accent-gold">7</span>
+                  <span className="text-[9px] font-bold text-accent-gold mt-1 uppercase tracking-wider">Days</span>
                 </div>
               </div>
 
@@ -221,7 +220,7 @@ export default function ProfilePage() {
                 ].map((streak, idx) => (
                   <div key={idx} className="flex flex-col items-center gap-2">
                     {streak.active ? (
-                      <div className="h-7 w-7 rounded-full bg-[#f3c494] flex items-center justify-center text-[#3e230d] shadow shadow-[#f3c494]/10">
+                      <div className="h-7 w-7 rounded-full bg-accent-gold flex items-center justify-center text-accent-gold-fg shadow shadow-accent-gold/10">
                         <Check className="h-4 w-4 stroke-[3px]" />
                       </div>
                     ) : (
@@ -235,8 +234,10 @@ export default function ProfilePage() {
               </div>
             </section>
 
+            </div>
+
             {/* NAVIGATION MENU LIST */}
-            <section className="w-full bg-[#131313] border border-white/5 rounded-3xl p-2.5 flex flex-col gap-0.5 shadow-md shadow-black/20">
+            <section className="w-full bg-surface border border-white/5 rounded-3xl p-2.5 flex flex-col gap-0.5 shadow-md shadow-black/20">
               {[
                 { label: "Edit Profile", icon: User },
                 { label: "Notification Settings", icon: Bell },
@@ -255,16 +256,16 @@ export default function ProfilePage() {
                       <div className="flex items-center gap-3">
                         <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
                           isLogout
-                            ? "bg-[#ef6868]/15 text-[#ef6868]"
-                            : "bg-[#f3c494]/10 text-[#f3c494]"
+                            ? "bg-accent-coral/15 text-accent-coral"
+                            : "bg-accent-gold/10 text-accent-gold"
                         }`}>
                           <Icon className="h-4.5 w-4.5" />
                         </div>
-                        <span className={`text-xs sm:text-sm font-extrabold ${isLogout ? "text-[#ef6868]" : "text-white"}`}>
+                        <span className={`text-xs sm:text-sm font-extrabold ${isLogout ? "text-accent-coral" : "text-white"}`}>
                           {item.label}
                         </span>
                       </div>
-                      <ChevronRight className={`h-4.5 w-4.5 shrink-0 ${isLogout ? "text-[#ef6868]/60" : "text-text-muted"}`} />
+                      <ChevronRight className={`h-4.5 w-4.5 shrink-0 ${isLogout ? "text-accent-coral/60" : "text-text-muted"}`} />
                     </button>
                     {idx < arr.length - 1 && (
                       <div className="h-[1px] w-[92%] mx-auto bg-white/5" />
@@ -273,6 +274,8 @@ export default function ProfilePage() {
                 );
               })}
             </section>
+
+            </div>
           </>
         )}
 
@@ -280,13 +283,13 @@ export default function ProfilePage() {
         {/* VIEW 2: EDIT PROFILE SUB-SCREEN */}
         {/* ---------------------------------------------------- */}
         {activeScreen === "edit" && (
-          <form onSubmit={handleSaveProfile} className="flex flex-col gap-5.5 w-full animate-in fade-in duration-200">
+          <form onSubmit={handleSaveProfile} className="flex flex-col gap-5.5 w-full max-w-[520px] mx-auto animate-in fade-in duration-200">
             {/* Header subroute title */}
             <header className="flex items-center gap-3 w-full pb-3 border-b border-white/5 shrink-0 select-none">
               <button
                 type="button"
                 onClick={() => setActiveScreen("main")}
-                className="flex items-center justify-center h-10 w-10 rounded-full bg-[#131313] border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
+                className="flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
               >
                 <ArrowLeft className="h-4.5 w-4.5 text-white" />
               </button>
@@ -298,8 +301,8 @@ export default function ProfilePage() {
             {/* Change Profile image layout */}
             <div className="flex flex-col items-center gap-3 my-2 text-center select-none">
               <div className="relative">
-                <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-[#f3c494]/30 via-[#f3c494]/90 to-[#f3c494]/20 shadow-[0_0_20px_rgba(243,196,148,0.25)] flex items-center justify-center">
-                  <div className="h-full w-full rounded-full overflow-hidden bg-[#181818]">
+                <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-accent-gold/30 via-accent-gold/90 to-accent-gold/20 shadow-[0_0_20px_rgba(243,196,148,0.25)] flex items-center justify-center">
+                  <div className="h-full w-full rounded-full overflow-hidden bg-surface-raised">
                     <img
                       src="/avatar.png"
                       alt="Avatar"
@@ -310,7 +313,7 @@ export default function ProfilePage() {
                 <button
                   type="button"
                   onClick={() => alert("Photo pick triggers!")}
-                  className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[#f3c494] hover:bg-[#e0a96d] flex items-center justify-center text-[#3e230d] shadow transition"
+                  className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-accent-gold hover:bg-accent-gold-hover flex items-center justify-center text-accent-gold-fg shadow transition"
                 >
                   <Camera className="h-3.5 w-3.5 fill-current" />
                 </button>
@@ -327,7 +330,7 @@ export default function ProfilePage() {
                 <label className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">
                   Full Name
                 </label>
-                <div className="w-full bg-[#131313] border border-white/5 rounded-2xl p-3 px-4 flex items-center">
+                <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4 flex items-center">
                   <input
                     type="text"
                     value={fullName}
@@ -343,7 +346,7 @@ export default function ProfilePage() {
                 <label className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">
                   Email Address
                 </label>
-                <div className="w-full bg-[#131313]/50 border border-white/5 rounded-2xl p-3 px-4 flex items-center opacity-85 select-none">
+                <div className="w-full bg-surface/50 border border-white/5 rounded-2xl p-3 px-4 flex items-center opacity-85 select-none">
                   <input
                     type="email"
                     value={emailAddress}
@@ -359,7 +362,7 @@ export default function ProfilePage() {
                 <label className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">
                   Study Major / Institution
                 </label>
-                <div className="w-full bg-[#131313] border border-white/5 rounded-2xl p-3 px-4 flex items-center">
+                <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4 flex items-center">
                   <input
                     type="text"
                     value={majorField}
@@ -375,7 +378,7 @@ export default function ProfilePage() {
             <div className="flex flex-col gap-2.5 mt-5">
               <button
                 type="submit"
-                className="w-full py-4 bg-[#f3c494] hover:bg-[#e0a96d] text-[#3e230d] font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
+                className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
               >
                 Save Profile Changes
               </button>
@@ -394,12 +397,12 @@ export default function ProfilePage() {
         {/* VIEW 3: NOTIFICATION SETTINGS SUB-SCREEN */}
         {/* ---------------------------------------------------- */}
         {activeScreen === "notifications" && (
-          <form onSubmit={handleSaveNotifications} className="flex flex-col gap-5.5 w-full animate-in fade-in duration-200">
+          <form onSubmit={handleSaveNotifications} className="flex flex-col gap-5.5 w-full max-w-[520px] mx-auto animate-in fade-in duration-200">
             <header className="flex items-center gap-3 w-full pb-3 border-b border-white/5 shrink-0 select-none">
               <button
                 type="button"
                 onClick={() => setActiveScreen("main")}
-                className="flex items-center justify-center h-10 w-10 rounded-full bg-[#131313] border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
+                className="flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
               >
                 <ArrowLeft className="h-4.5 w-4.5 text-white" />
               </button>
@@ -409,26 +412,14 @@ export default function ProfilePage() {
             </header>
 
             {/* Toggles Panel */}
-            <div className="w-full bg-[#131313] border border-white/5 rounded-3xl p-5 flex flex-col gap-5 shadow-sm">
+            <div className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-5 shadow-sm">
               {/* Toggle 1: AI Study Reminders */}
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5 max-w-[70%]">
                   <span className="text-xs sm:text-sm font-extrabold text-white">AI Study Reminders</span>
                   <span className="text-[10px] text-text-muted leading-tight">Get push alerts on incomplete quiz schedules</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setStudyReminders(!studyReminders)}
-                  className={`w-11 h-6 rounded-full relative p-0.5 transition-colors cursor-pointer outline-none focus:outline-none ${
-                    studyReminders ? "bg-[#f3c494]" : "bg-[#181818] border border-white/10"
-                  }`}
-                >
-                  <div
-                    className={`h-4.5 w-4.5 rounded-full shadow transition-transform ${
-                      studyReminders ? "translate-x-5 bg-[#3e230d]" : "translate-x-0 bg-text-muted"
-                    }`}
-                  />
-                </button>
+                <Toggle label="AI Study Reminders" checked={studyReminders} onChange={setStudyReminders} />
               </div>
 
               <div className="h-[1px] w-full bg-white/5" />
@@ -439,19 +430,7 @@ export default function ProfilePage() {
                   <span className="text-xs sm:text-sm font-extrabold text-white">Push Announcements</span>
                   <span className="text-[10px] text-text-muted leading-tight">Get warnings when AI finishes document parsing</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setPushNotes(!pushNotes)}
-                  className={`w-11 h-6 rounded-full relative p-0.5 transition-colors cursor-pointer outline-none focus:outline-none ${
-                    pushNotes ? "bg-[#f3c494]" : "bg-[#181818] border border-white/10"
-                  }`}
-                >
-                  <div
-                    className={`h-4.5 w-4.5 rounded-full shadow transition-transform ${
-                      pushNotes ? "translate-x-5 bg-[#3e230d]" : "translate-x-0 bg-text-muted"
-                    }`}
-                  />
-                </button>
+                <Toggle label="Push Announcements" checked={pushNotes} onChange={setPushNotes} />
               </div>
 
               <div className="h-[1px] w-full bg-white/5" />
@@ -462,19 +441,7 @@ export default function ProfilePage() {
                   <span className="text-xs sm:text-sm font-extrabold text-white">Weekly Study Progress</span>
                   <span className="text-[10px] text-text-muted leading-tight">Receive email digests outlining streak activity metrics</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setWeeklyDigest(!weeklyDigest)}
-                  className={`w-11 h-6 rounded-full relative p-0.5 transition-colors cursor-pointer outline-none focus:outline-none ${
-                    weeklyDigest ? "bg-[#f3c494]" : "bg-[#181818] border border-white/10"
-                  }`}
-                >
-                  <div
-                    className={`h-4.5 w-4.5 rounded-full shadow transition-transform ${
-                      weeklyDigest ? "translate-x-5 bg-[#3e230d]" : "translate-x-0 bg-text-muted"
-                    }`}
-                  />
-                </button>
+                <Toggle label="Weekly Study Progress" checked={weeklyDigest} onChange={setWeeklyDigest} />
               </div>
             </div>
 
@@ -482,7 +449,7 @@ export default function ProfilePage() {
             <div className="flex flex-col gap-2.5 mt-5">
               <button
                 type="submit"
-                className="w-full py-4 bg-[#f3c494] hover:bg-[#e0a96d] text-[#3e230d] font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
+                className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
               >
                 Save Notification Rules
               </button>
@@ -494,12 +461,12 @@ export default function ProfilePage() {
         {/* VIEW 4: THEME PREFERENCE SUB-SCREEN */}
         {/* ---------------------------------------------------- */}
         {activeScreen === "theme" && (
-          <form onSubmit={handleApplyTheme} className="flex flex-col gap-5.5 w-full animate-in fade-in duration-200">
+          <form onSubmit={handleApplyTheme} className="flex flex-col gap-5.5 w-full max-w-[520px] mx-auto animate-in fade-in duration-200">
             <header className="flex items-center gap-3 w-full pb-3 border-b border-white/5 shrink-0 select-none">
               <button
                 type="button"
                 onClick={() => setActiveScreen("main")}
-                className="flex items-center justify-center h-10 w-10 rounded-full bg-[#131313] border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
+                className="flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
               >
                 <ArrowLeft className="h-4.5 w-4.5 text-white" />
               </button>
@@ -513,63 +480,63 @@ export default function ProfilePage() {
               {/* Option 1: Midnight Black */}
               <div
                 onClick={() => setSelectedTheme("midnight")}
-                className={`bg-[#131313] rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
+                className={`bg-surface rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
                   selectedTheme === "midnight"
-                    ? "border-[#f3c494] shadow-[0_0_15px_rgba(243,196,148,0.1)]"
+                    ? "border-accent-gold shadow-[0_0_15px_rgba(243,196,148,0.1)]"
                     : "border-white/5 hover:border-white/10"
                 }`}
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="h-7 w-7 rounded-full bg-[#080808] border border-[#f3c494]/30 shrink-0" />
+                  <div className="h-7 w-7 rounded-full bg-bg-main border border-accent-gold/30 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-xs sm:text-sm font-extrabold text-white">Midnight Black</span>
                     <span className="text-[10px] text-text-muted">Pitch black palette, gold accenting</span>
                   </div>
                 </div>
                 {selectedTheme === "midnight" && (
-                  <Check className="h-4 w-4 text-[#f3c494] stroke-[3px]" />
+                  <Check className="h-4 w-4 text-accent-gold stroke-[3px]" />
                 )}
               </div>
 
               {/* Option 2: Obsidian Charcoal */}
               <div
                 onClick={() => setSelectedTheme("obsidian")}
-                className={`bg-[#131313] rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
+                className={`bg-surface rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
                   selectedTheme === "obsidian"
-                    ? "border-[#f3c494] shadow-[0_0_15px_rgba(243,196,148,0.1)]"
+                    ? "border-accent-gold shadow-[0_0_15px_rgba(243,196,148,0.1)]"
                     : "border-white/5 hover:border-white/10"
                 }`}
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="h-7 w-7 rounded-full bg-[#181818] border border-white/10 shrink-0" />
+                  <div className="h-7 w-7 rounded-full bg-surface-raised border border-white/10 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-xs sm:text-sm font-extrabold text-white">Obsidian Charcoal</span>
                     <span className="text-[10px] text-text-muted">Dark grey palette, gold elements</span>
                   </div>
                 </div>
                 {selectedTheme === "obsidian" && (
-                  <Check className="h-4 w-4 text-[#f3c494] stroke-[3px]" />
+                  <Check className="h-4 w-4 text-accent-gold stroke-[3px]" />
                 )}
               </div>
 
               {/* Option 3: Warm Sepia */}
               <div
                 onClick={() => setSelectedTheme("sepia")}
-                className={`bg-[#131313] rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
+                className={`bg-surface rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
                   selectedTheme === "sepia"
-                    ? "border-[#f3c494] shadow-[0_0_15px_rgba(243,196,148,0.1)]"
+                    ? "border-accent-gold shadow-[0_0_15px_rgba(243,196,148,0.1)]"
                     : "border-white/5 hover:border-white/10"
                 }`}
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="h-7 w-7 rounded-full bg-[#1d1916] border border-[#f3c494]/20 shrink-0" />
+                  <div className="h-7 w-7 rounded-full bg-[#1d1916] border border-accent-gold/20 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-xs sm:text-sm font-extrabold text-white">Warm Sepia</span>
                     <span className="text-[10px] text-text-muted">Cozy warm aesthetics, orange-gold</span>
                   </div>
                 </div>
                 {selectedTheme === "sepia" && (
-                  <Check className="h-4 w-4 text-[#f3c494] stroke-[3px]" />
+                  <Check className="h-4 w-4 text-accent-gold stroke-[3px]" />
                 )}
               </div>
             </div>
@@ -578,7 +545,7 @@ export default function ProfilePage() {
             <div className="flex flex-col gap-2.5 mt-5">
               <button
                 type="submit"
-                className="w-full py-4 bg-[#f3c494] hover:bg-[#e0a96d] text-[#3e230d] font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
+                className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
               >
                 Apply Theme Mode
               </button>
@@ -590,12 +557,12 @@ export default function ProfilePage() {
         {/* VIEW 5: HELP & SUPPORT SUB-SCREEN */}
         {/* ---------------------------------------------------- */}
         {activeScreen === "help" && (
-          <div className="flex flex-col gap-5.5 w-full animate-in fade-in duration-200">
+          <div className="flex flex-col gap-5.5 w-full max-w-[520px] mx-auto animate-in fade-in duration-200">
             <header className="flex items-center gap-3 w-full pb-3 border-b border-white/5 shrink-0 select-none">
               <button
                 type="button"
                 onClick={() => setActiveScreen("main")}
-                className="flex items-center justify-center h-10 w-10 rounded-full bg-[#131313] border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
+                className="flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 hover:border-white/10 transition shrink-0 cursor-pointer"
               >
                 <ArrowLeft className="h-4.5 w-4.5 text-white" />
               </button>
@@ -606,7 +573,7 @@ export default function ProfilePage() {
 
             {/* FAQs expanding Accordion */}
             <section className="flex flex-col gap-3 w-full">
-              <h3 className="text-xs font-black text-[#f3c494] uppercase tracking-wider px-1">
+              <h3 className="text-xs font-black text-accent-gold uppercase tracking-wider px-1">
                 Frequently Asked Questions
               </h3>
 
@@ -629,7 +596,7 @@ export default function ProfilePage() {
                   return (
                     <div
                       key={idx}
-                      className="bg-[#131313] border border-white/5 rounded-2xl overflow-hidden transition"
+                      className="bg-surface border border-white/5 rounded-2xl overflow-hidden transition"
                     >
                       <button
                         type="button"
@@ -640,12 +607,12 @@ export default function ProfilePage() {
                           {faq.q}
                         </span>
                         <ChevronRight className={`h-4.5 w-4.5 text-text-muted shrink-0 transition-transform duration-200 ${
-                          isOpen ? "rotate-90 text-[#f3c494]" : ""
+                          isOpen ? "rotate-90 text-accent-gold" : ""
                         }`} />
                       </button>
 
                       {isOpen && (
-                        <div className="p-4 pt-0 text-[11px] sm:text-xs text-text-muted leading-relaxed border-t border-white/5/5 bg-[#181818]/40 animate-in fade-in duration-200">
+                        <div className="p-4 pt-0 text-[11px] sm:text-xs text-text-muted leading-relaxed border-t border-white/5 bg-surface-raised/40 animate-in fade-in duration-200">
                           {faq.a}
                         </div>
                       )}
@@ -657,20 +624,20 @@ export default function ProfilePage() {
 
             {/* Contact ticket form */}
             <form onSubmit={handleSendHelp} className="flex flex-col gap-3.5 w-full mt-2.5">
-              <h3 className="text-xs font-black text-[#f3c494] uppercase tracking-wider px-1">
+              <h3 className="text-xs font-black text-accent-gold uppercase tracking-wider px-1">
                 Send Support Ticket
               </h3>
 
               <div className="flex flex-col gap-2.5">
                 <textarea
                   placeholder="How can we help? Explain your issue here..."
-                  className="w-full h-24 bg-[#131313] border border-white/5 rounded-2xl p-3.5 text-xs sm:text-sm text-white placeholder:text-text-muted focus:ring-0 focus:outline-none resize-none"
+                  className="w-full h-24 bg-surface border border-white/5 rounded-2xl p-3.5 text-xs sm:text-sm text-white placeholder:text-text-muted focus:ring-0 focus:outline-none resize-none"
                   required
                 />
                 
                 <button
                   type="submit"
-                  className="w-full py-4 bg-[#f3c494] hover:bg-[#e0a96d] text-[#3e230d] font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
+                  className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center transition shadow cursor-pointer select-none"
                 >
                   Send Support Message
                 </button>
@@ -679,7 +646,6 @@ export default function ProfilePage() {
           </div>
         )}
 
-      </div>
     </div>
   );
 }

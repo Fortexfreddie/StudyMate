@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { Search, Bell, HelpCircle, FileUp, FileText, ChevronRight, Award, BookOpen } from "lucide-react";
 import { ProgressRing } from "./components/ProgressRing";
 import { DocumentCard } from "./components/DocumentCard";
-import { DashboardNav } from "./components/DashboardNav";
+import { IconButton } from "@/components/shared/IconButton";
+import { MOCK_DOCUMENTS } from "@/lib/mocks";
 
 export default function DashboardPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -16,7 +18,7 @@ export default function DashboardPage() {
     // w-[220px] card + gap-4 (16px) = 236px
     const cardWidthWithGap = 236;
     const newIndex = Math.round(scrollLeft / cardWidthWithGap);
-    setActiveCardIndex(Math.min(Math.max(newIndex, 0), 3));
+    setActiveCardIndex(Math.min(Math.max(newIndex, 0), MOCK_DOCUMENTS.length - 1));
   };
 
   const handleDotClick = (index: number) => {
@@ -30,14 +32,8 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-main text-white flex flex-col md:flex-row pb-24 md:pb-0">
-      
-      {/* Navigation Layout */}
-      <DashboardNav />
+    <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full">
 
-      {/* Main Dashboard Space */}
-      <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full">
-        
         {/* Header greeting & buttons */}
         <header className="flex items-center justify-between w-full mb-8">
           <div>
@@ -45,16 +41,10 @@ export default function DashboardPage() {
               Hello, <span className="font-extrabold">Esther</span>
             </h2>
           </div>
-          
+
           <div className="flex items-center gap-3">
-            <button className="flex items-center justify-center h-10 w-10 rounded-full bg-card-bg border border-border-subtle hover:bg-white/5 hover:border-white/20 transition">
-              <Search className="h-4.5 w-4.5 text-white" />
-            </button>
-            <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-card-bg border border-border-subtle hover:bg-white/5 hover:border-white/20 transition">
-              <Bell className="h-4.5 w-4.5 text-white" />
-              {/* Notification active dot */}
-              <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-primary" />
-            </button>
+            <IconButton aria-label="Search" icon={<Search className="h-4.5 w-4.5 text-white" />} />
+            <IconButton aria-label="Notifications" dot icon={<Bell className="h-4.5 w-4.5 text-white" />} />
           </div>
         </header>
 
@@ -85,7 +75,7 @@ export default function DashboardPage() {
             label="Summaries"
             sublabel="Generated"
             strokeColor="#ef6868"
-            icon={<FileText className="h-4.5 w-4.5 text-[#ef6868]" />}
+            icon={<FileText className="h-4.5 w-4.5 text-accent-coral" />}
           />
         </section>
 
@@ -95,10 +85,10 @@ export default function DashboardPage() {
             <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
               Recent Documents
             </h2>
-            <button className="flex items-center gap-1.5 text-xs font-bold text-brand-primary hover:underline">
+            <Link href="/dashboard/documents" className="flex items-center gap-1.5 text-xs font-bold text-brand-primary hover:underline">
               View all
               <ChevronRight className="h-3 w-3" />
-            </button>
+            </Link>
           </div>
 
           {/* Documents Grid / Horizontal slider */}
@@ -107,47 +97,22 @@ export default function DashboardPage() {
             onScroll={handleScroll}
             className="flex md:grid md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 overflow-x-auto md:overflow-x-visible pt-2 pb-6 px-1 no-scrollbar snap-x snap-mandatory"
           >
-            <div className="snap-start shrink-0 w-[215px] sm:w-[220px] md:w-full">
-              <DocumentCard
-                id="data-structures"
-                title="Data Structures and Algorithms.pdf"
-                bgColor="#f3c494"
-                textColor="#3e230d"
-                type="computer-science"
-              />
-            </div>
-            <div className="snap-start shrink-0 w-[215px] sm:w-[220px] md:w-full">
-              <DocumentCard
-                id="human-anatomy"
-                title="Human Anatomy Essentials.pdf"
-                bgColor="#e6a19f"
-                textColor="#47201f"
-                type="medical"
-              />
-            </div>
-            <div className="snap-start shrink-0 w-[215px] sm:w-[220px] md:w-full">
-              <DocumentCard
-                id="neural-networks"
-                title="Introduction to Neural Networks.pdf"
-                bgColor="#b2d0d6"
-                textColor="#223f45"
-                type="computer-science"
-              />
-            </div>
-            <div className="snap-start shrink-0 w-[215px] sm:w-[220px] md:w-full">
-              <DocumentCard
-                id="organic-chemistry"
-                title="Organic Chemistry Nomenclature.pdf"
-                bgColor="#d6b2d1"
-                textColor="#452240"
-                type="medical"
-              />
-            </div>
+            {MOCK_DOCUMENTS.map((doc) => (
+              <div key={doc.doc_id} className="snap-start shrink-0 w-[215px] sm:w-[220px] md:w-full">
+                <DocumentCard
+                  id={doc.doc_id}
+                  title={doc.filename}
+                  bgColor={doc.bgColor}
+                  textColor={doc.textColor}
+                  type={doc.category}
+                />
+              </div>
+            ))}
           </div>
 
           {/* Dots Indicator */}
           <div className="flex md:hidden items-center justify-center gap-2 mt-2 w-full">
-            {[0, 1, 2, 3].map((index) => (
+            {MOCK_DOCUMENTS.map((_, index) => (
               <button
                 key={index}
                 onClick={() => handleDotClick(index)}
@@ -165,10 +130,10 @@ export default function DashboardPage() {
             <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
               Recent Activity
             </h2>
-            <button className="flex items-center gap-1.5 text-xs font-bold text-brand-primary hover:underline">
+            <Link href="/dashboard/history" className="flex items-center gap-1.5 text-xs font-bold text-brand-primary hover:underline">
               View all
               <ChevronRight className="h-3 w-3" />
-            </button>
+            </Link>
           </div>
 
           <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col gap-4 shadow-lg shadow-black/20">
@@ -197,7 +162,7 @@ export default function DashboardPage() {
             {/* Item 2 */}
             <div className="flex items-center justify-between gap-4 w-full">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-[#ef6868]/10 border border-[#ef6868]/20 flex items-center justify-center text-[#ef6868] shrink-0">
+                <div className="h-10 w-10 rounded-2xl bg-accent-coral/10 border border-accent-coral/20 flex items-center justify-center text-accent-coral shrink-0">
                   <BookOpen className="h-5 w-5" />
                 </div>
                 <div className="flex flex-col">
@@ -209,14 +174,13 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
-              <span className="text-xs font-bold text-[#ef6868] bg-[#ef6868]/10 border border-[#ef6868]/20 rounded-full px-2.5 py-1">
+              <span className="text-xs font-bold text-accent-coral bg-accent-coral/10 border border-accent-coral/20 rounded-full px-2.5 py-1">
                 Summary
               </span>
             </div>
           </div>
         </section>
 
-      </div>
     </div>
   );
 }

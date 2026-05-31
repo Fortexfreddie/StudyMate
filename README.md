@@ -13,7 +13,7 @@ A full-stack web application that lets students upload PDF lecture notes and int
 |---|---|
 | Phase 1 — Scaffolding & Infrastructure | ✅ Complete |
 | Phase 2 — Backend Core (Auth, RAG, Endpoints) | ✅ Complete |
-| Phase 3 — Frontend (Next.js) | 🔲 Not started |
+| Phase 3 — Frontend (Next.js) | 🚧 In progress |
 | Phase 4 — Integration & Polish | 🔲 Not started |
 | Phase 5 — Deployment | 🔲 Not started |
 
@@ -79,7 +79,8 @@ StudyMate/
 
 ### Prerequisites
 
-- Python 3.11+
+- Node.js 20+ (frontend)
+- Python 3.11+ (backend)
 - PostgreSQL (local pgAdmin or Neon free tier)
 - Qdrant Cloud account (free tier)
 - Google AI Studio API key
@@ -117,6 +118,37 @@ uvicorn main:app --reload --port 8000
 curl http://localhost:8000/health
 # → {"status": "ok", "version": "1.0.0"}
 ```
+
+### Frontend Setup
+
+The frontend is a Next.js 16 app in `apps/web`. It can run fully standalone against mock data (no backend required) or against the live API.
+
+```bash
+# Navigate to frontend
+cd apps/web
+
+# Install dependencies
+npm install
+
+# Copy environment variables
+copy .env.example .env.local     # Windows
+# cp .env.example .env.local     # macOS/Linux
+
+# Start the development server
+npm run dev
+```
+
+Open the app at the port set in `.env.local` (default **http://localhost:3000**).
+
+#### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Port the Next.js dev/start server listens on |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Base URL of the FastAPI backend |
+| `NEXT_PUBLIC_USE_MOCKS` | `true` | When `true`, the UI reads from `lib/mocks/` and needs no backend. Set to `false` to call the live API. |
+
+> **Mock mode:** With `NEXT_PUBLIC_USE_MOCKS=true`, auth and all dashboard screens use typed mock data shaped to the API contract in `lib/types.ts`. Flip it to `false` once the backend is running to switch every screen to live data — no code changes needed.
 
 ---
 

@@ -14,6 +14,8 @@ import {
   clearTokens,
   getAccessToken,
 } from "@/lib/api";
+import { USE_MOCKS } from "@/lib/config";
+import { createMockUser } from "@/lib/mocks";
 
 interface AuthContextValue {
   user: User | null;
@@ -36,6 +38,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     async function hydrate() {
+      if (USE_MOCKS) {
+        setUser(createMockUser());
+        setIsLoading(false);
+        return;
+      }
       const token = getAccessToken();
       if (!token) {
         setIsLoading(false);
@@ -54,19 +61,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   async function login(email: string, password: string): Promise<void> {
-    try {
-      const tokens = await api.auth.login({ email, password });
-      setTokens(tokens.access_token, tokens.refresh_token);
-      const userData = await api.auth.me();
-      setUser(userData);
-    } catch {
-      setUser({
-        id: "mock-id",
-        email: email || "student@futo.edu",
-        full_name: "Esther",
-        created_at: new Date().toISOString(),
-      });
+    if (USE_MOCKS) {
+      setUser(createMockUser({ email: email || undefined }));
+      return;
     }
+    const tokens = await api.auth.login({ email, password });
+    setTokens(tokens.access_token, tokens.refresh_token);
+    const userData = await api.auth.me();
+    setUser(userData);
   }
 
   async function signup(
@@ -74,22 +76,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     password: string,
     fullName: string
   ): Promise<void> {
-    try {
-      const response = await api.auth.signup({
-        email,
-        password,
-        full_name: fullName,
-      });
-      setTokens(response.access_token, response.refresh_token);
-      setUser(response.user);
-    } catch {
-      setUser({
-        id: "mock-id",
-        email: email,
-        full_name: fullName,
-        created_at: new Date().toISOString(),
-      });
+    if (USE_MOCKS) {
+      setUser(createMockUser({ email, full_name: fullName }));
+      return;
     }
+    const response = await api.auth.signup({
+      email,
+      password,
+      full_name: fullName,
+    });
+    setTokens(response.access_token, response.refresh_token);
+    setUser(response.user);
   }
 
   function logout(): void {

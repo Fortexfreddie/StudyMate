@@ -132,7 +132,7 @@ export function DocumentCard({ id, title, bgColor, textColor, type }: DocumentCa
 
       {/* Bottom overlay Start Reading pill */}
       <Link href={`/dashboard/document/${id}`} className="w-full">
-        <div className="w-full bg-[#0d0d0d] rounded-2xl py-3 px-4 flex items-center justify-between transition hover:bg-[#141414] cursor-pointer">
+        <div className="w-full bg-bg-main rounded-2xl py-3 px-4 flex items-center justify-between transition hover:bg-card-bg cursor-pointer">
           <span className="text-xs font-bold text-white leading-none">
             Start Reading
           </span>

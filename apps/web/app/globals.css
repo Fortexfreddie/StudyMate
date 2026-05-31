@@ -2,11 +2,18 @@
 
 @theme {
   --color-bg-main: #0d0d0d;
+  --color-surface: #131313;
+  --color-surface-raised: #181818;
   --color-card-bg: #141414;
   --color-input-bg: #1a1a1a;
   --color-brand-primary: #f09e5b;
   --color-brand-primary-hover: #e08e4b;
+  --color-accent-gold: #f3c494;
+  --color-accent-gold-hover: #e0a96d;
+  --color-accent-gold-fg: #3e230d;
+  --color-accent-coral: #ef6868;
   --color-border-subtle: #262626;
+  --color-border-faint: #1f1f1f;
   --color-text-muted: #8a8a8a;
   --color-error-text: #ef4444;
 }

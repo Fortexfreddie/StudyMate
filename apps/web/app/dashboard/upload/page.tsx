@@ -2,9 +2,10 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bell, FileText, Upload, ChevronRight, MoreVertical } from "lucide-react";
+import { FileText, Upload, ChevronRight, MoreVertical } from "lucide-react";
 import { UploadIllustration } from "./components/UploadIllustration";
-import { DashboardNav } from "../components/DashboardNav";
+import { PageHeader } from "@/components/dashboard/PageHeader";
+import { MOCK_DOCUMENTS } from "@/lib/mocks";
 
 interface RecentUpload {
   id: string;
@@ -14,35 +15,21 @@ interface RecentUpload {
   textColor: string;
 }
 
+const INITIAL_UPLOADS: RecentUpload[] = MOCK_DOCUMENTS.slice(0, 3).map((doc) => ({
+  id: doc.doc_id,
+  title: doc.filename,
+  time: "Uploaded",
+  bgColor: doc.bgColor,
+  textColor: doc.textColor,
+}));
+
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [docName, setDocName] = useState("");
   const [dragActive, setDragActive] = useState(false);
 
-  const [uploads, setUploads] = useState<RecentUpload[]>([
-    {
-      id: "data-structures",
-      title: "Data Structures and Algorithms.pdf",
-      time: "Uploaded • 2 hours ago",
-      bgColor: "#f3c494",
-      textColor: "#3e230d",
-    },
-    {
-      id: "operating-systems",
-      title: "Operating Systems Notes.pdf",
-      time: "Uploaded • 1 day ago",
-      bgColor: "#e6a19f",
-      textColor: "#47201f",
-    },
-    {
-      id: "computer-networks",
-      title: "Computer Networks.pdf",
-      time: "Uploaded • 3 days ago",
-      bgColor: "#b2d0d6",
-      textColor: "#223f45",
-    },
-  ]);
+  const [uploads, setUploads] = useState<RecentUpload[]>(INITIAL_UPLOADS);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -95,33 +82,13 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-main text-white flex flex-col md:flex-row pb-28 md:pb-0">
-      
-      {/* Sidebar / Bottom Navigation Bar */}
-      <DashboardNav />
+    <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-[800px] mx-auto w-full">
 
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-[800px] mx-auto w-full">
-        
-        {/* Floating Top Header bar */}
-        <header className="flex items-center justify-between w-full mb-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="flex items-center justify-center h-10 w-10 rounded-full bg-card-bg border border-border-subtle hover:bg-white/5 hover:border-white/20 transition cursor-pointer"
-            >
-              <ArrowLeft className="h-4.5 w-4.5 text-white" />
-            </button>
-            <h1 className="text-sm sm:text-base font-bold text-white">
-              Upload Document
-            </h1>
-          </div>
-
-          <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-card-bg border border-border-subtle hover:bg-white/5 hover:border-white/20 transition">
-            <Bell className="h-4.5 w-4.5 text-white" />
-            <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-primary" />
-          </button>
-        </header>
+        <PageHeader
+          title="Upload Document"
+          onBack={() => router.push("/dashboard")}
+          className="mb-6"
+        />
 
         {/* Upload Interface Form */}
         <form onSubmit={handleUploadSubmit} className="flex flex-col gap-6 w-full">
@@ -136,7 +103,7 @@ export default function UploadPage() {
             className={`relative w-full border-2 border-dashed rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center cursor-pointer transition duration-300 min-h-[220px] ${
               dragActive
                 ? "border-brand-primary bg-brand-primary/5"
-                : "border-[#f3c494]/20 bg-card-bg/25 hover:border-[#f3c494]/45 hover:bg-card-bg/40"
+                : "border-accent-gold/20 bg-card-bg/25 hover:border-accent-gold/45 hover:bg-card-bg/40"
             }`}
           >
             {/* Hidden native input file */}
@@ -162,8 +129,8 @@ export default function UploadPage() {
             </div>
 
             {/* Pill Badge */}
-            <div className="mt-4 px-3 py-1 rounded-full bg-[#121212] border border-[#f3c494]/15">
-              <span className="text-[10px] sm:text-xs font-bold text-[#f3c494]/90">
+            <div className="mt-4 px-3 py-1 rounded-full bg-surface border border-accent-gold/15">
+              <span className="text-[10px] sm:text-xs font-bold text-accent-gold/90">
                 PDF only • Max 20MB
               </span>
             </div>
@@ -194,7 +161,7 @@ export default function UploadPage() {
             disabled={!docName.trim()}
             className={`w-full flex items-center justify-center gap-2 rounded-2xl py-4.5 px-4 font-bold text-sm select-none transition duration-200 cursor-pointer ${
               docName.trim()
-                ? "bg-brand-primary text-[#3e230d] hover:bg-brand-primary-hover shadow-lg shadow-brand-primary/10"
+                ? "bg-brand-primary text-accent-gold-fg hover:bg-brand-primary-hover shadow-lg shadow-brand-primary/10"
                 : "bg-card-bg border border-border-subtle text-text-muted cursor-not-allowed opacity-50"
             }`}
           >
@@ -209,7 +176,10 @@ export default function UploadPage() {
             <h2 className="text-sm sm:text-base font-extrabold tracking-tight">
               Recently Uploaded
             </h2>
-            <button className="flex items-center gap-1 text-xs font-bold text-[#f3c494] hover:underline">
+            <button
+              onClick={() => router.push("/dashboard/documents")}
+              className="flex items-center gap-1 text-xs font-bold text-accent-gold hover:underline cursor-pointer"
+            >
               View all
               <ChevronRight className="h-3 w-3" />
             </button>
@@ -250,7 +220,6 @@ export default function UploadPage() {
           </div>
         </section>
 
-      </div>
     </div>
   );
 }

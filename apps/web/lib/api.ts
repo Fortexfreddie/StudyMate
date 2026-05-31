@@ -20,9 +20,7 @@ import type {
   UploadResponse,
   User,
 } from "./types";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_BASE_URL } from "./config";
 
 const TOKEN_KEY = "studymate_access_token";
 const REFRESH_KEY = "studymate_refresh_token";

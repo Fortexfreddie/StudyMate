@@ -2,39 +2,9 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ArrowLeft, Bell, Sparkles, FileText, Send, MessageSquare } from "lucide-react";
-import { DashboardNav } from "../components/DashboardNav";
-
-const DOCUMENT_METADATA: Record<string, { title: string; pages: string; date: string; bgColor: string; textColor: string }> = {
-  "data-structures": {
-    title: "Data Structures and Algorithms.pdf",
-    pages: "156 Pages",
-    date: "May 20, 2024",
-    bgColor: "#f3c494",
-    textColor: "#3e230d",
-  },
-  "human-anatomy": {
-    title: "Human Anatomy Essentials.pdf",
-    pages: "212 Pages",
-    date: "May 22, 2024",
-    bgColor: "#e6a19f",
-    textColor: "#47201f",
-  },
-  "neural-networks": {
-    title: "Introduction to Neural Networks.pdf",
-    pages: "98 Pages",
-    date: "May 25, 2024",
-    bgColor: "#b2d0d6",
-    textColor: "#223f45",
-  },
-  "organic-chemistry": {
-    title: "Organic Chemistry Nomenclature.pdf",
-    pages: "144 Pages",
-    date: "May 28, 2024",
-    bgColor: "#d6b2d1",
-    textColor: "#452240",
-  },
-};
+import { Sparkles, FileText, Send, MessageSquare } from "lucide-react";
+import { PageHeader } from "@/components/dashboard/PageHeader";
+import { getMockDocument } from "@/lib/mocks";
 
 interface MessageItem {
   id: number;
@@ -47,7 +17,7 @@ function ChatContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const docId = searchParams.get("doc") || "data-structures";
-  const doc = DOCUMENT_METADATA[docId] || DOCUMENT_METADATA["data-structures"];
+  const doc = getMockDocument(docId);
 
   const [messages, setMessages] = useState<MessageItem[]>([
     {
@@ -133,42 +103,20 @@ function ChatContent() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-main text-white flex flex-col md:flex-row pb-28 md:pb-0">
-      
-      {/* Sidebar Navigation */}
-      <DashboardNav />
+    <div className="flex-1 flex flex-col max-w-[580px] mx-auto w-full h-[100dvh] justify-between p-4 sm:p-6 md:p-8">
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col max-w-[580px] mx-auto w-full h-screen justify-between p-4 sm:p-6 md:p-8">
-        
-        {/* Navigation bar Header */}
-        <header className="flex items-center justify-between w-full pb-4 border-b border-border-subtle shrink-0">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <button
-              onClick={() => router.push(`/dashboard/document/${docId}`)}
-              className="flex items-center justify-center h-10 w-10 rounded-full bg-card-bg border border-border-subtle hover:bg-white/5 hover:border-white/20 transition cursor-pointer shrink-0"
-            >
-              <ArrowLeft className="h-4.5 w-4.5 text-white" />
-            </button>
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <FileText className="h-4.5 w-4.5 text-text-muted shrink-0" />
-              <h1 className="text-xs sm:text-sm font-bold text-white truncate pr-2">
-                {doc.title}
-              </h1>
-            </div>
-          </div>
-
-          <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-card-bg border border-border-subtle hover:bg-white/5 hover:border-white/20 transition shrink-0">
-            <Bell className="h-4.5 w-4.5 text-white" />
-            <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-primary" />
-          </button>
-        </header>
+        <PageHeader
+          title={doc.filename}
+          onBack={() => router.push(`/dashboard/document/${docId}`)}
+          titleIcon={<FileText className="h-4.5 w-4.5 text-text-muted shrink-0" />}
+          className="pb-4 border-b border-border-subtle shrink-0"
+        />
 
         {/* Scrollable message logs viewport */}
         <div className="flex-1 overflow-y-auto py-6 flex flex-col gap-5 px-1 scrollbar-none">
           {/* Time separator badge */}
           <div className="flex justify-center w-full my-2">
-            <span className="text-[10px] sm:text-xs font-semibold text-text-muted bg-[#181818] border border-border-subtle px-3 py-1 rounded-full">
+            <span className="text-[10px] sm:text-xs font-semibold text-text-muted bg-surface-raised border border-border-subtle px-3 py-1 rounded-full">
               Today
             </span>
           </div>
@@ -185,7 +133,7 @@ function ChatContent() {
               >
                 {/* AI Sparkle badge */}
                 {isAI && (
-                  <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-[#3e230d] shrink-0 mt-0.5 shadow">
+                  <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
                     <Sparkles className="h-4 w-4" />
                   </div>
                 )}
@@ -195,8 +143,8 @@ function ChatContent() {
                   <div
                     className={`p-3.5 px-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
                       isAI
-                        ? "bg-[#181818] border border-border-subtle text-white rounded-tl-sm"
-                        : "bg-brand-primary text-[#3e230d] font-bold rounded-tr-sm"
+                        ? "bg-surface-raised border border-border-subtle text-white rounded-tl-sm"
+                        : "bg-brand-primary text-accent-gold-fg font-bold rounded-tr-sm"
                     }`}
                   >
                     {msg.text}
@@ -226,15 +174,15 @@ function ChatContent() {
           {/* Typing Indicator */}
           {isTyping && (
             <div className="flex gap-3 items-center self-start max-w-[80%] pl-1">
-              <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-[#3e230d] shrink-0 shadow animate-pulse">
+              <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 shadow animate-pulse">
                 <Sparkles className="h-4 w-4" />
               </div>
-              <div className="bg-[#181818] border border-border-subtle rounded-2xl px-4 py-3 text-xs text-text-muted flex items-center gap-1 shadow-sm">
+              <div className="bg-surface-raised border border-border-subtle rounded-2xl px-4 py-3 text-xs text-text-muted flex items-center gap-1 shadow-sm">
                 <span className="font-semibold">AI is searching</span>
                 <span className="flex gap-0.5 ml-0.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#ef6868] animate-bounce [animation-delay:-0.3s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#ef6868] animate-bounce [animation-delay:-0.15s]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#ef6868] animate-bounce" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent-coral animate-bounce [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent-coral animate-bounce [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent-coral animate-bounce" />
                 </span>
               </div>
             </div>
@@ -246,7 +194,7 @@ function ChatContent() {
 
         {/* Input area Form exactly styled like screenshot */}
         <form onSubmit={handleSendMessage} className="w-full shrink-0 pt-2">
-          <div className="w-full bg-[#181818] border border-border-subtle rounded-full p-2 pl-4 flex items-center gap-3 shadow-md">
+          <div className="w-full bg-surface-raised border border-border-subtle rounded-full p-2 pl-4 flex items-center gap-3 shadow-md">
             
             {/* Left orange circle chat icon badge */}
             <div className="h-7 w-7 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0 select-none">
@@ -268,7 +216,7 @@ function ChatContent() {
               disabled={!inputText.trim()}
               className={`h-8 w-8 rounded-full flex items-center justify-center transition shrink-0 select-none cursor-pointer ${
                 inputText.trim()
-                  ? "bg-brand-primary text-[#3e230d] hover:bg-brand-primary-hover shadow"
+                  ? "bg-brand-primary text-accent-gold-fg hover:bg-brand-primary-hover shadow"
                   : "bg-white/5 text-text-muted cursor-not-allowed"
               }`}
             >
@@ -277,7 +225,6 @@ function ChatContent() {
           </div>
         </form>
 
-      </div>
     </div>
   );
 }
