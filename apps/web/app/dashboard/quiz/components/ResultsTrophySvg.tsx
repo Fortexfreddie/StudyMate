@@ -4,9 +4,13 @@ import { useEffect, useState } from "react";
 
 interface ResultsTrophySvgProps {
   scorePercentage: number; // e.g. 80 for 80%
+  correct: number;
+  total: number;
 }
 
-export function ResultsTrophySvg({ scorePercentage }: ResultsTrophySvgProps) {
+export function ResultsTrophySvg({ scorePercentage, correct, total }: ResultsTrophySvgProps) {
+  const verdict =
+    scorePercentage >= 80 ? "GREAT JOB!" : scorePercentage >= 50 ? "GOOD EFFORT!" : "KEEP GOING!";
   // Circumference of radius 54 is 2 * PI * 54 = 339.29 (we use 340)
   const circumference = 340;
   const [animatedOffset, setAnimatedOffset] = useState(circumference);
@@ -139,11 +143,11 @@ export function ResultsTrophySvg({ scorePercentage }: ResultsTrophySvgProps) {
           fontWeight="900"
           fontFamily="system-ui, -apple-system, sans-serif"
         >
-          8
-          <tspan fill="#8c8c8c" fontSize="13" fontWeight="700">/10</tspan>
+          {correct}
+          <tspan fill="#8c8c8c" fontSize="13" fontWeight="700">/{total}</tspan>
         </text>
 
-        {/* Locked Inline Sublabel (Good Job!) */}
+        {/* Score-based verdict label */}
         <text
           x="100"
           y="136"
@@ -154,7 +158,7 @@ export function ResultsTrophySvg({ scorePercentage }: ResultsTrophySvgProps) {
           letterSpacing="1.5"
           fontFamily="system-ui, -apple-system, sans-serif"
         >
-          GOOD JOB!
+          {verdict}
         </text>
       </svg>
 

@@ -67,9 +67,12 @@ function QuizContent() {
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [generatingProgress, setGeneratingProgress] = useState(0);
 
+  const totalQuestions = MOCK_QUESTIONS.length;
+
   // Active quiz playing states
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(2); // Starts on Question 3 of 10 to match screenshot exactly!
-  const [selectedKey, setSelectedKey] = useState<string>("B"); // Starts selected as "B" to match screenshot exactly!
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedKey, setSelectedKey] = useState<string>("");
+  const [answers, setAnswers] = useState<string[]>([]);
 
   // Simulation timer for Generating Step
   useEffect(() => {
@@ -90,22 +93,53 @@ function QuizContent() {
     return () => clearInterval(interval);
   }, [step]);
 
-  const activeQuestion = MOCK_QUESTIONS[currentQuestionIndex % MOCK_QUESTIONS.length];
+  const activeQuestion = MOCK_QUESTIONS[currentQuestionIndex];
+  const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
+
+  // Derived results computed from the recorded answers
+  const correctCount = answers.reduce(
+    (count, key, idx) => count + (key === MOCK_QUESTIONS[idx]?.correctKey ? 1 : 0),
+    0
+  );
+  const incorrectCount = answers.length - correctCount;
+  const scorePercentage = answers.length
+    ? Math.round((correctCount / answers.length) * 100)
+    : 0;
+
+  const startQuiz = () => {
+    setCurrentQuestionIndex(0);
+    setSelectedKey("");
+    setAnswers([]);
+    setStep("generating");
+  };
 
   const handleConfirmAnswer = () => {
     if (!selectedKey) return;
-    // Go to next question
+    const nextAnswers = [...answers];
+    nextAnswers[currentQuestionIndex] = selectedKey;
+    setAnswers(nextAnswers);
+
+    if (isLastQuestion) {
+      setStep("results");
+      return;
+    }
     setCurrentQuestionIndex((prev) => prev + 1);
     setSelectedKey("");
   };
 
   const handleSubmitQuiz = () => {
+    if (selectedKey) {
+      const nextAnswers = [...answers];
+      nextAnswers[currentQuestionIndex] = selectedKey;
+      setAnswers(nextAnswers);
+    }
     setStep("results");
   };
 
   const handleResetQuiz = () => {
-    setCurrentQuestionIndex(2);
-    setSelectedKey("B");
+    setCurrentQuestionIndex(0);
+    setSelectedKey("");
+    setAnswers([]);
     setStep("setup");
   };
 
@@ -163,7 +197,7 @@ function QuizContent() {
 
             {/* Solid Launch Primary button */}
             <button
-              onClick={() => setStep("generating")}
+              onClick={startQuiz}
               className="w-full flex items-center justify-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-accent-gold-fg font-bold py-4.5 rounded-2xl transition cursor-pointer shadow-lg shadow-brand-primary/15"
             >
               <Sparkles className="h-4.5 w-4.5" />
@@ -189,17 +223,17 @@ function QuizContent() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between w-full">
                 <span className="text-xs font-bold text-brand-primary">
-                  Question {currentQuestionIndex + 1} of {questionCount}
+                  Question {currentQuestionIndex + 1} of {totalQuestions}
                 </span>
                 <span className="text-xs font-bold text-brand-primary">
-                  {Math.round(((currentQuestionIndex + 1) / questionCount) * 100)}%
+                  {Math.round(((currentQuestionIndex + 1) / totalQuestions) * 100)}%
                 </span>
               </div>
 
               {/* Progress bar container */}
               <div className="w-full bg-surface-raised h-1.5 rounded-full overflow-hidden">
                 <div
-                  style={{ width: `${((currentQuestionIndex + 1) / questionCount) * 100}%` }}
+                  style={{ width: `${((currentQuestionIndex + 1) / totalQuestions) * 100}%` }}
                   className="h-full bg-brand-primary transition-all duration-300"
                 />
               </div>
@@ -216,10 +250,12 @@ function QuizContent() {
                 {activeQuestion.options.map((opt) => {
                   const isSelected = selectedKey === opt.key;
                   return (
-                    <div
+                    <button
                       key={opt.key}
+                      type="button"
+                      aria-pressed={isSelected}
                       onClick={() => setSelectedKey(opt.key)}
-                      className={`w-full rounded-2xl p-4 flex items-center gap-3 transition border cursor-pointer group ${
+                      className={`w-full text-left rounded-2xl p-4 flex items-center gap-3 transition border cursor-pointer group focus:outline-none ${
                         isSelected
                           ? "bg-brand-primary/5 border-brand-primary shadow-inner shadow-black/10"
                           : "bg-surface/40 border-border-subtle hover:border-white/10"
@@ -240,7 +276,7 @@ function QuizContent() {
                       }`}>
                         {opt.text}
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -256,17 +292,19 @@ function QuizContent() {
                   : "bg-card-bg border border-border-subtle text-text-muted cursor-not-allowed opacity-50"
               }`}
             >
-              Confirm Answer
+              {isLastQuestion ? "Finish & See Results" : "Confirm Answer"}
             </button>
 
-            {/* SUBMIT BUTTON PLACED DIRECTLY BENEATH CONFIRM ANSWER */}
-            <button
-              onClick={handleSubmitQuiz}
-              type="button"
-              className="w-full bg-surface/80 hover:bg-input-bg border border-border-subtle rounded-2xl py-4.5 text-xs font-bold text-white transition cursor-pointer select-none"
-            >
-              Submit Quiz
-            </button>
+            {/* Submit early (skips remaining questions) */}
+            {!isLastQuestion && (
+              <button
+                onClick={handleSubmitQuiz}
+                type="button"
+                className="w-full bg-surface/80 hover:bg-input-bg border border-border-subtle rounded-2xl py-4.5 text-xs font-bold text-white transition cursor-pointer select-none"
+              >
+                Submit Quiz
+              </button>
+            )}
           </section>
         )}
 
@@ -278,15 +316,23 @@ function QuizContent() {
             <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col items-center justify-center shadow-lg shadow-black/25">
               
               {/* Radial percentage animated wrapper */}
-              <ResultsTrophySvg scorePercentage={80} />
+              <ResultsTrophySvg
+                scorePercentage={scorePercentage}
+                correct={correctCount}
+                total={answers.length}
+              />
 
               <div className="flex flex-col items-center justify-center mt-6 text-center">
                 <div className="flex items-center gap-1">
                   <span className="text-base font-normal text-white">You scored</span>
-                  <span className="text-base font-extrabold text-accent-gold">80%</span>
+                  <span className="text-base font-extrabold text-accent-gold">{scorePercentage}%</span>
                 </div>
                 <p className="text-[11px] text-text-muted leading-tight mt-1 max-w-[280px]">
-                  You have a strong understanding of this topic.
+                  {scorePercentage >= 80
+                    ? "You have a strong understanding of this topic."
+                    : scorePercentage >= 50
+                    ? "Good effort — review the missed questions to improve."
+                    : "Keep practicing — revisit the material and try again."}
                 </p>
               </div>
             </div>
@@ -296,7 +342,7 @@ function QuizContent() {
               {/* Stat 1: Correct */}
               <div className="flex flex-col items-center text-center">
                 <CheckCircle2 className="h-5 w-5 text-emerald-400 mb-1" />
-                <span className="text-sm font-extrabold text-white">8</span>
+                <span className="text-sm font-extrabold text-white">{correctCount}</span>
                 <span className="text-[10px] text-emerald-400 font-bold mt-0.5">Correct</span>
               </div>
 
@@ -305,33 +351,33 @@ function QuizContent() {
               {/* Stat 2: Incorrect */}
               <div className="flex flex-col items-center text-center">
                 <XCircle className="h-5 w-5 text-accent-coral mb-1" />
-                <span className="text-sm font-extrabold text-white">2</span>
+                <span className="text-sm font-extrabold text-white">{incorrectCount}</span>
                 <span className="text-[10px] text-accent-coral font-bold mt-0.5">Incorrect</span>
               </div>
 
               <div className="h-10 w-[1px] bg-border-subtle" />
 
-              {/* Stat 3: Time Taken */}
+              {/* Stat 3: Total answered */}
               <div className="flex flex-col items-center text-center">
                 <Clock className="h-5 w-5 text-accent-gold mb-1" />
-                <span className="text-sm font-extrabold text-white">12:45</span>
-                <span className="text-[10px] text-accent-gold font-bold mt-0.5">Time Taken</span>
+                <span className="text-sm font-extrabold text-white">{answers.length}</span>
+                <span className="text-[10px] text-accent-gold font-bold mt-0.5">Answered</span>
               </div>
             </div>
 
             {/* Action buttons stack */}
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => setStep("quiz")}
+                onClick={handleResetQuiz}
                 className="w-full py-4.5 bg-brand-primary hover:bg-brand-primary-hover text-accent-gold-fg font-bold rounded-2xl text-sm transition cursor-pointer select-none shadow-lg shadow-brand-primary/10"
               >
-                Review Answers
+                Retake Quiz
               </button>
               <button
-                onClick={handleResetQuiz}
+                onClick={() => router.push(`/dashboard/document/${docId}`)}
                 className="w-full bg-surface/80 hover:bg-input-bg border border-border-subtle rounded-2xl py-4.5 text-xs font-bold text-white transition cursor-pointer select-none"
               >
-                Back to Documents
+                Back to Document
               </button>
             </div>
           </section>

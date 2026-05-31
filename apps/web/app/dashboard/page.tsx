@@ -6,9 +6,12 @@ import { Search, Bell, HelpCircle, FileUp, FileText, ChevronRight, Award, BookOp
 import { ProgressRing } from "./components/ProgressRing";
 import { DocumentCard } from "./components/DocumentCard";
 import { IconButton } from "@/components/shared/IconButton";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { getFirstName } from "@/lib/user";
 import { MOCK_DOCUMENTS } from "@/lib/mocks";
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
 
@@ -38,7 +41,7 @@ export default function DashboardPage() {
         <header className="flex items-center justify-between w-full mb-8">
           <div>
             <h2 className="text-xl sm:text-2xl text-white font-normal leading-tight">
-              Hello, <span className="font-extrabold">Esther</span>
+              Hello, <span className="font-extrabold">{getFirstName(user)}</span>
             </h2>
           </div>
 

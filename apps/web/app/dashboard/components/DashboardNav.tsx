@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Upload, History, User } from "lucide-react";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { getFirstName, getInitials } from "@/lib/user";
 
 interface NavItem {
   label: string;
@@ -12,6 +14,7 @@ interface NavItem {
 
 export function DashboardNav() {
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const items: NavItem[] = [
     { label: "Home", icon: Home, href: "/dashboard" },
@@ -84,16 +87,16 @@ export function DashboardNav() {
         </nav>
 
         {/* Desktop Sidebar Profile Summary */}
-        <div className="border-t border-border-subtle pt-6 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-brand-primary/10 border border-brand-primary/20 flex items-center justify-center text-brand-primary font-bold">
-            E
+        <div className="border-t border-border-subtle pt-6 flex items-center gap-3 min-w-0">
+          <div className="h-10 w-10 rounded-full bg-brand-primary/10 border border-brand-primary/20 flex items-center justify-center text-brand-primary font-bold shrink-0">
+            {getInitials(user)}
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-bold text-white leading-none mb-1">
-              Esther
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold text-white leading-none mb-1 truncate">
+              {getFirstName(user)}
             </span>
-            <span className="text-xs text-text-muted leading-none">
-              student@futo.edu
+            <span className="text-xs text-text-muted leading-none truncate">
+              {user?.email ?? ""}
             </span>
           </div>
         </div>

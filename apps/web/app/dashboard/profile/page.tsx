@@ -4,18 +4,20 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, FileText, HelpCircle, Flame, Check, ChevronRight, User, Palette, Headphones, LogOut, TrendingUp, ArrowLeft, Pencil, Camera, CheckCircle } from "lucide-react";
 import { Toggle } from "@/components/shared/Toggle";
+import { useAuth } from "@/components/providers/AuthProvider";
 
 type ScreenType = "main" | "edit" | "notifications" | "theme" | "help";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { user, logout } = useAuth();
 
   // Active view state machine
   const [activeScreen, setActiveScreen] = useState<ScreenType>("main");
 
-  // User form states
-  const [fullName, setFullName] = useState("Esther John");
-  const [emailAddress, setEmailAddress] = useState("estherjohn24@gmail.com");
+  // User form states (seeded from the authenticated user)
+  const [fullName, setFullName] = useState(user?.full_name ?? "");
+  const [emailAddress, setEmailAddress] = useState(user?.email ?? "");
   const [majorField, setMajorField] = useState("Computer Science & Engineering");
 
   // Settings toggles states
@@ -41,6 +43,7 @@ export default function ProfilePage() {
 
   const handleOptionClick = (label: string) => {
     if (label === "Logout") {
+      logout();
       router.push("/login");
     } else if (label === "Edit Profile") {
       setActiveScreen("edit");
@@ -113,7 +116,7 @@ export default function ProfilePage() {
                   <div className="h-full w-full rounded-full overflow-hidden bg-surface-raised border border-black/80">
                     <img
                       src="/avatar.png"
-                      alt="Esther John Profile Avatar"
+                      alt={`${fullName} profile avatar`}
                       className="h-full w-full object-cover object-top"
                     />
                   </div>
