@@ -22,6 +22,7 @@ from models.schemas import (
     DocumentListResponse,
     UploadResponse,
 )
+from services.activity_service import record_activity
 from services.embedder import Embedder
 from services.pdf_processor import PDFProcessor
 from services.vector_store import VectorStore
@@ -96,6 +97,9 @@ async def upload_document(
             detail="Failed to index document chunks.",
         ) from e
 
+    # Record today's study activity for the streak (best-effort, before commit)
+    await record_activity(db, current_user.id)
+
     await db.commit()
     await db.refresh(db_doc)
 
@@ -132,6 +136,34 @@ async def list_documents(
         for doc in db_docs
     ]
     return DocumentListResponse(documents=docs_info)
+
+
+@router.get("/{doc_id}", response_model=DocumentInfo)
+async def get_document(
+    doc_id: UUID,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> DocumentInfo:
+    """Retrieve a single document's metadata. Only the owner may access it."""
+    result = await db.execute(select(Document).where(Document.id == doc_id))
+    db_doc = result.scalar_one_or_none()
+
+    if db_doc is None:
+        raise DocumentNotFoundError(str(doc_id))
+
+    if db_doc.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to view this document.",
+        )
+
+    return DocumentInfo(
+        doc_id=db_doc.id,
+        filename=db_doc.filename,
+        page_count=db_doc.page_count,
+        chunk_count=db_doc.chunk_count,
+        uploaded_at=db_doc.uploaded_at,
+    )
 
 
 @router.delete("/{doc_id}", response_model=DeleteResponse)

@@ -43,6 +43,70 @@ SYSTEM_PROMPT = (
 )
 
 
+# Per-format prompt specs for summaries. `schema_hint` shows the JSON shape the model
+# must place under the "structured" key; `instructions` guides the content. Adding a
+# format here + a branch in _parse_and_validate_summary is all the backend needs.
+SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
+    "bullets": {
+        "schema_hint": '["First key takeaway.", "Second key takeaway.", "..."]',
+        "instructions": (
+            "Produce 3–6 concise key-takeaway bullet strings capturing the most "
+            "important facts about the topic. Each bullet is a complete sentence."
+        ),
+    },
+    "key_concepts": {
+        "schema_hint": (
+            '[{"title": "Concept name", "description": "1–3 sentence explanation."}]'
+        ),
+        "instructions": (
+            "Produce 3–5 concept objects, each with a short title and a 1–3 sentence "
+            "description grounded in the context."
+        ),
+    },
+    "study_guide": {
+        "schema_hint": (
+            '{"bullets": ["takeaway", "..."], '
+            '"concepts": [{"title": "Concept", "description": "..."}]}'
+        ),
+        "instructions": (
+            "Produce BOTH 3–6 key-takeaway bullets AND 3–5 concept objects (title + "
+            "description). Bullets summarize; concepts explain."
+        ),
+    },
+    "flashcards": {
+        "schema_hint": (
+            '[{"front": "Question or term?", "back": "Answer or definition."}]'
+        ),
+        "instructions": (
+            "Produce 4–8 flashcards. `front` is a question or term; `back` is the "
+            "answer or definition. Keep each side short and self-contained."
+        ),
+    },
+    "cheat_sheet": {
+        "schema_hint": (
+            '{"formulas": [{"label": "Name", "value": "formula or fact"}], '
+            '"definitions": [{"term": "Term", "meaning": "definition"}]}'
+        ),
+        "instructions": (
+            "Produce a condensed cheat sheet: a `formulas` list of label/value rows "
+            "(key formulas, complexities, or facts) and a `definitions` list of "
+            "term/meaning rows. If the topic has no formulas, return an empty list "
+            "for `formulas`."
+        ),
+    },
+    "mind_map": {
+        "schema_hint": (
+            '{"root": "Central topic", '
+            '"branches": [{"label": "Sub-topic", "children": ["leaf", "leaf"]}]}'
+        ),
+        "instructions": (
+            "Produce a mind map: a `root` central topic and 2–5 `branches`, each with "
+            "a label and 2–4 short child leaf strings."
+        ),
+    },
+}
+
+
 class Generator:
     """Orchestrates structured generations using Google Gemini 3 models."""
 
@@ -122,26 +186,36 @@ class Generator:
             )
 
     async def generate_summary(
-        self, topic: str, context: list[dict[str, Any]]
-    ) -> tuple[str, bool]:
-        """Generates a structured markdown summary grounded in context chunks."""
+        self, topic: str, context: list[dict[str, Any]], summary_format: str = "bullets"
+    ) -> tuple[str, Any, bool]:
+        """Generates a format-specific summary grounded in context chunks.
+
+        Returns ``(plain_text, structured, context_sufficient)`` where:
+        - ``plain_text`` is always a markdown rendering (safe UI fallback),
+        - ``structured`` is the format-specific object (see SUMMARY_FORMAT_SPECS),
+        - ``context_sufficient`` is False when the context lacks the topic.
+        """
         context_text = self._format_context(context)
+        spec = SUMMARY_FORMAT_SPECS.get(
+            summary_format, SUMMARY_FORMAT_SPECS["bullets"]
+        )
 
         system_instruction = (
             SYSTEM_PROMPT
             + "\n═══ OUTPUT FORMAT ═══\n"
-            "Format your response as a JSON object with exactly these keys:\n"
+            "Respond with a single JSON object with exactly these keys:\n"
             "{\n"
-            '  "summary": "Your rich, highly structured study summary in markdown (using headers, bullet points, and key takeaways).",\n'
+            f'  "structured": {spec["schema_hint"]},\n'
+            '  "plain_text": "A clean markdown rendering of the same content (headers, bullets).",\n'
             '  "context_sufficient": true\n'
             "}\n\n"
-            "Structure the summary with:\n"
-            "- A one-sentence definition or overview\n"
-            "- 3–5 key points\n"
-            "- Any important relationships or mechanisms described\n\n"
-            "If the provided context does not contain enough facts to summarize this topic, return:\n"
+            f"FORMAT INSTRUCTIONS ({summary_format}):\n{spec['instructions']}\n\n"
+            "If the provided context does not contain enough facts to summarize this "
+            "topic, return:\n"
             "{\n"
-            '  "summary": "The uploaded document does not contain relevant information on this topic to generate a summary.",\n'
+            '  "structured": null,\n'
+            '  "plain_text": "The uploaded document does not contain relevant '
+            'information on this topic to generate a summary.",\n'
             '  "context_sufficient": false\n'
             "}\n\n"
             f"--- CONTEXT ---\n{context_text}"
@@ -149,16 +223,17 @@ class Generator:
 
         try:
             response_text = await self._call_llm_with_retry(
-                system_instruction, f"Topic to Summarize: {topic}", require_json=True
+                system_instruction,
+                f"Topic to Summarize: {topic}",
+                require_json=True,
             )
-            parsed = json.loads(response_text)
-            summary = parsed.get("summary", "").strip()
-            context_sufficient = bool(parsed.get("context_sufficient", False))
-            return summary, context_sufficient
+            return self._parse_and_validate_summary(response_text, summary_format)
         except Exception:
             logger.exception("Failed to parse or generate summary from LLM.")
             return (
-                "I encountered an error generating a topic summary based on your document. Please try again.",
+                "I encountered an error generating a topic summary based on your "
+                "document. Please try again.",
+                None,
                 False,
             )
 
@@ -247,19 +322,124 @@ class Generator:
             )
         return "\n\n".join(blocks)
 
+    @staticmethod
+    def _strip_code_fence(text: str) -> str:
+        """Remove an accidental ```json / ``` markdown wrapper around JSON."""
+        cleaned = text.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        return cleaned.strip()
+
+    def _parse_and_validate_summary(
+        self, response_text: str, summary_format: str
+    ) -> tuple[str, Any, bool]:
+        """Parse the summary JSON and lightly validate the per-format structure.
+
+        Returns (plain_text, structured, context_sufficient). On a context-gap the
+        model returns structured=null; we pass that through. Malformed structures
+        for the requested format degrade gracefully to structured=None while still
+        returning the plain_text fallback, so the UI always has something to show.
+        """
+        parsed = json.loads(self._strip_code_fence(response_text))
+        plain_text = str(parsed.get("plain_text", "")).strip()
+        context_sufficient = bool(parsed.get("context_sufficient", False))
+        structured = parsed.get("structured")
+
+        if not context_sufficient or structured is None:
+            return plain_text, None, context_sufficient
+
+        try:
+            structured = self._validate_summary_structure(structured, summary_format)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            logger.warning(
+                "Summary structured payload failed validation for format '%s'; "
+                "falling back to plain text only.",
+                summary_format,
+            )
+            structured = None
+
+        return plain_text, structured, context_sufficient
+
+    def _validate_summary_structure(self, data: Any, summary_format: str) -> Any:
+        """Validate/normalize the structured payload for a given format.
+
+        Raises on shape mismatch so the caller can fall back to plain text.
+        """
+        if summary_format == "bullets":
+            if not isinstance(data, list):
+                raise ValueError("bullets must be a list.")
+            return [str(b).strip() for b in data if str(b).strip()]
+
+        if summary_format == "key_concepts":
+            if not isinstance(data, list):
+                raise ValueError("key_concepts must be a list.")
+            return [
+                {"title": str(c["title"]).strip(), "description": str(c["description"]).strip()}
+                for c in data
+            ]
+
+        if summary_format == "study_guide":
+            bullets = data["bullets"]
+            concepts = data["concepts"]
+            if not isinstance(bullets, list) or not isinstance(concepts, list):
+                raise ValueError("study_guide requires list bullets and concepts.")
+            return {
+                "bullets": [str(b).strip() for b in bullets if str(b).strip()],
+                "concepts": [
+                    {"title": str(c["title"]).strip(), "description": str(c["description"]).strip()}
+                    for c in concepts
+                ],
+            }
+
+        if summary_format == "flashcards":
+            if not isinstance(data, list):
+                raise ValueError("flashcards must be a list.")
+            return [
+                {"front": str(c["front"]).strip(), "back": str(c["back"]).strip()}
+                for c in data
+            ]
+
+        if summary_format == "cheat_sheet":
+            formulas = data.get("formulas", [])
+            definitions = data.get("definitions", [])
+            return {
+                "formulas": [
+                    {"label": str(f["label"]).strip(), "value": str(f["value"]).strip()}
+                    for f in formulas
+                ],
+                "definitions": [
+                    {"term": str(d["term"]).strip(), "meaning": str(d["meaning"]).strip()}
+                    for d in definitions
+                ],
+            }
+
+        if summary_format == "mind_map":
+            branches = data["branches"]
+            if not isinstance(branches, list):
+                raise ValueError("mind_map requires a list of branches.")
+            return {
+                "root": str(data["root"]).strip(),
+                "branches": [
+                    {
+                        "label": str(b["label"]).strip(),
+                        "children": [str(c).strip() for c in b["children"]],
+                    }
+                    for b in branches
+                ],
+            }
+
+        # Unknown format — pass through untouched.
+        return data
+
     def _parse_and_validate_quiz(
         self, response_text: str, expected_count: int
     ) -> list[dict[str, Any]]:
         """Parses the generated text as JSON and validates the quiz schema."""
-        # Clean any accidental markdown codeblock wrapper
-        cleaned_text = response_text.strip()
-        if cleaned_text.startswith("```json"):
-            cleaned_text = cleaned_text[7:]
-        if cleaned_text.startswith("```"):
-            cleaned_text = cleaned_text[3:]
-        if cleaned_text.endswith("```"):
-            cleaned_text = cleaned_text[:-3]
-        cleaned_text = cleaned_text.strip()
+        cleaned_text = self._strip_code_fence(response_text)
 
         data = json.loads(cleaned_text)
         if not isinstance(data, list):

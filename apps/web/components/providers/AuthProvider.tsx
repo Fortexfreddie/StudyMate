@@ -14,8 +14,6 @@ import {
   clearTokens,
   getAccessToken,
 } from "@/lib/api";
-import { USE_MOCKS } from "@/lib/config";
-import { createMockUser } from "@/lib/mocks";
 
 interface AuthContextValue {
   user: User | null;
@@ -24,6 +22,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => void;
+  /** Replace the cached user (e.g. after a profile update). */
+  updateUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,11 +38,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     async function hydrate() {
-      if (USE_MOCKS) {
-        setUser(createMockUser());
-        setIsLoading(false);
-        return;
-      }
       const token = getAccessToken();
       if (!token) {
         setIsLoading(false);
@@ -61,10 +56,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   async function login(email: string, password: string): Promise<void> {
-    if (USE_MOCKS) {
-      setUser(createMockUser({ email: email || undefined }));
-      return;
-    }
     const tokens = await api.auth.login({ email, password });
     setTokens(tokens.access_token, tokens.refresh_token);
     const userData = await api.auth.me();
@@ -76,10 +67,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     password: string,
     fullName: string
   ): Promise<void> {
-    if (USE_MOCKS) {
-      setUser(createMockUser({ email, full_name: fullName }));
-      return;
-    }
     const response = await api.auth.signup({
       email,
       password,
@@ -94,6 +81,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUser(null);
   }
 
+  function updateUser(updated: User): void {
+    setUser(updated);
+  }
+
   const value: AuthContextValue = {
     user,
     isAuthenticated: !!user,
@@ -101,6 +92,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     login,
     signup,
     logout,
+    updateUser,
   };
 
   return <AuthContext value={value}>{children}</AuthContext>;

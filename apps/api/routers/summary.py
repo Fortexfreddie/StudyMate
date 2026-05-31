@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.dependencies import get_current_user, get_generator, get_retriever
 from models.database import ChatMessage, User, get_db
 from models.schemas import SourceInfo, SummaryRequest, SummaryResponse
+from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
 
@@ -38,7 +39,11 @@ async def generate_summary(
     # in the context of this specific user, document scope, and top_k context limit.
     from sqlalchemy import func, select
 
-    summary_query = f"Summary request: {request.topic}"
+    # Format-aware cache key: different formats of the same topic are distinct rows,
+    # so a cache hit always matches the requested format. The stored history `query`
+    # keeps the legacy "Summary request:" prefix (the /stats summary count keys on
+    # it) and appends the format for disambiguation.
+    summary_query = f"Summary request: {request.topic} [format={request.format}]"
 
     stmt = (
         select(ChatMessage)
@@ -74,6 +79,7 @@ async def generate_summary(
             sources=cached_msg.sources,
         )
         db.add(new_msg)
+        await record_activity(db, current_user.id)
         await db.commit()
         await db.refresh(new_msg)
 
@@ -95,8 +101,12 @@ async def generate_summary(
                     )
                 )
 
+        # Structured payload is not persisted, so a cache hit returns the cached
+        # plain text with structured=None; the frontend renders the text fallback.
         return SummaryResponse(
             summary=cached_msg.answer,
+            format=request.format,
+            structured=None,
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_sources,
         )
@@ -108,10 +118,11 @@ async def generate_summary(
         top_k=request.top_k,
     )
 
-    # 2. Synthesize structured topic summary using Gemini
-    summary, context_sufficient = await generator.generate_summary(
+    # 2. Synthesize the format-specific topic summary using Gemini
+    summary, structured, context_sufficient = await generator.generate_summary(
         topic=request.topic,
         context=matched_chunks,
+        summary_format=request.format,
     )
 
     # 3. Format matched chunks into API response sources
@@ -142,8 +153,8 @@ async def generate_summary(
             }
         )
 
-    # 4. Save the generated summary in the chat history table as a summary message
-    summary_query = f"Summary request: {request.topic}"
+    # 4. Save the generated summary in the chat history table as a summary message.
+    # Reuse the format-aware key built at the top so the cache lookup matches.
     db_message = ChatMessage(
         user_id=current_user.id,
         doc_id=request.doc_id,
@@ -153,17 +164,21 @@ async def generate_summary(
         sources=sources_dict,
     )
     db.add(db_message)
+    await record_activity(db, current_user.id)
     await db.commit()
     await db.refresh(db_message)
 
     logger.info(
-        "Generated summary saved to history (Message ID: %s, Context Sufficient: %s)",
+        "Generated summary saved to history (Message ID: %s, Format: %s, Context Sufficient: %s)",
         db_message.id,
+        request.format,
         context_sufficient,
     )
 
     return SummaryResponse(
         summary=summary,
+        format=request.format,
+        structured=structured,
         context_sufficient=context_sufficient,
         sources=sources,
     )

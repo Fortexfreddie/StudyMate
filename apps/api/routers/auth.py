@@ -11,6 +11,7 @@ from models.schemas import (
     RefreshRequest,
     SignupRequest,
     TokenResponse,
+    UpdateProfileRequest,
     UserResponse,
 )
 from services.auth_service import AuthService
@@ -66,4 +67,26 @@ async def get_me(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> UserResponse:
     """Get the current logged-in user profile details."""
+    return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    payload: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> UserResponse:
+    """Update editable profile fields (full_name, major).
+
+    Only fields present in the request are changed; email is immutable. Returns the
+    updated profile.
+    """
+    if payload.full_name is not None:
+        current_user.full_name = payload.full_name
+    if payload.major is not None:
+        current_user.major = payload.major
+
+    await db.commit()
+    await db.refresh(current_user)
+
     return UserResponse.model_validate(current_user)

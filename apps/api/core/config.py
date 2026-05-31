@@ -15,7 +15,16 @@ class Settings(BaseSettings):
     APP_NAME: str = "StudyMate API"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    # Comma-separated list in the env (e.g. CORS_ORIGINS=http://localhost:3000,https://app.vercel.app)
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def split_cors_origins(cls, v: object) -> object:
+        """Allow CORS_ORIGINS to be provided as a comma-separated string in .env."""
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     # Database
     DATABASE_URL: str  # required — e.g., postgresql+asyncpg://...
@@ -77,7 +86,7 @@ class Settings(BaseSettings):
 
     # Quiz
     DEFAULT_QUIZ_QUESTIONS: int = 5
-    MAX_QUIZ_QUESTIONS: int = 10
+    MAX_QUIZ_QUESTIONS: int = 30
 
     model_config = {
         "env_file": ".env",

@@ -4,12 +4,20 @@ import { useRouter } from "next/navigation";
 import { FileText, Plus } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { LoadingState } from "@/components/shared/LoadingState";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { DocumentCard } from "../components/DocumentCard";
-import { MOCK_DOCUMENTS } from "@/lib/mocks";
+import { api } from "@/lib/api";
+import { useApi } from "@/lib/useApi";
+import { getDocumentColor, getDocumentCategory } from "@/lib/format";
 
 export default function DocumentsPage() {
   const router = useRouter();
-  const documents = MOCK_DOCUMENTS;
+  const { data, isLoading, error, refetch } = useApi(
+    () => api.documents.list(),
+    []
+  );
+  const documents = data?.documents ?? [];
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full">
@@ -19,18 +27,30 @@ export default function DocumentsPage() {
         className="mb-6"
       />
 
-      {documents.length > 0 ? (
+      {isLoading ? (
+        <LoadingState className="mt-16" label="Loading your documents…" />
+      ) : error ? (
+        <ErrorState
+          className="mt-16"
+          title="Couldn't load documents"
+          message={error}
+          onRetry={refetch}
+        />
+      ) : documents.length > 0 ? (
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-          {documents.map((doc) => (
-            <DocumentCard
-              key={doc.doc_id}
-              id={doc.doc_id}
-              title={doc.filename}
-              bgColor={doc.bgColor}
-              textColor={doc.textColor}
-              type={doc.category}
-            />
-          ))}
+          {documents.map((doc) => {
+            const { bgColor, textColor } = getDocumentColor(doc.doc_id);
+            return (
+              <DocumentCard
+                key={doc.doc_id}
+                id={doc.doc_id}
+                title={doc.filename}
+                bgColor={bgColor}
+                textColor={textColor}
+                type={getDocumentCategory(doc.filename)}
+              />
+            );
+          })}
         </section>
       ) : (
         <EmptyState

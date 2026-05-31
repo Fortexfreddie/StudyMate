@@ -4,6 +4,7 @@ import type {
   ChatRequest,
   ChatResponse,
   DeleteResponse,
+  Document,
   DocumentListResponse,
   LoginRequest,
   QuizDetailResponse,
@@ -15,12 +16,15 @@ import type {
   RefreshResponse,
   SignupRequest,
   SignupResponse,
+  StatsResponse,
   SummaryRequest,
   SummaryResponse,
+  UpdateProfileRequest,
   UploadResponse,
   User,
 } from "./types";
-import { API_BASE_URL } from "./config";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const TOKEN_KEY = "studymate_access_token";
 const REFRESH_KEY = "studymate_refresh_token";
@@ -144,6 +148,13 @@ export const api = {
     me(): Promise<User> {
       return request<User>("/auth/me");
     },
+
+    updateProfile(data: UpdateProfileRequest): Promise<User> {
+      return request<User>("/auth/me", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
   },
 
   documents: {
@@ -160,10 +171,20 @@ export const api = {
       return request<DocumentListResponse>("/documents");
     },
 
+    get(docId: string): Promise<Document> {
+      return request<Document>(`/documents/${docId}`);
+    },
+
     remove(docId: string): Promise<DeleteResponse> {
       return request<DeleteResponse>(`/documents/${docId}`, {
         method: "DELETE",
       });
+    },
+  },
+
+  stats: {
+    get(): Promise<StatsResponse> {
+      return request<StatsResponse>("/stats");
     },
   },
 

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.dependencies import get_current_user, get_generator, get_retriever
 from models.database import ChatMessage, User, get_db
 from models.schemas import ChatRequest, ChatResponse, SourceInfo
+from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
 
@@ -72,6 +73,7 @@ async def chat_with_docs(
             sources=cached_msg.sources,
         )
         db.add(new_msg)
+        await record_activity(db, current_user.id)
         await db.commit()
         await db.refresh(new_msg)
 
@@ -152,6 +154,7 @@ async def chat_with_docs(
         sources=sources_dict,
     )
     db.add(db_message)
+    await record_activity(db, current_user.id)
     await db.commit()
     await db.refresh(db_message)
 

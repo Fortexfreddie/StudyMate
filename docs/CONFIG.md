@@ -64,7 +64,7 @@ class Settings(BaseSettings):
 
     # --- Quiz ---
     DEFAULT_QUIZ_QUESTIONS: int = 5
-    MAX_QUIZ_QUESTIONS: int = 10
+    MAX_QUIZ_QUESTIONS: int = 30  # enforced by a field_validator on QuizGenerateRequest
 
     model_config = {
         "env_file": ".env",
@@ -119,7 +119,7 @@ settings = Settings()
 | `DEFAULT_TOP_K` | `5` | Default chunks to retrieve |
 | `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.60` | Minimum similarity score |
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | Default MCQs per quiz request |
-| `MAX_QUIZ_QUESTIONS` | `10` | Maximum MCQs per quiz request |
+| `MAX_QUIZ_QUESTIONS` | `30` | Maximum MCQs per quiz request (authoritative — enforced via `field_validator`) |
 
 ---
 

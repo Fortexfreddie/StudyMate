@@ -2,7 +2,13 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
+  major?: string | null;
   created_at: string;
+}
+
+export interface UpdateProfileRequest {
+  full_name?: string;
+  major?: string;
 }
 
 export interface SignupRequest {
@@ -82,14 +88,77 @@ export interface ChatResponse {
   sources: Source[];
 }
 
+export type SummaryFormat =
+  | "bullets"
+  | "key_concepts"
+  | "study_guide"
+  | "flashcards"
+  | "cheat_sheet"
+  | "mind_map";
+
 export interface SummaryRequest {
   topic: string;
   doc_id?: string;
   top_k?: number;
+  format?: SummaryFormat;
 }
+
+// Structured sub-shapes — one per SummaryFormat. Mirror the backend schemas.
+export interface ConceptItem {
+  title: string;
+  description: string;
+}
+
+export interface Flashcard {
+  front: string;
+  back: string;
+}
+
+export interface CheatSheetFormula {
+  label: string;
+  value: string;
+}
+
+export interface CheatSheetDefinition {
+  term: string;
+  meaning: string;
+}
+
+export interface CheatSheet {
+  formulas: CheatSheetFormula[];
+  definitions: CheatSheetDefinition[];
+}
+
+export interface MindMapBranch {
+  label: string;
+  children: string[];
+}
+
+export interface MindMap {
+  root: string;
+  branches: MindMapBranch[];
+}
+
+export interface StudyGuide {
+  bullets: string[];
+  concepts: ConceptItem[];
+}
+
+// `structured` is one of the per-format shapes (or null on a context gap / fallback).
+// `format` tells the UI which shape to expect.
+export type SummaryStructured =
+  | string[]
+  | ConceptItem[]
+  | Flashcard[]
+  | StudyGuide
+  | CheatSheet
+  | MindMap
+  | null;
 
 export interface SummaryResponse {
   summary: string;
+  format: SummaryFormat;
+  structured: SummaryStructured;
   context_sufficient: boolean;
   sources: Source[];
 }
@@ -185,6 +254,15 @@ export interface QuizDetailResponse {
   score: number;
   answers: QuizDetailAnswer[];
   created_at: string;
+}
+
+export interface StatsResponse {
+  documents_uploaded: number;
+  quizzes_taken: number;
+  summaries_generated: number;
+  chats_count: number;
+  current_streak: number;
+  average_quiz_score: number;
 }
 
 export interface ApiError {

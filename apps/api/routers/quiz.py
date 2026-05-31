@@ -17,6 +17,7 @@ from models.schemas import (
     QuizSubmitResponse,
     SourceInfo,
 )
+from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
 
@@ -199,6 +200,7 @@ async def submit_quiz(
 
     # 4. Update and commit quiz session score
     session.score = correct_count
+    await record_activity(db, current_user.id)
     await db.commit()
 
     logger.info(

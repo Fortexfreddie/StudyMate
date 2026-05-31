@@ -8,9 +8,19 @@ Vector embeddings are stored in Qdrant (not here).
 
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -38,6 +48,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Study major / institution — editable via PATCH /auth/me. Nullable: not
+    # collected at signup, so existing accounts have no value until they set one.
+    major: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -48,6 +61,7 @@ class User(Base):
     documents: Mapped[list["Document"]] = relationship(back_populates="owner")
     chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="user")
     quiz_sessions: Mapped[list["QuizSession"]] = relationship(back_populates="user")
+    activity: Mapped[list["UserActivity"]] = relationship(back_populates="user")
 
 
 class Document(Base):
@@ -146,6 +160,34 @@ class QuizAnswer(Base):
     )
 
     session: Mapped["QuizSession"] = relationship(back_populates="answers")
+
+
+class UserActivity(Base):
+    """One row per user per calendar day on which they performed any study action.
+
+    Used to compute the study streak. A row is written (idempotently) whenever the
+    user uploads a document, chats, generates a summary, or submits a quiz. The
+    unique (user_id, activity_date) constraint guarantees at most one row per day,
+    so repeated actions on the same day collapse to a single record.
+    """
+
+    __tablename__ = "user_activity"
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_date", name="uq_user_activity_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="activity")
 
 
 # Async engine & session

@@ -67,6 +67,26 @@ List all processed documents for the current user.
 
 ---
 
+### `GET /documents/{doc_id}` 🔒
+Get a single document's metadata. Only the document owner can access it.
+
+**Response 200:**
+```json
+{
+  "doc_id": "uuid",
+  "filename": "lecture_notes.pdf",
+  "page_count": 24,
+  "chunk_count": 87,
+  "uploaded_at": "2026-05-19T10:00:00Z"
+}
+```
+
+**Errors:**
+- `403` — not the document owner
+- `404` — doc_id not found
+
+---
+
 ### `DELETE /documents/{doc_id}` 🔒
 Remove a document and all its chunks from the vector store. Only the document owner can delete.
 
@@ -131,17 +151,25 @@ Generate a structured summary of a topic from a document. Response is saved to c
 {
   "topic": "Vector Databases and Embeddings",
   "doc_id": "uuid",
-  "top_k": 5
+  "top_k": 5,
+  "format": "bullets"
 }
 ```
 
 - `doc_id` — optional. Omit to search all documents.
 - `top_k` — optional. Default: 5.
+- `format` — optional. Default: `bullets`. One of: `bullets`, `key_concepts`,
+  `study_guide`, `flashcards`, `cheat_sheet`, `mind_map`.
 
 **Response 201:**
 ```json
 {
   "summary": "A vector embedding converts text into a high-dimensional numerical...",
+  "format": "bullets",
+  "structured": [
+    "Embeddings map text to high-dimensional vectors.",
+    "Cosine similarity ranks chunks by closeness to the query."
+  ],
   "context_sufficient": true,
   "sources": [
     {
@@ -153,6 +181,19 @@ Generate a structured summary of a topic from a document. Response is saved to c
   ]
 }
 ```
+
+`summary` is always present (plain text/markdown fallback). `structured` carries the
+format-specific shape and is `null` on a context gap or if the model's structure
+failed validation. The `structured` shape per `format`:
+
+| `format` | `structured` |
+|---|---|
+| `bullets` | `string[]` |
+| `key_concepts` | `[{ title, description }]` |
+| `study_guide` | `{ bullets: string[], concepts: [{ title, description }] }` |
+| `flashcards` | `[{ front, back }]` |
+| `cheat_sheet` | `{ formulas: [{ label, value }], definitions: [{ term, meaning }] }` |
+| `mind_map` | `{ root, branches: [{ label, children: string[] }] }` |
 
 **Errors:**
 - `400` — empty topic
@@ -177,7 +218,7 @@ Generate multiple-choice questions from a topic in a document. Creates a quiz se
 ```
 
 - `doc_id` — optional. Omit to search all documents.
-- `num_questions` — optional. Default: 5, max: 10.
+- `num_questions` — optional. Default: 5, max: 30 (configurable via `MAX_QUIZ_QUESTIONS`).
 - `top_k` — optional. Default: 5.
 
 **Response 201:**
@@ -349,9 +390,52 @@ Get current user profile.
   "id": "uuid",
   "email": "student@futo.edu.ng",
   "full_name": "Ekwem Kamsiyochukwu",
+  "major": "Computer Science",
   "created_at": "2026-05-25T10:00:00Z"
 }
 ```
+
+---
+
+### `PATCH /auth/me` 🔒
+Update editable profile fields. Email is immutable. Send only the fields you want to
+change.
+
+**Request body:**
+```json
+{
+  "full_name": "Ekwem K. Fredrick",
+  "major": "Computer Science & Engineering"
+}
+```
+
+- `full_name` — optional. 1–255 chars.
+- `major` — optional. Max 255 chars.
+
+**Response 200:** the updated user profile (same shape as `GET /auth/me`).
+
+---
+
+## Stats 🔒
+
+### `GET /stats`
+Aggregate study metrics for the current user. All values are computed live from the
+database.
+
+**Response 200:**
+```json
+{
+  "documents_uploaded": 3,
+  "quizzes_taken": 5,
+  "summaries_generated": 2,
+  "chats_count": 11,
+  "current_streak": 4,
+  "average_quiz_score": 82.0
+}
+```
+
+- `current_streak` — consecutive active days up to today (0 if today/yesterday had no activity).
+- `average_quiz_score` — mean score across graded sessions, as a 0–100 percentage.
 
 ---
 

@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { DashboardNav } from "./components/DashboardNav";
+
+// The dashboard is private, authenticated content — keep it out of search indexes.
+export const metadata: Metadata = {
+  title: "Dashboard",
+  robots: { index: false, follow: false },
+};
 
 export default function DashboardLayout({
   children,

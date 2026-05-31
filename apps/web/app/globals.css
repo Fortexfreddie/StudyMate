@@ -16,6 +16,17 @@
   --color-border-faint: #1f1f1f;
   --color-text-muted: #8a8a8a;
   --color-error-text: #ef4444;
+
+  --animate-progress-slide: progress-slide 1.5s infinite linear;
+
+  @keyframes progress-slide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
 }
 
 body {
