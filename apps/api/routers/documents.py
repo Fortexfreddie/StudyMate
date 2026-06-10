@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from core.dependencies import (
     get_vector_store,
 )
 from core.errors import DocumentNotFoundError
+from core.rate_limit import UPLOAD_LIMIT, limiter
 from models.database import Document, User, get_db
 from models.schemas import (
     DeleteResponse,
@@ -36,7 +37,9 @@ router = APIRouter()
     response_model=UploadResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit(UPLOAD_LIMIT)
 async def upload_document(
+    request: Request,
     file: UploadFile,
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
@@ -45,7 +48,18 @@ async def upload_document(
     vector_store: VectorStore = Depends(get_vector_store),  # noqa: B008
 ) -> UploadResponse:
     """Upload an academic PDF document, parse, chunk, embed, and store in vector DB."""
-    # 1. Read bytes and enforce size constraint
+    # 1. Validate file content-type and extension
+    if file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF files are accepted.",
+        )
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must have a .pdf extension.",
+        )
+
     file_bytes = await file.read()
     file_size_mb = len(file_bytes) / (1024 * 1024)
     if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
@@ -100,7 +114,23 @@ async def upload_document(
     # Record today's study activity for the streak (best-effort, before commit)
     await record_activity(db, current_user.id)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        logger.exception(
+            "Database commit failed for document upload. Rolling back vector store."
+        )
+        try:
+            await vector_store.delete_by_doc_id(str(doc_id))
+        except Exception:
+            logger.exception(
+                "Failed to delete vectors from Qdrant on rollback cleanup."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save document metadata.",
+        ) from e
+
     await db.refresh(db_doc)
 
     return UploadResponse(
@@ -189,9 +219,15 @@ async def delete_document(
 
     # Delete relational rows (links delete automatically via CASCADE / SET NULL)
     await db.delete(db_doc)
-
-    # Purge vectors from Qdrant
-    await vector_store.delete_by_doc_id(str(doc_id))
-
     await db.commit()
+
+    # Purge vectors from Qdrant (after successful DB commit)
+    try:
+        await vector_store.delete_by_doc_id(str(doc_id))
+    except Exception:
+        logger.exception(
+            "Failed to purge vectors from Qdrant for document %s (non-fatal).",
+            doc_id,
+        )
+
     return DeleteResponse(doc_id=doc_id, deleted=True)

@@ -1,8 +1,6 @@
 """Stats API Router — aggregate study metrics for the dashboard and profile.
 
-Every value is computed live from PostgreSQL. Summaries are persisted as chat rows
-whose query is prefixed with ``Summary request:`` (see routers/summary.py), so the
-summaries count keys on that prefix and the chat count excludes them.
+Every value is computed live from PostgreSQL.
 """
 
 import logging
@@ -12,7 +10,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import get_current_user
-from models.database import ChatMessage, Document, QuizSession, User, get_db
+from models.database import (
+    ChatMessage,
+    Document,
+    QuizSession,
+    SummaryHistory,
+    User,
+    get_db,
+)
 from models.schemas import StatsResponse
 from services.activity_service import compute_streak
 from services.token_service import get_usage_summary
@@ -20,9 +25,6 @@ from services.token_service import get_usage_summary
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Stats"])
-
-# Prefix that marks a chat_history row as a generated summary rather than a chat.
-SUMMARY_QUERY_PREFIX = "Summary request:"
 
 
 @router.get(
@@ -56,19 +58,15 @@ async def get_stats(
     )
     average_quiz_score = round(float(avg_ratio) * 100, 1) if avg_ratio else 0.0
 
-    # Summaries generated (chat rows flagged with the summary prefix)
+    # Summaries generated (from the new SummaryHistory table)
     summaries_generated = await db.scalar(
-        select(func.count(ChatMessage.id)).where(
-            ChatMessage.user_id == user_id,
-            ChatMessage.query.like(f"{SUMMARY_QUERY_PREFIX}%"),
-        )
+        select(func.count(SummaryHistory.id)).where(SummaryHistory.user_id == user_id)
     )
 
-    # Genuine chats = all chat rows minus the summary-flagged ones
-    total_chat_rows = await db.scalar(
+    # Genuine chats (directly from the ChatMessage table)
+    chats_count = await db.scalar(
         select(func.count(ChatMessage.id)).where(ChatMessage.user_id == user_id)
     )
-    chats_count = (total_chat_rows or 0) - (summaries_generated or 0)
 
     current_streak = await compute_streak(db, user_id)
 
@@ -91,7 +89,7 @@ async def get_stats(
         documents_uploaded=documents_uploaded or 0,
         quizzes_taken=quizzes_taken or 0,
         summaries_generated=summaries_generated or 0,
-        chats_count=chats_count,
+        chats_count=chats_count or 0,
         current_streak=current_streak,
         average_quiz_score=average_quiz_score,
         tokens_used_today=usage.tokens_used_today,

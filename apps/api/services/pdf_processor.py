@@ -105,8 +105,17 @@ class PDFProcessor:
         return chunks
 
     def _clean_text(self, text: str) -> str:
-        """Normalize whitespaces, strip headers/footers, and clean text."""
-        # Simple whitespace normalization
-        lines = [line.strip() for line in text.splitlines()]
-        cleaned_lines = [line for line in lines if line]
-        return " ".join(cleaned_lines)
+        """Normalize whitespaces, strip headers/footers, and preserve paragraphs."""
+        # Standardize newlines and split by paragraph boundaries
+        normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+        raw_paragraphs = normalized.split("\n\n")
+
+        paragraphs = []
+        for para in raw_paragraphs:
+            # Clean and join consecutive lines in a single paragraph with space
+            lines = [line.strip() for line in para.splitlines()]
+            cleaned_lines = [line for line in lines if line]
+            if cleaned_lines:
+                paragraphs.append(" ".join(cleaned_lines))
+
+        return "\n\n".join(paragraphs)

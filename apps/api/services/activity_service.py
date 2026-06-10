@@ -6,7 +6,7 @@ are deliberately best-effort: recording activity must never fail the primary act
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -27,9 +27,10 @@ async def record_activity(db: AsyncSession, user_id: UUID) -> None:
     the insert (and the unique constraint makes a same-day duplicate harmless).
     """
     try:
+        today_utc = datetime.now(UTC).date()
         stmt = (
             pg_insert(UserActivity)
-            .values(user_id=user_id, activity_date=date.today())
+            .values(user_id=user_id, activity_date=today_utc)
             .on_conflict_do_nothing(constraint="uq_user_activity_day")
         )
         await db.execute(stmt)
@@ -52,12 +53,13 @@ async def compute_streak(db: AsyncSession, user_id: UUID) -> int:
         select(UserActivity.activity_date)
         .where(UserActivity.user_id == user_id)
         .order_by(UserActivity.activity_date.desc())
+        .limit(365)
     )
     active_days = result.scalars().all()
     if not active_days:
         return 0
 
-    today = date.today()
+    today = datetime.now(UTC).date()
     most_recent = active_days[0]
 
     # Allow the streak to count if the last active day is today or yesterday.

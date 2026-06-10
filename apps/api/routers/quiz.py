@@ -3,15 +3,17 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import get_current_user, get_generator, get_retriever
 from core.errors import StudyMateError
+from core.rate_limit import LLM_LIMIT, limiter
 from models.database import QuizAnswer, QuizSession, User, get_db
 from models.schemas import (
     AnswerResult,
+    GenerationMeta,
     QuizGenerateRequest,
     QuizGenerateResponse,
     QuizQuestion,
@@ -35,8 +37,10 @@ router = APIRouter(tags=["Quiz"])
     status_code=status.HTTP_201_CREATED,
     summary="Generate a multiple-choice academic quiz",
 )
+@limiter.limit(LLM_LIMIT)
 async def generate_quiz(
-    request: QuizGenerateRequest,
+    request: Request,
+    payload: QuizGenerateRequest,
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     retriever: Retriever = Depends(get_retriever),  # noqa: B008
@@ -60,27 +64,27 @@ async def generate_quiz(
     logger.info(
         "User %s initiated quiz generation on topic: '%s' (doc_id: %s, count: %d, mode: %s)",
         current_user.id,
-        request.topic,
-        request.doc_id,
-        request.num_questions,
+        payload.topic,
+        payload.doc_id,
+        payload.num_questions,
         generator.performance_mode,
     )
 
-    # 1. Use performance-mode-aware top_k
-    effective_top_k = request.top_k if request.top_k != 5 else generator.default_top_k
+    # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
+    effective_top_k = payload.top_k if payload.top_k is not None else generator.default_top_k
 
     # 2. Retrieve highly relevant grounding context chunks
     matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=request.topic,
-        doc_id=request.doc_id,
+        query=payload.topic,
+        doc_id=payload.doc_id,
         top_k=effective_top_k,
     )
 
     # 3. Command Gemini to generate structured multiple-choice questions
     generated_questions, usage = await generator.generate_quiz(
-        topic=request.topic,
+        topic=payload.topic,
         context=matched_chunks,
-        num_questions=request.num_questions,
+        num_questions=payload.num_questions,
     )
 
     # 4. Record token usage (best-effort)
@@ -91,8 +95,8 @@ async def generate_quiz(
     # 5. Store the full session in the database
     db_session = QuizSession(
         user_id=current_user.id,
-        doc_id=request.doc_id,
-        topic=request.topic,
+        doc_id=payload.doc_id,
+        topic=payload.topic,
         total_questions=len(generated_questions),
         questions=generated_questions,
         score=0,
@@ -140,6 +144,15 @@ async def generate_quiz(
         topic=db_session.topic,
         questions=response_questions,
         sources=sources,
+        meta=GenerationMeta(
+            model_used=str(usage.get("model_used", "")),
+            performance_mode=generator.performance_mode,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            total_tokens=int(usage.get("total_tokens", 0)),
+            cached=False,
+            retrieval_chunks_used=len(matched_chunks),
+        ),
     )
 
 
@@ -178,6 +191,17 @@ async def submit_quiz(
     session = result.scalar_one_or_none()
     if not session:
         raise StudyMateError("Quiz session not found.", status_code=404)
+
+    # Check if quiz has already been submitted
+    answers_exist_stmt = select(func.count(QuizAnswer.id)).where(
+        QuizAnswer.session_id == session_id
+    )
+    answers_exist_result = await db.execute(answers_exist_stmt)
+    if answers_exist_result.scalar_one() > 0:
+        raise StudyMateError(
+            "Quiz session has already been submitted.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
 
     # 2. Map submissions by question index for quick lookup
     submission_map = {ans.question_index: ans.selected_index for ans in request.answers}

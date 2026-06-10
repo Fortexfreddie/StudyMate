@@ -59,24 +59,25 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str  # required — no default
 
     # Gemini Models — primary/fallback for the "high" performance tier (default)
-    GEMINI_PRIMARY_MODEL: str = "gemini-3.1-pro-preview"
-    GEMINI_FALLBACK_MODEL: str = "gemini-3-flash-preview"
+    # GEMINI_PRIMARY_MODEL: str = "gemini-3.1-pro-preview"
+    # GEMINI_FALLBACK_MODEL: str = "gemini-3-flash-preview"
+    GEMINI_PRIMARY_MODEL: str = "gemini-3.5-flash"
+    GEMINI_FALLBACK_MODEL: str = "gemini-3.1-flash-lite"
     GENERATION_TEMPERATURE: float = 0.3
     MAX_RETRIES: int = 2
     RETRY_DELAY_SECONDS: int = 2
 
     # Performance tier model overrides (medium/low use cheaper, faster models)
-    GEMINI_MEDIUM_MODEL: str = "gemini-3-flash-preview"
+    # GEMINI_MEDIUM_MODEL: str = "gemini-3-flash-preview"
+    GEMINI_MEDIUM_MODEL: str = "gemini-3.5-flash"
     GEMINI_LOW_MODEL: str = "gemini-3.1-flash-lite"
 
     # Token usage limits (per 24-hour rolling window, per user)
     FREE_DAILY_TOKEN_LIMIT: int = 50_000
     PRO_DAILY_TOKEN_LIMIT: int = 500_000
-
     # Embedding
-    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+    EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     EMBEDDING_BATCH_SIZE: int = 50
-
     # Qdrant
     QDRANT_URL: str  # required — no default
     QDRANT_API_KEY: str  # required — no default

@@ -15,10 +15,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler  # noqa: F401
+from slowapi.errors import RateLimitExceeded
 
 from core.config import settings
 from core.dependencies import get_qdrant_client
 from core.errors import StudyMateError
+from core.middleware import SecurityHeadersMiddleware
+from core.rate_limit import limiter, rate_limit_exceeded_handler
 from models.database import engine
 from models.schemas import HealthResponse
 from routers import auth, chat, documents, history, quiz, stats, summary, usage
@@ -63,6 +67,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
 # CORS
 
 app.add_middleware(
@@ -72,6 +80,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Global exception handler
 

@@ -4,6 +4,7 @@ import ast
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -140,12 +141,17 @@ def robust_json_loads(text: str) -> Any:
         # Try to parse using AST evaluation if it looks like a single-quoted structure
         try:
             # Standardize lowercase JSON representations to Python equivalents for AST
-            ast_text = (
-                cleaned.replace("true", "True")
-                .replace("false", "False")
-                .replace("null", "None")
+            # Use word boundary regex to avoid replacing parts of words/strings
+            ast_text = re.sub(r"\btrue\b", "True", cleaned)
+            ast_text = re.sub(r"\bfalse\b", "False", ast_text)
+            ast_text = re.sub(r"\bnull\b", "None", ast_text)
+
+            result = ast.literal_eval(ast_text)
+            logger.warning(
+                "JSON parsing failed with error: %s. AST literal_eval fallback succeeded.",
+                json_err,
             )
-            return ast.literal_eval(ast_text)
+            return result
         except Exception as fallback_err:
             # Raise original JSONDecodeError if AST fallback also fails
             raise json_err from fallback_err
@@ -177,34 +183,66 @@ class Generator:
         key = SecretStr(api_key)
         temp = settings.GENERATION_TEMPERATURE
 
+        # Map string thinking level to numeric thinking_budget for Gemini 2.0 / 2.5 / 1.5 models,
+        # or use thinking_level for Gemini 3+ models.
+        primary_kwargs: dict[str, Any] = {}
+        is_primary_gemini_2_5 = any(v in self._primary_model_name for v in ("2.5", "2.0", "1.5"))
+        if is_primary_gemini_2_5:
+            budget_map = {
+                "minimal": 0,
+                "low": 512,
+                "medium": 1024,
+                "high": 2048,
+            }
+            budget = budget_map.get(thinking, 0)
+            if budget > 0:
+                primary_kwargs["thinking_budget"] = budget
+        else:
+            primary_kwargs["thinking_level"] = thinking
+
+        fallback_kwargs: dict[str, Any] = {}
+        is_fallback_gemini_2_5 = any(v in self._fallback_model_name for v in ("2.5", "2.0", "1.5"))
+        if is_fallback_gemini_2_5:
+            budget_map = {
+                "minimal": 0,
+                "low": 512,
+                "medium": 1024,
+                "high": 2048,
+            }
+            budget = budget_map.get(thinking, 0)
+            if budget > 0:
+                fallback_kwargs["thinking_budget"] = budget
+        else:
+            fallback_kwargs["thinking_level"] = thinking
+
         # Primary clients (plain + JSON-enforced)
         self._primary_client = ChatGoogleGenerativeAI(
-            model=primary_model,
+            model=self._primary_model_name,
             google_api_key=key,
             temperature=temp,
-            thinking_level=thinking,
+            **primary_kwargs,
         )
         self._primary_client_json = ChatGoogleGenerativeAI(
-            model=primary_model,
+            model=self._primary_model_name,
             google_api_key=key,
             temperature=temp,
-            thinking_level=thinking,
-            model_kwargs={"response_mime_type": "application/json"},
+            response_mime_type="application/json",
+            **primary_kwargs,
         )
 
         # Fallback clients (plain + JSON-enforced)
         self._fallback_client = ChatGoogleGenerativeAI(
-            model=fallback_model,
+            model=self._fallback_model_name,
             google_api_key=key,
             temperature=temp,
-            thinking_level=thinking,
+            **fallback_kwargs,
         )
         self._fallback_client_json = ChatGoogleGenerativeAI(
-            model=fallback_model,
+            model=self._fallback_model_name,
             google_api_key=key,
             temperature=temp,
-            thinking_level=thinking,
-            model_kwargs={"response_mime_type": "application/json"},
+            response_mime_type="application/json",
+            **fallback_kwargs,
         )
 
     async def generate_answer(
@@ -420,6 +458,41 @@ class Generator:
         return "\n\n".join(blocks)
 
     @staticmethod
+    def _extract_text_content(content: Any) -> str:
+        """Extract the actual text from an LLM response content field.
+
+        When thinking is enabled (Gemini 3.x with thinking_level, or 2.5 with
+        thinking_budget), langchain-google-genai returns ``response.content``
+        as a **list of dicts** like::
+
+            [{'type': 'text', 'text': '{...}', 'extras': {...}}]
+
+        This helper normalises both the plain-string and list-of-blocks
+        formats into a single text string.
+        """
+        if isinstance(content, str):
+            return content.strip()
+
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict):
+                    # Prefer 'text'-type blocks; skip 'thinking' blocks
+                    if block.get("type") == "thinking":
+                        continue
+                    text = block.get("text", "")
+                    if text:
+                        text_parts.append(str(text))
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            joined = "\n".join(text_parts).strip()
+            if joined:
+                return joined
+
+        # Last-resort fallback — stringify whatever we got
+        return str(content).strip()
+
+    @staticmethod
     def _strip_code_fence(text: str) -> str:
         """Remove an accidental ```json / ``` markdown wrapper around JSON."""
         cleaned = text.strip()
@@ -556,6 +629,7 @@ class Generator:
         by verifying the explanation references the selected option.
         """
         import re
+
         data = robust_json_loads(response_text)
 
         # If data is a dictionary, scan its keys for any list (e.g. {"questions": [...]})
@@ -593,7 +667,9 @@ class Generator:
             if not isinstance(item, dict):
                 continue
 
-            q_text = get_flexible_val(item, ["question", "q", "text", "query", "prompt"])
+            q_text = get_flexible_val(
+                item, ["question", "q", "text", "query", "prompt"]
+            )
             if q_text and isinstance(q_text, dict):
                 # If question is itself a dictionary, extract any string from it
                 for val in q_text.values():
@@ -605,7 +681,11 @@ class Generator:
             # Fallback: if q_text is still empty, scan dict for any large string
             if not q_text:
                 for k, v in item.items():
-                    if isinstance(v, str) and len(v) > 15 and k.lower() not in ("explanation", "reason", "why", "options"):
+                    if (
+                        isinstance(v, str)
+                        and len(v) > 15
+                        and k.lower() not in ("explanation", "reason", "why", "options")
+                    ):
                         q_text = v.strip()
                         break
 
@@ -618,7 +698,9 @@ class Generator:
                 opt_keys = ["a", "b", "c", "d"]
                 found_opts = []
                 for char in opt_keys:
-                    val = get_flexible_val(item, [f"option{char}", f"option_{char}", char])
+                    val = get_flexible_val(
+                        item, [f"option{char}", f"option_{char}", char]
+                    )
                     if val is not None:
                         found_opts.append(str(val))
                 if len(found_opts) == 4:
@@ -628,7 +710,12 @@ class Generator:
                 # Fallback: if we still don't have exactly 4 options, extract all string values that aren't the question/explanation
                 extracted_strings = []
                 for k, v in item.items():
-                    if isinstance(v, str) and v != q_text and k.lower() not in ("explanation", "reason", "why", "question"):
+                    if (
+                        isinstance(v, str)
+                        and v != q_text
+                        and k.lower()
+                        not in ("explanation", "reason", "why", "question")
+                    ):
                         extracted_strings.append(v)
                 if len(extracted_strings) >= 4:
                     options = extracted_strings[:4]
@@ -649,7 +736,7 @@ class Generator:
                     "correct_answer",
                     "correctanswer",
                     "right_answer",
-                ]
+                ],
             )
 
             # Standardize correct index to an integer 0..3
@@ -669,10 +756,16 @@ class Generator:
                         correct_idx = int(digits[0])
 
             if not isinstance(correct_idx, int) or correct_idx < 0 or correct_idx > 3:
+                logger.warning(
+                    "Invalid correct_idx %s received from LLM for question %s. Defaulting to 0.",
+                    correct_idx,
+                    idx,
+                )
                 correct_idx = 0  # Safe default to avoid crashes
 
             explanation = get_flexible_val(
-                item, ["explanation", "reasoning", "reason", "why", "desc", "description"]
+                item,
+                ["explanation", "reasoning", "reason", "why", "desc", "description"],
             )
             explanation = str(explanation or "").strip()
 
@@ -721,7 +814,7 @@ class Generator:
                     current_model = self._fallback_model_name
 
                 response = await client.ainvoke(messages)
-                content = str(response.content).strip()
+                content = self._extract_text_content(response.content)
 
                 # Extract usage metadata
                 usage: dict[str, int | str] = {"model_used": current_model}

@@ -1,8 +1,9 @@
 """FastAPI dependency injection — shared resources for route handlers."""
 
 import logging
+from typing import Literal
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import InvalidTokenError
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
@@ -28,6 +29,9 @@ _qdrant_client: AsyncQdrantClient | None = None
 
 # Valid performance mode keys
 _VALID_MODES = frozenset(PERFORMANCE_MODES.keys())
+
+# Cache for Generator instances
+_generator_cache: dict[str, Generator] = {}
 
 
 async def get_current_user(
@@ -56,12 +60,15 @@ async def get_current_user(
     return user
 
 
-def get_performance_mode(request: Request) -> str:
+def get_performance_mode(
+    x_performance_mode: Literal["low", "medium", "high", "very_high", "max"]
+    | None = Header(default="high", alias="X-Performance-Mode"),
+) -> str:
     """Extract performance mode from the X-Performance-Mode header.
 
     Falls back to 'high' if the header is missing or contains an invalid value.
     """
-    mode = request.headers.get("X-Performance-Mode", "high").lower().strip()
+    mode = (x_performance_mode or "high").lower().strip()
     return mode if mode in _VALID_MODES else "high"
 
 
@@ -107,5 +114,9 @@ def get_retriever(
 def get_generator(
     performance_mode: str = Depends(get_performance_mode),  # noqa: B008
 ) -> Generator:
-    """Dependency injector for Generator — uses request's performance mode."""
-    return Generator(api_key=settings.GOOGLE_API_KEY, performance_mode=performance_mode)
+    """Dependency injector for Generator — uses request's performance mode and caches instances."""
+    if performance_mode not in _generator_cache:
+        _generator_cache[performance_mode] = Generator(
+            api_key=settings.GOOGLE_API_KEY, performance_mode=performance_mode
+        )
+    return _generator_cache[performance_mode]

@@ -3,13 +3,16 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import PERFORMANCE_MODES
 from core.dependencies import get_current_user, get_generator, get_retriever
 from core.errors import StudyMateError
+from core.rate_limit import LLM_LIMIT, limiter
 from models.database import ChatMessage, User, get_db
-from models.schemas import ChatRequest, ChatResponse, SourceInfo
+from models.schemas import ChatRequest, ChatResponse, GenerationMeta, SourceInfo
 from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
@@ -26,8 +29,10 @@ router = APIRouter(tags=["Chat"])
     status_code=status.HTTP_201_CREATED,
     summary="Chat with documents using RAG",
 )
+@limiter.limit(LLM_LIMIT)
 async def chat_with_docs(
-    request: ChatRequest,
+    request: Request,
+    payload: ChatRequest,
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     retriever: Retriever = Depends(get_retriever),  # noqa: B008
@@ -48,17 +53,18 @@ async def chat_with_docs(
             status_code=403,
         )
 
-    # 1. Check for a cached response
-    from sqlalchemy import func, select
+    # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
+    effective_top_k = payload.top_k if payload.top_k is not None else generator.default_top_k
 
+    # 2. Check for a cached response
     stmt = (
         select(ChatMessage)
         .where(
             ChatMessage.user_id == current_user.id,
-            ChatMessage.doc_id == request.doc_id,
-            func.lower(func.trim(ChatMessage.query)) == request.query.strip().lower(),
+            ChatMessage.doc_id == payload.doc_id,
+            func.lower(func.trim(ChatMessage.query)) == payload.query.strip().lower(),
             ChatMessage.context_sufficient,
-            func.jsonb_array_length(ChatMessage.sources) == request.top_k,
+            ChatMessage.performance_mode == generator.performance_mode,
         )
         .order_by(ChatMessage.created_at.desc())
         .limit(1)
@@ -69,19 +75,20 @@ async def chat_with_docs(
     if cached_msg:
         logger.info(
             "Cache HIT for query '%s' (User: %s, Doc: %s). Reusing cached answer.",
-            request.query,
+            payload.query,
             current_user.id,
-            request.doc_id,
+            payload.doc_id,
         )
 
         # Save a new history entry reflecting this duplicate interaction
         new_msg = ChatMessage(
             user_id=current_user.id,
-            doc_id=request.doc_id,
-            query=request.query,
+            doc_id=payload.doc_id,
+            query=payload.query,
             answer=cached_msg.answer,
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_msg.sources,
+            performance_mode=generator.performance_mode,
         )
         db.add(new_msg)
         await record_activity(db, current_user.id)
@@ -110,21 +117,28 @@ async def chat_with_docs(
             answer=cached_msg.answer,
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_sources,
+            meta=GenerationMeta(
+                model_used=str(
+                    PERFORMANCE_MODES.get(
+                        cached_msg.performance_mode or "high", {}
+                    ).get("primary", "cached")
+                ),
+                performance_mode=generator.performance_mode,
+                cached=True,
+                retrieval_chunks_used=len(cached_sources),
+            ),
         )
-
-    # 2. Use performance-mode-aware top_k
-    effective_top_k = request.top_k if request.top_k != 5 else generator.default_top_k
 
     # 3. Retrieve the most relevant chunks from Qdrant
     matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=request.query,
-        doc_id=request.doc_id,
+        query=payload.query,
+        doc_id=payload.doc_id,
         top_k=effective_top_k,
     )
 
     # 4. Synthesize the grounded response using Gemini
     answer, context_sufficient, usage = await generator.generate_answer(
-        query=request.query,
+        query=payload.query,
         context=matched_chunks,
     )
 
@@ -164,11 +178,12 @@ async def chat_with_docs(
     # 7. Save the interaction into the PostgreSQL database history
     db_message = ChatMessage(
         user_id=current_user.id,
-        doc_id=request.doc_id,
-        query=request.query,
+        doc_id=payload.doc_id,
+        query=payload.query,
         answer=answer,
         context_sufficient=context_sufficient,
         sources=sources_dict,
+        performance_mode=generator.performance_mode,
     )
     db.add(db_message)
     await record_activity(db, current_user.id)
@@ -185,4 +200,13 @@ async def chat_with_docs(
         answer=answer,
         context_sufficient=context_sufficient,
         sources=sources,
+        meta=GenerationMeta(
+            model_used=str(usage.get("model_used", "")),
+            performance_mode=generator.performance_mode,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            total_tokens=int(usage.get("total_tokens", 0)),
+            cached=False,
+            retrieval_chunks_used=len(matched_chunks),
+        ),
     )

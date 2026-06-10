@@ -7,9 +7,10 @@ is grounded **strictly** in the student's own uploaded documents.
 - **Framework:** FastAPI (Python 3.11+)
 - **DB:** PostgreSQL + SQLAlchemy 2.0 (async) + Alembic
 - **Vector DB:** Qdrant Cloud
-- **LLM:** Google Gemini (`gemini-3-flash-preview` primary, `gemini-3.1-flash-lite` fallback)
-- **Embeddings:** `gemini-embedding-001`
-- **Auth:** JWT (PyJWT) + bcrypt password hashing
+- **LLM:** Google Gemini (`gemini-3.5-flash` primary, `gemini-3.1-flash-lite` fallback)
+- **Embeddings:** `gemini-embedding-2`
+- **Auth:** JWT (PyJWT) + Argon2id password hashing + Token Rotation
+- **Rate Limiting:** slowapi (5 req/min auth, 10 req/min LLM)
 
 ---
 
@@ -20,12 +21,13 @@ is grounded **strictly** in the student's own uploaded documents.
 4. [Database Schema](#database-schema)
 5. [Endpoint Reference (with examples)](#endpoint-reference-with-examples)
 6. [The RAG Pipeline](#the-rag-pipeline)
-7. [Summary Formats — how they work](#summary-formats--how-they-work)
-8. [Study Streak & Stats](#study-streak--stats)
-9. [Caching](#caching)
-10. [Error Handling](#error-handling)
-11. [Configuration](#configuration)
-12. [Development](#development)
+7. [Performance Modes & top_k](#performance-modes--top_k)
+8. [Summary Formats — how they work](#summary-formats--how-they-work)
+9. [Study Streak & Stats](#study-streak--stats)
+10. [Caching](#caching)
+11. [Error Handling](#error-handling)
+12. [Configuration](#configuration)
+13. [Development](#development)
 
 ---
 
@@ -114,18 +116,15 @@ paste `Bearer <access_token>` after signup/login.
 |---|---|---|
 | `users` | Accounts | `id`, `email` (unique), `password_hash`, `full_name`, `major` (nullable), **`is_pro`** (bool, defaults to False), timestamps |
 | `documents` | Uploaded PDFs (metadata only; vectors live in Qdrant) | `id` (= Qdrant key), `user_id`, `filename`, `page_count`, `chunk_count`, `uploaded_at` |
-| `chat_history` | Q&A pairs **and** summaries | `id`, `user_id`, `doc_id`, `query`, `answer`, `context_sufficient`, `sources` (JSONB) |
-| `quiz_sessions` | A generated quiz | `id`, `user_id`, `doc_id`, `topic`, `total_questions`, `questions` (JSONB), `score` |
-| `quiz_answers` | Per-question grade after submit | `session_id`, `question_index`, `selected_index`, `correct_index`, `is_correct` |
+| `chat_history` | Chat Q&A pairs (grounded) | `id`, `user_id`, `doc_id`, `query`, `answer`, `context_sufficient`, `sources` (JSONB), `performance_mode`, `created_at` |
+| `quiz_sessions` | A generated quiz | `id`, `user_id`, `doc_id`, `topic`, `total_questions`, `questions` (JSONB), `score`, `created_at` |
+| `quiz_answers` | Per-question grade after submit | `id`, `session_id`, `question_index`, `selected_index`, `correct_index`, `is_correct`, `created_at` |
 | `user_activity` | One row per user per active day (for streaks) | `user_id`, `activity_date`, unique `(user_id, activity_date)` |
+| `refresh_tokens` | Active refresh tokens (token rotation) | `id`, `user_id`, `token_hash` (unique), `expires_at`, `is_revoked`, `created_at` |
+| `summary_history` | Generated summaries (cached & paginated) | `id`, `user_id`, `doc_id`, `topic`, `summary_text`, `format`, `structured` (JSONB), `context_sufficient`, `sources` (JSONB), `performance_mode`, `created_at` |
 | **`token_usage`** | Granular per-request LLM token consumption tracking | `id`, `user_id`, `tokens_used`, `model_used`, `performance_mode`, `request_type` (chat/summary/quiz), `created_at` |
 
-> **Summaries share `chat_history`.** A summary row's `query` is prefixed
-> `Summary request: <topic> [format=<fmt>]`. The `/stats` summary count and the
-> history timeline key on that prefix to separate summaries from chats.
-
-**Migration for this integration:** `migrations/versions/369f827eaf12_add_user_is_pro_and_token_usage_table.py`
-adds `users.is_pro` and the `token_usage` table. Run `alembic upgrade head` before starting the server.
+**Migration for this integration:** Run `alembic upgrade head` before starting the server. This applies all migrations including `372dee4b2ff1_combined_auth_and_summaries` which updates indexes, adds Argon2 password hashing support, refresh token rotation table, and summary history table.
 
 ---
 
@@ -146,7 +145,7 @@ All errors return `{ "detail": "human-readable message" }`.
 ```
 
 **`POST /auth/login`** → 200 → `{ access_token, refresh_token, token_type }`
-**`POST /auth/refresh`** → 200 → `{ access_token, token_type }` (refresh_token is null)
+**`POST /auth/refresh`** → 200 → `{ access_token, refresh_token, token_type }` (rotates both tokens)
 **`GET /auth/me`** → 200 → user profile (now includes `major`)
 
 **`PATCH /auth/me`** → 200 — update editable fields (email is immutable)
@@ -174,35 +173,42 @@ Errors: `400` not a PDF/empty/image-only · `413` > 20MB · `500` indexing failu
 
 **`POST /chat`** → 201
 ```json
-// request  (doc_id optional — omit to search all docs; top_k optional, default 5)
-{ "query": "What is cognitive load theory?", "doc_id": "uuid", "top_k": 5 }
+// request  (doc_id optional — omit to search all docs; top_k optional — omit to use mode default)
+{ "query": "What is cognitive load theory?", "doc_id": "uuid", "top_k": 10 }
 // response
 { "answer": "Cognitive load theory posits…",
   "context_sufficient": true,
-  "sources": [ { "filename": "notes.pdf", "page_number": 12, "similarity_score": 0.91, "text_preview": "…" } ] }
+  "sources": [ { "filename": "notes.pdf", "page_number": 12, "similarity_score": 0.91, "text_preview": "…" } ],
+  "meta": { "model_used": "gemini-3.5-flash", "performance_mode": "high",
+            "input_tokens": 3811, "output_tokens": 622, "total_tokens": 4433,
+            "cached": false, "retrieval_chunks_used": 10 } }
 ```
 
 ### Summary
 
 **`POST /summary/generate`** → 201
 ```json
-// request  (format optional, default "bullets")
-{ "topic": "Vector databases", "doc_id": "uuid", "top_k": 5, "format": "flashcards" }
+// request  (format optional, default "bullets"; top_k optional — omit to use mode default)
+{ "topic": "Vector databases", "doc_id": "uuid", "format": "flashcards" }
 // response
 { "summary": "- …plain text fallback…",
   "format": "flashcards",
   "structured": [ { "front": "…", "back": "…" } ],
   "context_sufficient": true,
-  "sources": [ … ] }
+  "sources": [ … ],
+  "meta": { "model_used": "gemini-3.5-flash", "performance_mode": "high",
+            "input_tokens": 2100, "output_tokens": 850, "total_tokens": 2950,
+            "cached": false, "retrieval_chunks_used": 10 } }
 ```
 See [Summary Formats](#summary-formats--how-they-work) for every `structured` shape.
 
 ### Quiz
 
-**`POST /quiz/generate`** → 201  (`num_questions` 1–30, default 5)
+**`POST /quiz/generate`** → 201  (`num_questions` 1–30, default 5; `top_k` optional)
 ```json
-{ "topic": "RAG", "doc_id": "uuid", "num_questions": 5, "top_k": 5 }
-// → { session_id, topic, questions: [ { question, options[4], correct_index, explanation } ], sources }
+{ "topic": "RAG", "doc_id": "uuid", "num_questions": 5 }
+// → { session_id, topic, questions: [ { question, options[4], correct_index, explanation } ], sources,
+//     meta: { model_used, performance_mode, input_tokens, output_tokens, total_tokens, cached, retrieval_chunks_used } }
 ```
 
 **`POST /quiz/{session_id}/submit`** → 200  (scoring happens **here**, server-side)
@@ -220,6 +226,7 @@ Skipped questions default to index 0 and are graded as answered.
 **`GET /history/chat?doc_id=&limit=10&offset=0`** → `{ messages[], total, limit, offset }`
 **`GET /history/quizzes?doc_id=&limit=10&offset=0`** → `{ sessions[], total, limit, offset }`
 **`GET /history/quizzes/{session_id}`** → full graded detail.
+**`GET /history/summaries?doc_id=&limit=10&offset=0`** → `{ summaries[], total, limit, offset }`
 
 ### Stats
 
@@ -262,7 +269,7 @@ Skipped questions default to index 0 and are graded as answered.
 
 Implemented across `retriever.py` + `generator.py`, called by chat/summary/quiz:
 
-1. **Embed query** — the user's query/topic is embedded with `gemini-embedding-001`.
+1. **Embed query** — the user's query/topic is embedded with `gemini-embedding-2`.
 2. **Retrieve** — Qdrant cosine search returns the top-k chunks for the user
    (filtered by `doc_id` when supplied), dropping anything below the
    `RETRIEVAL_SIMILARITY_THRESHOLD` (0.60).
@@ -276,6 +283,54 @@ Implemented across `retriever.py` + `generator.py`, called by chat/summary/quiz:
 
 `context_sufficient: false` is returned (not an error) when the retrieved context
 doesn't cover the question — the frontend renders this as a clear notice.
+
+---
+
+## Performance Modes & top_k
+
+Every generation request uses a **performance mode** (set via the `X-Performance-Mode`
+request header, default `high`). Each mode controls the model, thinking depth, and
+default retrieval `top_k`.
+
+| Mode | Primary Model | Fallback Model | Thinking | Default `top_k` | Max `top_k` |
+|---|---|---|---|---|---|
+| `low` | `gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` | minimal | 5 | 10 |
+| `medium` | `gemini-3.5-flash` | `gemini-3.1-flash-lite` | low | 8 | 15 |
+| **`high`** (default) | **`gemini-3.5-flash`** | **`gemini-3.1-flash-lite`** | **medium** | **10** | **20** |
+| `very_high` | `gemini-3.5-flash` | `gemini-3.1-flash-lite` | high | 15 | 25 |
+| `max` | `gemini-3.5-flash` | `gemini-3.5-flash` | high | 20 | 30 |
+
+### How `top_k` works
+
+`top_k` controls how many document chunks are retrieved from Qdrant and fed to the
+model as context.
+
+- **Omit `top_k`** → the performance mode's default is used (e.g. `10` for `high`)
+- **Set `top_k` explicitly** (e.g. `"top_k": 5`) → your value is used, regardless of mode
+- Valid range: **1–30**
+
+```json
+// Omit top_k → mode default (10 in high mode)
+{ "query": "What is X?" }
+
+// Explicit top_k → uses exactly 5
+{ "query": "What is X?", "top_k": 5 }
+```
+
+### Generation Metadata (`meta`)
+
+Every chat, summary, and quiz response includes a `meta` object with transparency
+into the generation:
+
+| Field | Type | Description |
+|---|---|---|
+| `model_used` | string | Actual Gemini model used (e.g. `gemini-3.5-flash`) |
+| `performance_mode` | string | Active tier: `low` / `medium` / `high` / `very_high` / `max` |
+| `input_tokens` | int | Tokens consumed by prompt + context |
+| `output_tokens` | int | Tokens in the generated response |
+| `total_tokens` | int | Sum of input + output |
+| `cached` | bool | `true` if served from DB cache (no LLM call) |
+| `retrieval_chunks_used` | int | Number of RAG chunks fed to the model |
 
 ---
 
@@ -318,25 +373,17 @@ the new shape in the frontend summary page.
   so a streak-tracking failure can't break the primary action.
 - **`compute_streak(db, user_id)`** — counts consecutive active days ending today (or
   yesterday, leniently). A gap resets the streak to 0.
-
-`/stats` derives every other number live from the DB: document/quiz counts, summary
-count (chat rows with the `Summary request:` prefix), genuine chat count (total chat
-rows minus summaries), and average quiz score as a percentage.
-
+`/stats` derives every other number live from the DB: document/quiz counts, summary count (directly from the `summary_history` table), genuine chat count (directly from the `chat_history` table), and average quiz score as a percentage.
 > XP/gamification is intentionally **not** implemented — there is no XP concept in the
 > data model.
 
 ---
 
 ## Caching
-
-`/chat` and `/summary/generate` check `chat_history` for an identical prior request
-(same user, `doc_id`, normalized query, and matching `top_k` via
-`jsonb_array_length(sources)`). On a hit, the saved answer is returned without
-re-running retrieval or the LLM (≈10–20 ms vs 3–5 s). Summaries include the `format`
-in their cache key so different formats don't collide; the structured payload isn't
-persisted, so a cached summary returns `structured: null` + the cached plain text.
-
+- `/chat` checks the `chat_history` table for an identical prior Q&A request (matching user, `doc_id`, normalized query, and performance mode).
+- `/summary/generate` checks the `summary_history` table for an identical prior summary request (matching user, `doc_id`, normalized topic, `format`, and performance mode).
+- If cached data is found, the result is served directly from the database with `meta.cached: true`, reducing latency from ~3-5 seconds to ~10-20 milliseconds. Since structured summaries are persisted in the database, cached summary responses return the fully populated structured payload.
+- *Note:* Caching does not strictly filter on `top_k` or the source array length. This ensures consistent cache hits even if the number of retrieved chunks varies slightly or falls below the similarity threshold.
 ---
 
 ## Error Handling

@@ -137,6 +137,23 @@ class SourceInfo(BaseModel):
     text_preview: str
 
 
+class GenerationMeta(BaseModel):
+    """Metadata about the LLM generation call — returned with every generation response.
+
+    Gives the frontend full transparency on which model was used, the performance
+    tier, token consumption, whether the result was a cache hit, and how many
+    retrieval chunks were fed to the model.
+    """
+
+    model_used: str
+    performance_mode: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cached: bool = False
+    retrieval_chunks_used: int = 0
+
+
 # Chat
 
 
@@ -145,7 +162,16 @@ class ChatRequest(BaseModel):
 
     query: str = Field(..., min_length=1)
     doc_id: UUID | None = None
-    top_k: int = Field(default=5, ge=1, le=30)
+    top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description=(
+            "Number of context chunks to retrieve. "
+            "If omitted, defaults to the performance mode's optimal value "
+            "(e.g. 10 for 'high', 5 for 'low')."
+        ),
+    )
 
 
 class ChatResponse(BaseModel):
@@ -154,6 +180,7 @@ class ChatResponse(BaseModel):
     answer: str
     context_sufficient: bool
     sources: list[SourceInfo]
+    meta: GenerationMeta | None = None
 
 
 # Summary
@@ -176,7 +203,15 @@ class SummaryRequest(BaseModel):
 
     topic: str = Field(..., min_length=1)
     doc_id: UUID | None = None
-    top_k: int = Field(default=5, ge=1, le=30)
+    top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description=(
+            "Number of context chunks to retrieve. "
+            "If omitted, defaults to the performance mode's optimal value."
+        ),
+    )
     format: SummaryFormat = "bullets"
 
 
@@ -266,6 +301,7 @@ class SummaryResponse(BaseModel):
     structured: SummaryStructured = None
     context_sufficient: bool
     sources: list[SourceInfo]
+    meta: GenerationMeta | None = None
 
 
 # Quiz
@@ -277,7 +313,15 @@ class QuizGenerateRequest(BaseModel):
     topic: str = Field(..., min_length=1)
     doc_id: UUID | None = None
     num_questions: int = Field(default=settings.DEFAULT_QUIZ_QUESTIONS, ge=1)
-    top_k: int = Field(default=5, ge=1, le=30)
+    top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description=(
+            "Number of context chunks to retrieve. "
+            "If omitted, defaults to the performance mode's optimal value."
+        ),
+    )
 
     @field_validator("num_questions")
     @classmethod
@@ -311,6 +355,7 @@ class QuizGenerateResponse(BaseModel):
     topic: str
     questions: list[QuizQuestion]
     sources: list[SourceInfo]
+    meta: GenerationMeta | None = None
 
 
 class AnswerSubmission(BaseModel):
@@ -365,6 +410,29 @@ class ChatHistoryResponse(BaseModel):
     """GET /history/chat response — paginated."""
 
     messages: list[ChatHistoryItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class SummaryHistoryItem(BaseModel):
+    """Single summary in history."""
+
+    id: UUID
+    doc_id: UUID | None
+    topic: str
+    summary_text: str
+    format: str
+    context_sufficient: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SummaryHistoryResponse(BaseModel):
+    """GET /history/summaries response — paginated."""
+
+    summaries: list[SummaryHistoryItem]
     total: int
     limit: int
     offset: int

@@ -1,15 +1,18 @@
 """Summary API Router — implements grounded topic summary synthesis."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import PERFORMANCE_MODES
 from core.dependencies import get_current_user, get_generator, get_retriever
 from core.errors import StudyMateError
-from models.database import ChatMessage, User, get_db
-from models.schemas import SourceInfo, SummaryRequest, SummaryResponse
+from core.rate_limit import LLM_LIMIT, limiter
+from models.database import SummaryHistory, User, get_db
+from models.schemas import GenerationMeta, SourceInfo, SummaryRequest, SummaryResponse
 from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
@@ -26,8 +29,10 @@ router = APIRouter(tags=["Summary"])
     status_code=status.HTTP_201_CREATED,
     summary="Generate a grounded topic summary",
 )
+@limiter.limit(LLM_LIMIT)
 async def generate_summary(
-    request: SummaryRequest,
+    request: Request,
+    payload: SummaryRequest,
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     retriever: Retriever = Depends(get_retriever),  # noqa: B008
@@ -48,21 +53,22 @@ async def generate_summary(
             status_code=403,
         )
 
-    # 1. Check for a cached response
-    from sqlalchemy import func, select
+    # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
+    effective_top_k = payload.top_k if payload.top_k is not None else generator.default_top_k
 
-    summary_query = f"Summary request: {request.topic} [format={request.format}]"
-
+    # 2. Check for a cached response
     stmt = (
-        select(ChatMessage)
+        select(SummaryHistory)
         .where(
-            ChatMessage.user_id == current_user.id,
-            ChatMessage.doc_id == request.doc_id,
-            func.lower(func.trim(ChatMessage.query)) == summary_query.strip().lower(),
-            ChatMessage.context_sufficient,
-            func.jsonb_array_length(ChatMessage.sources) == request.top_k,
+            SummaryHistory.user_id == current_user.id,
+            SummaryHistory.doc_id == payload.doc_id,
+            func.lower(func.trim(SummaryHistory.topic))
+            == payload.topic.strip().lower(),
+            SummaryHistory.format == payload.format,
+            SummaryHistory.performance_mode == generator.performance_mode,
+            SummaryHistory.context_sufficient,
         )
-        .order_by(ChatMessage.created_at.desc())
+        .order_by(SummaryHistory.created_at.desc())
         .limit(1)
     )
     result = await db.execute(stmt)
@@ -71,19 +77,22 @@ async def generate_summary(
     if cached_msg:
         logger.info(
             "Cache HIT for topic summary '%s' (User: %s, Doc: %s, Top-K: %s).",
-            request.topic,
+            payload.topic,
             current_user.id,
-            request.doc_id,
-            request.top_k,
+            payload.doc_id,
+            effective_top_k,
         )
 
-        new_msg = ChatMessage(
+        new_msg = SummaryHistory(
             user_id=current_user.id,
-            doc_id=request.doc_id,
-            query=summary_query,
-            answer=cached_msg.answer,
+            doc_id=payload.doc_id,
+            topic=payload.topic,
+            summary_text=cached_msg.summary_text,
+            format=payload.format,
+            structured=cached_msg.structured,
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_msg.sources,
+            performance_mode=generator.performance_mode,
         )
         db.add(new_msg)
         await record_activity(db, current_user.id)
@@ -107,28 +116,35 @@ async def generate_summary(
                 )
 
         return SummaryResponse(
-            summary=cached_msg.answer,
-            format=request.format,
-            structured=None,
+            summary=cached_msg.summary_text,
+            format=payload.format,
+            structured=cast(Any, cached_msg.structured),
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_sources,
+            meta=GenerationMeta(
+                model_used=str(
+                    PERFORMANCE_MODES.get(
+                        cached_msg.performance_mode or "high", {}
+                    ).get("primary", "cached")
+                ),
+                performance_mode=generator.performance_mode,
+                cached=True,
+                retrieval_chunks_used=len(cached_sources),
+            ),
         )
-
-    # 2. Use performance-mode-aware top_k
-    effective_top_k = request.top_k if request.top_k != 5 else generator.default_top_k
 
     # 3. Retrieve matching chunks from Qdrant for context
     matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=request.topic,
-        doc_id=request.doc_id,
+        query=payload.topic,
+        doc_id=payload.doc_id,
         top_k=effective_top_k,
     )
 
     # 4. Synthesize the format-specific topic summary using Gemini
     summary, structured, context_sufficient, usage = await generator.generate_summary(
-        topic=request.topic,
+        topic=payload.topic,
         context=matched_chunks,
-        summary_format=request.format,
+        summary_format=payload.format,
     )
 
     # 5. Record token usage (best-effort)
@@ -163,14 +179,17 @@ async def generate_summary(
             }
         )
 
-    # 7. Save the generated summary in the chat history table
-    db_message = ChatMessage(
+    # 7. Save the generated summary in the SummaryHistory table
+    db_message = SummaryHistory(
         user_id=current_user.id,
-        doc_id=request.doc_id,
-        query=summary_query,
-        answer=summary,
+        doc_id=payload.doc_id,
+        topic=payload.topic,
+        summary_text=summary,
+        format=payload.format,
+        structured=structured,
         context_sufficient=context_sufficient,
         sources=sources_dict,
+        performance_mode=generator.performance_mode,
     )
     db.add(db_message)
     await record_activity(db, current_user.id)
@@ -180,14 +199,23 @@ async def generate_summary(
     logger.info(
         "Generated summary saved to history (Message ID: %s, Format: %s, Context Sufficient: %s)",
         db_message.id,
-        request.format,
+        payload.format,
         context_sufficient,
     )
 
     return SummaryResponse(
         summary=summary,
-        format=request.format,
+        format=payload.format,
         structured=structured,
         context_sufficient=context_sufficient,
         sources=sources,
+        meta=GenerationMeta(
+            model_used=str(usage.get("model_used", "")),
+            performance_mode=generator.performance_mode,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            total_tokens=int(usage.get("total_tokens", 0)),
+            cached=False,
+            retrieval_chunks_used=len(matched_chunks),
+        ),
     )
