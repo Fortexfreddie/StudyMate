@@ -22,6 +22,7 @@ class Retriever:
         self,
         query: str,
         doc_id: uuid.UUID | None = None,
+        doc_ids: list[uuid.UUID] | None = None,
         top_k: int | None = None,
         score_threshold: float | None = None,
     ) -> list[dict[str, Any]]:
@@ -34,11 +35,13 @@ class Retriever:
         )
 
         doc_id_str = str(doc_id) if doc_id is not None else None
+        doc_ids_str = [str(d) for d in doc_ids] if doc_ids is not None else None
 
         logger.info(
-            "Performing semantic retrieval for query: '%s' (doc_id: %s, top_k: %d, threshold: %.2f)",
+            "Performing semantic retrieval for query: '%s' (doc_id: %s, doc_ids_count: %s, top_k: %d, threshold: %.2f)",
             query,
             doc_id_str,
+            len(doc_ids_str) if doc_ids_str is not None else "None",
             target_top_k,
             target_threshold,
         )
@@ -51,6 +54,7 @@ class Retriever:
             query_vector=query_vector,
             top_k=target_top_k,
             doc_id=doc_id_str,
+            doc_ids=doc_ids_str,
             score_threshold=target_threshold,
         )
 

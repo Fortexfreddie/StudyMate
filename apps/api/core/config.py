@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     GEMINI_PRIMARY_MODEL: str = "gemini-3.5-flash"
     GEMINI_FALLBACK_MODEL: str = "gemini-3.1-flash-lite"
     GENERATION_TEMPERATURE: float = 0.3
-    MAX_RETRIES: int = 2
+    MAX_RETRIES: int = 1  # number of primary model retries for transient errors
     RETRY_DELAY_SECONDS: int = 2
 
     # Performance tier model overrides (medium/low use cheaper, faster models)

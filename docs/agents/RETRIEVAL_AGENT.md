@@ -47,10 +47,8 @@ class RetrievedChunk:
 1. Validate query (not empty, not too short)
     │
     ▼
-2. Embed query using gemini-embedding-001
+2. Embed query using gemini-embedding-2
    → returns query_vector: list[float]
-    │
-    ▼
 3. Run cosine similarity search in Qdrant
    - Filter by doc_id if provided
    - Retrieve top_k results
@@ -91,22 +89,19 @@ class RetrievedChunk:
 
 ```python
 # apps/api/core/config.py
-
 DEFAULT_TOP_K = 5
 RETRIEVAL_SIMILARITY_THRESHOLD = 0.60
 ```
 
 ---
-
 ## Key Design Decisions
 
-- **Same embedding model for queries and chunks** (`gemini-embedding-001`) — this is critical. If chunks were embedded with one model and queries with another, similarity scores would be meaningless.
+- **Same embedding model for queries and chunks** (`gemini-embedding-2`) — this is critical. If chunks were embedded with one model and queries with another, similarity scores would be meaningless.
 - **doc_id filtering** allows the student to constrain search to a single uploaded document, which is the primary use case. Searching all documents is the fallback for future multi-document sessions.
 - **Similarity threshold** prevents low-quality matches from polluting the generation context. A chunk that scores 0.30 is essentially unrelated and should never reach Gemini.
 - **Ordered by similarity score** so the most relevant chunk is always first — the generation layer uses this ordering when assembling the prompt.
 
 ---
-
 ## What This Agent Does NOT Do
 
 - Does not call Gemini

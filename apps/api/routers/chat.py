@@ -11,7 +11,7 @@ from core.config import PERFORMANCE_MODES
 from core.dependencies import get_current_user, get_generator, get_retriever
 from core.errors import StudyMateError
 from core.rate_limit import LLM_LIMIT, limiter
-from models.database import ChatMessage, User, get_db
+from models.database import ChatMessage, Document, User, get_db
 from models.schemas import ChatRequest, ChatResponse, GenerationMeta, SourceInfo
 from services.activity_service import record_activity
 from services.generator import Generator
@@ -55,6 +55,26 @@ async def chat_with_docs(
 
     # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
     effective_top_k = payload.top_k if payload.top_k is not None else generator.default_top_k
+
+    # 1.5. Verify document ownership / retrieve allowed doc IDs for security
+    user_doc_ids = None
+    if payload.doc_id is not None:
+        stmt_doc = select(Document).where(
+            Document.id == payload.doc_id, Document.user_id == current_user.id
+        )
+        doc_res = await db.execute(stmt_doc)
+        if not doc_res.scalar_one_or_none():
+            raise StudyMateError("Document not found or access denied.", status_code=404)
+    else:
+        # Global query: fetch all doc IDs owned by user to restrict search
+        stmt_docs = select(Document.id).where(Document.user_id == current_user.id)
+        docs_res = await db.execute(stmt_docs)
+        user_doc_ids = list(docs_res.scalars().all())
+        if not user_doc_ids:
+            raise StudyMateError(
+                "You haven't uploaded any documents yet. Please upload study materials first.",
+                status_code=400,
+            )
 
     # 2. Check for a cached response
     stmt = (
@@ -133,6 +153,7 @@ async def chat_with_docs(
     matched_chunks = await retriever.retrieve_relevant_chunks(
         query=payload.query,
         doc_id=payload.doc_id,
+        doc_ids=user_doc_ids,
         top_k=effective_top_k,
     )
 

@@ -18,19 +18,23 @@ This module owns **all authentication and authorization logic**. It provides pas
 ## Password Hashing
 
 ```python
-from passlib.context import CryptContext
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+ph = PasswordHasher()
 
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password for storage."""
-    return pwd_context.hash(password)
+    """Hash a plaintext password for storage using Argon2id."""
+    return ph.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plaintext password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a plaintext password against its Argon2 hash."""
+    try:
+        return ph.verify(hashed_password, plain_password)
+    except VerifyMismatchError:
+        return False
 ```
 
 ---
@@ -209,7 +213,7 @@ Authenticate and receive tokens.
 
 ### `POST /auth/refresh`
 
-Get a new access token using a refresh token.
+Rotate the refresh token and get a new access token.
 
 **Request body:**
 ```json
@@ -222,12 +226,13 @@ Get a new access token using a refresh token.
 ```json
 {
   "access_token": "eyJ...",
+  "refresh_token": "eyJ...",
   "token_type": "bearer"
 }
 ```
 
 **Errors:**
-- `401` — invalid or expired refresh token
+- `401` — invalid, expired, or reused refresh token (token reuse triggers revocation of all active sessions for the compromised user)
 
 ### `GET /auth/me`
 
@@ -258,25 +263,26 @@ class AuthService:
         """Create a new user and return (user, access_token, refresh_token)."""
         # 1. Check if email already exists
         # 2. Validate password (min 8 chars)
-        # 3. Hash password
+        # 3. Hash password using Argon2
         # 4. Create User record
-        # 5. Generate tokens
+        # 5. Generate and store tokens
         # 6. Return (user, access_token, refresh_token)
 
     async def login(self, email: str, password: str) -> tuple[str, str]:
         """Verify credentials and return (access_token, refresh_token)."""
         # 1. Find user by email
-        # 2. Verify password
-        # 3. Generate tokens
+        # 2. Verify password using Argon2
+        # 3. Generate and store tokens
         # 4. Return (access_token, refresh_token)
 
-    async def refresh(self, refresh_token: str) -> str:
-        """Validate refresh token and return a new access token."""
+    async def refresh(self, refresh_token: str) -> tuple[str, str]:
+        """Validate and rotate refresh token, returning a new access + refresh token pair."""
         # 1. Decode refresh token
         # 2. Verify type == "refresh"
-        # 3. Verify user still exists
-        # 4. Generate new access token
-        # 5. Return access_token
+        # 3. Verify token hasn't been reused (triggers revocation if reused)
+        # 4. Generate new access + refresh token pair
+        # 5. Revoke old refresh token, store hash of new refresh token
+        # 6. Return (access_token, refresh_token)
 ```
 
 ---
@@ -286,19 +292,22 @@ class AuthService:
 | Rule | Value |
 |---|---|
 | Minimum length | 8 characters |
-| Hashing algorithm | bcrypt |
+| Hashing algorithm | Argon2id |
 | Hash storage | `password_hash` column in `users` table |
 
 No complexity requirements (uppercase, special chars) — keep it simple for an MVP.
 
 ---
 
-## Token Lifetimes
+## Token Lifetimes & Rotation
 
 | Token | Lifetime | Purpose |
 |---|---|---|
 | Access token | 30 minutes | Short-lived, used for API requests |
-| Refresh token | 7 days | Used to get new access tokens without re-login |
+| Refresh token | 7 days | One-time use, rotated on every refresh request |
+
+**Refresh Token Rotation (RTR) & Reuse Detection:**
+Every time a refresh token is used, it is invalidated and replaced with a new refresh token. To mitigate database leak compromises, only the SHA-256 hashes of plaintext refresh tokens are stored in the database. If a revoked/invalidated refresh token is submitted again, the system detects potential token reuse and immediately invalidates all active sessions (all refresh tokens) for that user, prompting them to re-authenticate.
 
 ---
 

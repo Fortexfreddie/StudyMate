@@ -7,6 +7,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -103,6 +104,7 @@ class VectorStore:
         query_vector: list[float],
         top_k: int = 5,
         doc_id: str | None = None,
+        doc_ids: list[str] | None = None,
         score_threshold: float = 0.60,
     ) -> list[dict]:  # type: ignore[type-arg]
         """Retrieve most similar points from Qdrant, filtered by threshold."""
@@ -113,6 +115,15 @@ class VectorStore:
                     FieldCondition(
                         key="doc_id",
                         match=MatchValue(value=doc_id),
+                    )
+                ]
+            )
+        elif doc_ids:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="doc_id",
+                        match=MatchAny(any=doc_ids),
                     )
                 ]
             )

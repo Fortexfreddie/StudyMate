@@ -359,7 +359,7 @@ Authenticate and receive tokens.
 ---
 
 ### `POST /auth/refresh`
-Get a new access token using a refresh token.
+Rotate the refresh token and get a new access token.
 
 **Request body:**
 ```json
@@ -372,12 +372,13 @@ Get a new access token using a refresh token.
 ```json
 {
   "access_token": "eyJ...",
+  "refresh_token": "eyJ...",
   "token_type": "bearer"
 }
 ```
 
 **Errors:**
-- `401` — invalid or expired refresh token
+- `401` — invalid, expired, or reused refresh token
 
 ---
 
@@ -523,3 +524,34 @@ Get detailed results for a specific quiz session.
 
 **Errors:**
 - `404` — session_id not found
+
+---
+
+### `GET /history/summaries` 🔒
+Get the current user's summary generation history, paginated.
+
+**Query params:**
+- `doc_id` — optional. Filter by document.
+- `limit` — optional. Default: 10, max: 100.
+- `offset` — optional. Default: 0.
+
+**Response 200:**
+```json
+{
+  "summaries": [
+    {
+      "id": "uuid",
+      "doc_id": "uuid",
+      "topic": "Vector Databases and Embeddings",
+      "summary_text": "A vector embedding converts text into...",
+      "format": "bullets",
+      "context_sufficient": true,
+      "created_at": "2026-05-25T11:30:00Z"
+    }
+  ],
+  "total": 14,
+  "limit": 20,
+  "offset": 0
+}
+```
+

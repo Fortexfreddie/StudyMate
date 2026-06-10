@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     RETRY_DELAY_SECONDS: int = 2
 
     # --- Embedding ---
-    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+    EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     EMBEDDING_BATCH_SIZE: int = 50
 
     # --- Qdrant ---
@@ -107,7 +107,7 @@ settings = Settings()
 | `GENERATION_TEMPERATURE` | `0.3` | LLM generation temperature |
 | `MAX_RETRIES` | `2` | Max retry attempts before raising error |
 | `RETRY_DELAY_SECONDS` | `2` | Seconds to wait between retries |
-| `EMBEDDING_MODEL` | `"models/gemini-embedding-001"` | Embedding model identifier |
+| `EMBEDDING_MODEL` | `"models/gemini-embedding-2"` | Embedding model identifier |
 | `EMBEDDING_BATCH_SIZE` | `50` | Chunks per embedding API call |
 | `COLLECTION_NAME` | `"studymate_chunks"` | Qdrant collection name |
 | `VECTOR_SIZE` | `3072` | Embedding vector dimensions |

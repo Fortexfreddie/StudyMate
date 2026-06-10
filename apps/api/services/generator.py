@@ -220,6 +220,7 @@ class Generator:
             model=self._primary_model_name,
             google_api_key=key,
             temperature=temp,
+            max_retries=0,
             **primary_kwargs,
         )
         self._primary_client_json = ChatGoogleGenerativeAI(
@@ -227,6 +228,7 @@ class Generator:
             google_api_key=key,
             temperature=temp,
             response_mime_type="application/json",
+            max_retries=0,
             **primary_kwargs,
         )
 
@@ -235,6 +237,7 @@ class Generator:
             model=self._fallback_model_name,
             google_api_key=key,
             temperature=temp,
+            max_retries=0,
             **fallback_kwargs,
         )
         self._fallback_client_json = ChatGoogleGenerativeAI(
@@ -242,6 +245,7 @@ class Generator:
             google_api_key=key,
             temperature=temp,
             response_mime_type="application/json",
+            max_retries=0,
             **fallback_kwargs,
         )
 
@@ -787,32 +791,36 @@ class Generator:
 
         Returns ``(content, usage)`` where usage contains token counts and model name.
         """
-        max_attempts = settings.MAX_RETRIES + 1
-        delay = settings.RETRY_DELAY_SECONDS
-
         messages = [
             SystemMessage(content=system_instruction),
             HumanMessage(content=user_prompt),
         ]
 
-        for attempt in range(1, max_attempts + 1):
-            try:
-                # Select correct model and variant
-                if attempt < max_attempts:
-                    client = (
-                        self._primary_client_json
-                        if require_json
-                        else self._primary_client
-                    )
-                    current_model = self._primary_model_name
-                else:
-                    client = (
-                        self._fallback_client_json
-                        if require_json
-                        else self._fallback_client
-                    )
-                    current_model = self._fallback_model_name
+        primary_attempts = 0
+        max_primary_attempts = settings.MAX_RETRIES + 1  # e.g. 1 initial + MAX_RETRIES (1) for transient errors
 
+        fallback_attempts = 0
+        max_fallback_attempts = 1  # 0 retries for fallback
+
+        use_fallback = False
+        delay = settings.RETRY_DELAY_SECONDS
+
+        while True:
+            # Select appropriate model client
+            if not use_fallback:
+                client = self._primary_client_json if require_json else self._primary_client
+                current_model = self._primary_model_name
+                primary_attempts += 1
+                attempt_num = primary_attempts
+                max_attempts = max_primary_attempts
+            else:
+                client = self._fallback_client_json if require_json else self._fallback_client
+                current_model = self._fallback_model_name
+                fallback_attempts += 1
+                attempt_num = fallback_attempts
+                max_attempts = max_fallback_attempts
+
+            try:
                 response = await client.ainvoke(messages)
                 content = self._extract_text_content(response.content)
 
@@ -840,11 +848,9 @@ class Generator:
                     usage.get("total_tokens"),
                 )
 
-                # Treat empty response as a retryable failure
                 if not content:
                     raise ValueError("LLM returned an empty or whitespace response.")
 
-                # If JSON is required, validate it now
                 if require_json:
                     try:
                         robust_json_loads(content)
@@ -857,32 +863,47 @@ class Generator:
 
             except Exception as e:
                 err_str = str(e)
-                is_rate_limited = "429" in err_str or "ResourceExhausted" in err_str
+                is_rate_limited = "429" in err_str or "ResourceExhausted" in err_str or "Quota" in err_str
 
-                if is_rate_limited and attempt < max_attempts:
-                    logger.warning(
-                        "LLM API rate limited (429). Retrying in %s seconds (Attempt %s/%s)",
-                        delay,
-                        attempt,
-                        max_attempts,
-                    )
-                    await asyncio.sleep(delay)
-                    delay *= 2
-                    continue
+                logger.warning(
+                    "LLM Generation failed on model %s (Attempt %d/%d): %s",
+                    current_model,
+                    attempt_num,
+                    max_attempts,
+                    err_str,
+                )
 
-                if attempt == max_attempts:
+                # If we are using the primary model and fail:
+                if not use_fallback:
+                    # 1. 429 Rate limit / Quota issue: trigger fast fallback immediately
+                    if is_rate_limited:
+                        logger.warning(
+                            "Primary model rate limited (429/Quota). Triggering fast fallback to secondary model."
+                        )
+                        use_fallback = True
+                        continue
+
+                    # 2. Transient error (e.g. 503 / empty response): retry at most once
+                    if attempt_num < max_attempts:
+                        logger.warning(
+                            "Primary model failed. Retrying in %d seconds...",
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.warning(
+                            "Primary model failed after %d attempts. Falling back to secondary model.",
+                            attempt_num,
+                        )
+                        use_fallback = True
+                        continue
+
+                # If we are already using the fallback model and fail:
+                else:
                     logger.exception(
-                        "LLM generation failed permanently after fallback client attempt."
+                        "LLM generation failed permanently on fallback client."
                     )
                     raise ServiceUnavailableError(
                         "Generation service is currently overloaded. Please try again."
                     ) from e
-
-                logger.warning(
-                    "LLM Generation attempt %s failed: %s. Retrying...",
-                    attempt,
-                    err_str,
-                )
-                await asyncio.sleep(delay)
-
-        raise ServiceUnavailableError("Generation service is currently overloaded.")

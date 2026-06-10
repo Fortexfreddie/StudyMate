@@ -42,7 +42,7 @@ Returns `list[float]` — a single vector.
 ```python
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-EMBEDDING_MODEL = "models/gemini-embedding-001"
+EMBEDDING_MODEL = "models/gemini-embedding-2"
 
 class Embedder:
     def __init__(self, api_key: str) -> None:
@@ -97,7 +97,7 @@ async def embed_texts_batched(self, texts: list[str]) -> list[list[float]]:
 ```python
 # apps/api/core/config.py
 
-EMBEDDING_MODEL = "models/gemini-embedding-001"
+EMBEDDING_MODEL = "models/gemini-embedding-2"
 EMBEDDING_BATCH_SIZE = 50
 ```
 
@@ -105,7 +105,7 @@ EMBEDDING_BATCH_SIZE = 50
 
 ## Key Design Decisions
 
-- **Same model for chunks and queries** — `gemini-embedding-001` is used for both to ensure vectors exist in the same semantic space. Using different models would make cosine similarity meaningless.
+- **Same model for chunks and queries** — `gemini-embedding-2` is used for both to ensure vectors exist in the same semantic space. Using different models would make cosine similarity meaningless.
 - **Async methods** — all embedding calls are async to avoid blocking FastAPI's event loop during document upload.
 - **`langchain-google-genai`** is used as the wrapper rather than calling the `google-genai` SDK directly, because LangChain's `GoogleGenerativeAIEmbeddings` class handles API key injection, retry logic, and async support cleanly.
 - **Batch size of 50** balances throughput against API rate limits. A 200-chunk document requires 4 API calls rather than 200.

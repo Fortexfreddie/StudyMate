@@ -73,13 +73,14 @@ class DocumentNotFoundError(StudyMateError):
 
 ---
 
-## Global Exception Handler
+## Global Exception Handlers
 
-Registered in `main.py` to catch all `StudyMateError` subclasses and convert them to proper HTTP responses:
+Registered in `main.py` to catch all `StudyMateError` subclasses and third-party exceptions (like slowapi's `RateLimitExceeded`) and convert them to proper HTTP responses:
 
 ```python
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from core.errors import StudyMateError
 
 app = FastAPI()
@@ -89,6 +90,13 @@ async def studymate_error_handler(request: Request, exc: StudyMateError) -> JSON
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.message},
+    )
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"},
     )
 ```
 

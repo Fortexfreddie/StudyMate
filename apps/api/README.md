@@ -276,13 +276,19 @@ Implemented across `retriever.py` + `generator.py`, called by chat/summary/quiz:
 3. **Generate** — `generator.py` builds a prompt with a strict grounding
    `SYSTEM_PROMPT` (no outside knowledge, admit gaps, no fabrication) plus the
    retrieved context, and calls Gemini with **JSON mode** enforced.
-4. **Retry/fallback** — on rate-limits (429) or malformed JSON it retries with
-   exponential backoff, then falls back from the primary to the lighter model.
-5. **Persist** — the interaction is saved to `chat_history` / `quiz_sessions`, and
-   a study-activity day is recorded.
+4. **Retry/fallback** — on quota/rate-limits (429), it triggers a fast fallback to the secondary model immediately to protect quota. On transient errors (503, empty/malformed responses), it retries the primary model (governed by `MAX_RETRIES` in `config.py`, default `1`) after a brief delay (`RETRY_DELAY_SECONDS`) before falling back to the secondary model.
+5. **Persist** — the interaction is saved to `chat_history` / `quiz_sessions`, and a study-activity day is recorded.
 
 `context_sufficient: false` is returned (not an error) when the retrieved context
 doesn't cover the question — the frontend renders this as a clear notice.
+
+---
+
+## Multi-Tenancy Security Boundaries
+
+The RAG pipeline enforces strict user-level data isolation:
+- **Document Ownership Checks:** When a request is submitted with a specific `doc_id` (for chat, summary, or quiz generation), the system queries the database to verify the document exists and belongs to the authenticated user. Requests targeting unauthorized `doc_id`s result in a `404 Not Found` response.
+- **Global Search Isolation:** If `doc_id` is omitted for a global search/generation, the system retrieves the IDs of all documents owned by the active user and restricts the Qdrant query using a `MatchAny` payload filter. If the user has not uploaded any documents, a `400 Bad Request` is returned immediately.
 
 ---
 
@@ -410,6 +416,7 @@ ones touched by this integration:
 
 | Var | Default | Notes |
 |---|---|---|
+| `MAX_RETRIES` | `1` | Max primary model retries for transient errors (503/empty/malformed responses) before falling back |
 | `MAX_QUIZ_QUESTIONS` | `30` | **Now authoritative** — enforced by a `field_validator` on `QuizGenerateRequest` |
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | default `num_questions` |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | accepts a comma-separated string in `.env` (add the Vercel URL for prod) |

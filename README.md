@@ -29,14 +29,13 @@ A full-stack web application that lets students upload PDF lecture notes and int
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16 + React + TypeScript + Tailwind v4 |
-| Backend | Python 3.11 + FastAPI |
+| Backend | Python 3.11 + FastAPI + slowapi (rate limiter) |
 | Database | PostgreSQL (Neon) + SQLAlchemy 2.0 + Alembic |
-| Auth | JWT (PyJWT) + bcrypt |
+| Auth | JWT (PyJWT) + Argon2id |
 | LLM | Google Gemini API (`gemini-3.1-pro-preview` with `gemini-3-flash-preview` fallback) |
-| Embeddings | `gemini-embedding-001` |
+| Embeddings | `gemini-embedding-2` |
 | Vector DB | Qdrant Cloud |
 | RAG | LangChain + Dynamic performance-based retrieval |
-
 ---
 
 ## Project Structure
@@ -65,7 +64,7 @@ StudyMate/
 | GET | `/health` | ❌ | Health check |
 | POST | `/auth/signup` | ❌ | Create a new account |
 | POST | `/auth/login` | ❌ | Authenticate and receive tokens |
-| POST | `/auth/refresh` | ❌ | Get a new access token |
+| POST | `/auth/refresh` | ❌ | Rotate refresh token and get a new access + refresh token pair |
 | GET | `/auth/me` | ✅ | Get current user profile |
 | PATCH | `/auth/me` | ✅ | Update editable profile fields (full_name, major) |
 | POST | `/documents/upload` | ✅ | Upload + process a PDF |
@@ -79,6 +78,7 @@ StudyMate/
 | GET | `/history/chat` | ✅ | Get paginated chat history |
 | GET | `/history/quizzes` | ✅ | Get paginated quiz history |
 | GET | `/history/quizzes/{session_id}` | ✅ | Get detailed quiz session results |
+| GET | `/history/summaries` | ✅ | Get paginated summary history |
 | GET | `/stats` | ✅ | Aggregate study metrics (counts, streak, avg score) |
 | GET | `/usage` | ✅ | Get current daily token usage and account limits |
 
@@ -362,10 +362,9 @@ How a single study session moves through the system:
 │ (Next.js)│◀─────────────── │  (stored in localStorage, sent as Bearer)    │
 └────┬─────┘                 └────────────────────────────────────────────┘
      │ upload PDF (multipart)
-     ▼
-┌────────────────────────────────────────────────────────────────────────┐
+     ┌────────────────────────────────────────────────────────────────────────┐
 │ /documents/upload                                                       │
-│   pypdf extract → LangChain chunk (500/50) → gemini-embedding-001       │
+│   pypdf extract → LangChain chunk (500/50) → gemini-embedding-2         │
 │   → Qdrant upsert (vectors) + PostgreSQL row (metadata)                 │
 │   → records a study-activity day (for streaks)                          │
 └────┬───────────────────────────────────────────────────────────────────┘
