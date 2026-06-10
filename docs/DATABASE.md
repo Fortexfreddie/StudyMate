@@ -198,7 +198,50 @@ class SummaryHistory(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="summaries")
+
+
+class UserActivity(Base):
+    # One row per user per active calendar day (for study streaks).
+    __tablename__ = "user_activity"
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_date", name="uq_user_activity_day"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TokenUsage(Base):
+    # Append-only per-request LLM token log (powers /usage by-type breakdown + stats).
+    __tablename__ = "token_usage"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    request_type: Mapped[str] = mapped_column(String(50), nullable=False)  # chat | summary | quiz
+    performance_mode: Mapped[str] = mapped_column(String(20), nullable=False, server_default="high")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class DailyTokenUsage(Base):
+    # Atomic per-user/per-day quota counter (authoritative balance for enforcement).
+    # Mutated via INSERT ... ON CONFLICT DO UPDATE ... RETURNING (see token_service.py).
+    __tablename__ = "daily_token_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="uq_daily_token_usage_day"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 ```
+
+> Note: `users` also has `major` (nullable) and **`is_pro`** (bool, default false —
+> selects the free vs. pro daily token limit).
 
 ---
 

@@ -60,14 +60,31 @@ async def upload_document(
             detail="File must have a .pdf extension.",
         )
 
-    file_bytes = await file.read()
-    file_size_mb = len(file_bytes) / (1024 * 1024)
-    if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
+    # Read the upload in bounded chunks so an oversized file is rejected after
+    # ~MAX_UPLOAD_SIZE_MB of I/O instead of being fully buffered into memory first
+    # (prevents a trivial OOM/DoS via a giant upload).
+    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    byte_chunks: list[bytes] = []
+    total_read = 0
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1 MiB at a time
+        if not chunk:
+            break
+        total_read += len(chunk)
+        if total_read > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"File too large. Max size allowed is {settings.MAX_UPLOAD_SIZE_MB}MB."
+                ),
+            )
+        byte_chunks.append(chunk)
+    file_bytes = b"".join(byte_chunks)
+
+    if not file_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=(
-                f"File too large. Max size allowed is {settings.MAX_UPLOAD_SIZE_MB}MB."
-            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty.",
         )
 
     # 2. Extract plain text page-by-page and split into chunks
@@ -86,7 +103,45 @@ async def upload_document(
             detail=str(e),
         ) from e
 
-    # 3. Create document record in database
+    # 3. Embed clean text chunks and store in Qdrant FIRST — BEFORE opening any DB
+    #    transaction. Embedding can take minutes for a large PDF (batched calls with
+    #    backoff); holding a PG connection/transaction across it would exhaust the
+    #    pool under concurrent uploads. So we do the slow work pool-free, then write
+    #    metadata in a short transaction.
+    chunk_texts = [c.text for c in chunks]
+    try:
+        vectors = await embedder.embed_texts(chunk_texts)
+    except Exception as e:
+        logger.exception("Ingestion embedding failed.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to embed document chunks. Please try again.",
+        ) from e
+
+    # Guard against an embedding model returning the wrong dimensionality, which
+    # would otherwise fail deep inside Qdrant after the cost was already spent.
+    if vectors and len(vectors[0]) != settings.VECTOR_SIZE:
+        logger.error(
+            "Embedding dimension mismatch: got %d, expected %d.",
+            len(vectors[0]),
+            settings.VECTOR_SIZE,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Embedding configuration error. Please contact support.",
+        )
+
+    try:
+        await vector_store.upsert_chunks(chunks, vectors)
+    except Exception as e:
+        logger.exception("Ingestion vector indexing failed.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to index document chunks. Please try again.",
+        ) from e
+
+    # 4. Persist document metadata in a SHORT transaction. If this fails, purge the
+    #    vectors we just wrote so Qdrant doesn't accumulate orphans.
     db_doc = Document(
         id=doc_id,
         user_id=current_user.id,
@@ -94,24 +149,7 @@ async def upload_document(
         page_count=len(set(c.page_number for c in chunks)),
         chunk_count=len(chunks),
     )
-
     db.add(db_doc)
-    await db.flush()  # Lock document ID inside the transaction
-
-    # 4. Embed clean text chunks and store in Qdrant
-    chunk_texts = [c.text for c in chunks]
-    try:
-        vectors = await embedder.embed_texts(chunk_texts)
-        await vector_store.upsert_chunks(chunks, vectors)
-    except Exception as e:
-        logger.exception("Ingestion vector indexing failed.")
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to index document chunks.",
-        ) from e
-
-    # Record today's study activity for the streak (best-effort, before commit)
     await record_activity(db, current_user.id)
 
     try:
@@ -120,6 +158,7 @@ async def upload_document(
         logger.exception(
             "Database commit failed for document upload. Rolling back vector store."
         )
+        await db.rollback()
         try:
             await vector_store.delete_by_doc_id(str(doc_id))
         except Exception:

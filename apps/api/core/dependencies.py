@@ -2,6 +2,7 @@
 
 import logging
 from typing import Literal
+from uuid import UUID
 
 from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -26,6 +27,7 @@ security = HTTPBearer()
 
 # Shared client singletons
 _qdrant_client: AsyncQdrantClient | None = None
+_embedder: Embedder | None = None
 
 # Valid performance mode keys
 _VALID_MODES = frozenset(PERFORMANCE_MODES.keys())
@@ -51,7 +53,14 @@ async def get_current_user(
     except InvalidTokenError:
         raise AuthenticationError("Token has expired or is invalid.") from None
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    # A malformed `sub` (not a valid UUID) is a bad token, not a server error —
+    # validate before the DB query so it returns 401 rather than a 500 from asyncpg.
+    try:
+        user_uuid = UUID(str(user_id))
+    except (ValueError, TypeError):
+        raise AuthenticationError("Invalid token.") from None
+
+    result = await db.execute(select(User).where(User.id == user_uuid))
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -94,8 +103,15 @@ def get_vector_store(
 
 
 def get_embedder() -> Embedder:
-    """Dependency injector for Embedder."""
-    return Embedder(api_key=settings.GOOGLE_API_KEY)
+    """Dependency injector for Embedder — cached singleton.
+
+    The Embedder is stateless (just wraps an API-keyed client), so constructing a
+    fresh ``GoogleGenerativeAIEmbeddings`` on every request was pure overhead.
+    """
+    global _embedder
+    if _embedder is None:
+        _embedder = Embedder(api_key=settings.GOOGLE_API_KEY)
+    return _embedder
 
 
 def get_pdf_processor() -> PDFProcessor:

@@ -8,6 +8,12 @@ All error responses follow: `{ "detail": "Human-readable error message" }`
 
 **Authentication:** Unless marked as public, all endpoints require a valid JWT access token in the `Authorization: Bearer <token>` header. Missing or invalid tokens return `401`.
 
+**Performance mode:** Generation endpoints (`/chat`, `/summary/generate`, `/quiz/generate`) accept an optional `X-Performance-Mode` header — one of `low`, `medium`, `high` (default), `very_high`, `max`. It selects the model tier, thinking depth, and the default `top_k`. Invalid/missing values fall back to `high`.
+
+**Generation metadata:** Every chat / summary / quiz response includes a `meta` object: `{ model_used, performance_mode, input_tokens, output_tokens, total_tokens, cached, retrieval_chunks_used }`. (Omitted from individual examples below for brevity.)
+
+**`top_k`:** Optional on generation endpoints. When omitted it defaults to the **performance mode's** value (e.g. `10` for `high`, `5` for `low`) — not a fixed `5`. Valid range `1–30`.
+
 ---
 
 ## Health Check
@@ -116,7 +122,7 @@ Ask a question grounded in an uploaded document. Response is saved to chat histo
 ```
 
 - `doc_id` — optional. Omit to search all documents.
-- `top_k` — optional. Default: 5.
+- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc.
 
 **Response 201:**
 ```json
@@ -144,7 +150,7 @@ Ask a question grounded in an uploaded document. Response is saved to chat histo
 ## Summary
 
 ### `POST /summary/generate` 🔒
-Generate a structured summary of a topic from a document. Response is saved to chat history.
+Generate a structured summary of a topic from a document. Response is saved to summary history.
 
 **Request body:**
 ```json
@@ -157,7 +163,7 @@ Generate a structured summary of a topic from a document. Response is saved to c
 ```
 
 - `doc_id` — optional. Omit to search all documents.
-- `top_k` — optional. Default: 5.
+- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc.
 - `format` — optional. Default: `bullets`. One of: `bullets`, `key_concepts`,
   `study_guide`, `flashcards`, `cheat_sheet`, `mind_map`.
 
@@ -219,7 +225,7 @@ Generate multiple-choice questions from a topic in a document. Creates a quiz se
 
 - `doc_id` — optional. Omit to search all documents.
 - `num_questions` — optional. Default: 5, max: 30 (configurable via `MAX_QUIZ_QUESTIONS`).
-- `top_k` — optional. Default: 5.
+- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc.
 
 **Response 201:**
 ```json
@@ -291,10 +297,15 @@ Submit answers for a quiz session. Calculates the score and saves the results.
 }
 ```
 
+Grading is server-side. A question with no submission is **skipped**: it is recorded
+with `selected_index: -1` and graded incorrect — distinct from deliberately choosing
+option A (`0`). Submitting twice for the same session returns `409`.
+
 **Errors:**
 - `400` — missing answers or invalid format
 - `401` — not authenticated
 - `404` — session_id not found
+- `409` — quiz session already submitted
 
 ---
 
@@ -382,6 +393,23 @@ Rotate the refresh token and get a new access token.
 
 ---
 
+### `POST /auth/logout`
+Revoke a refresh token. Idempotent — always returns success, even for an unknown or
+already-expired token. The short-lived access token is not server-revocable; it
+expires on its own. Clients should discard both tokens locally.
+
+**Request body:**
+```json
+{ "refresh_token": "eyJ..." }
+```
+
+**Response 200:**
+```json
+{ "success": true }
+```
+
+---
+
 ### `GET /auth/me` 🔒
 Get current user profile.
 
@@ -431,12 +459,39 @@ database.
   "summaries_generated": 2,
   "chats_count": 11,
   "current_streak": 4,
-  "average_quiz_score": 82.0
+  "average_quiz_score": 82.0,
+  "tokens_used_today": 12500,
+  "token_limit": 50000,
+  "is_pro": false
 }
 ```
 
 - `current_streak` — consecutive active days up to today (0 if today/yesterday had no activity).
 - `average_quiz_score` — mean score across graded sessions, as a 0–100 percentage.
+- `tokens_used_today` / `token_limit` — today's consumption vs. the user's tier limit.
+
+---
+
+## Usage 🔒
+
+### `GET /usage`
+Daily token consumption for the current user. The window is a **fixed calendar day
+that resets at 00:00 UTC**.
+
+**Response 200:**
+```json
+{
+  "tokens_used_today": 12500,
+  "token_limit": 50000,
+  "tokens_remaining": 37500,
+  "is_pro": false,
+  "usage_by_type": { "chat": 4500, "summary": 8000, "quiz": 0 },
+  "reset_time": "2026-06-12T00:00:00+00:00"
+}
+```
+
+- `tokens_used_today` is the authoritative daily counter; `usage_by_type` is derived
+  from the per-request usage log.
 
 ---
 

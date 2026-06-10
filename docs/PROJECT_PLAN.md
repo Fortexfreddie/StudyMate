@@ -33,8 +33,8 @@ This is a RAG (Retrieval-Augmented Generation) architecture — the LLM never ha
 | Auth | JWT, Argon2id, slowapi | — | Stateless token-based auth, Argon2id hashing, rate limiting |
 | ORM & Migrations| SQLAlchemy + Alembic | >=2.0.0 | Async ORM, schema version control |
 | RAG Orchestration | LangChain | >=1.3.0 | Pre-built RAG chains, loaders, splitters |
-| LLM (primary) | Google Gemini API (`gemini-3-flash-preview`) | — | Free tier, large context |
-| LLM (fallback) | Google Gemini API (`gemini-3.1-flash-lite`) | — | Free tier, lighter/faster |
+| LLM (primary) | Google Gemini API (`gemini-3.5-flash`) | — | Large context, strong instruction-following |
+| LLM (fallback) | Google Gemini API (`gemini-3.1-flash-lite`) | — | Lighter/faster failover |
 | Embeddings | Google `gemini-embedding-2` | — | Stable, 100+ languages, same provider as LLM |
 | Google SDK | `langchain-google-genai` | >=4.2.0 | Wraps `google-genai` SDK, LangChain native |
 | Vector DB | Qdrant (Cloud free tier) | client >=1.18.0 | No monthly R/W limits, payload filtering, open source |
@@ -280,8 +280,8 @@ StudyMate/
 | Chunk overlap | 50 tokens | Prevents boundary sentence loss |
 | Top-k retrieval | 5 chunks | Balances context richness vs. token budget |
 | Similarity threshold | 0.60 | Filters out low-quality matches |
-| LLM (primary) | `gemini-3-flash-preview` | Free tier, Preview, strong instruction-following |
-| LLM (fallback) | `gemini-3.1-flash-lite` | Free tier, GA, lighter |
+| LLM (primary) | `gemini-3.5-flash` | Strong instruction-following, large context |
+| LLM (fallback) | `gemini-3.1-flash-lite` | Lighter/faster failover |
 | Embedding model | `gemini-embedding-2` | Same provider = consistent vector space |
 | Generation temperature | 0.3 | Low = more factual, less creative |
 | Max quiz questions | 10 | Upper bound per request |

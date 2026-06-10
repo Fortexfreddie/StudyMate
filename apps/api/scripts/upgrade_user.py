@@ -39,11 +39,7 @@ async def upgrade_user(email: str) -> None:
         # In SQLAlchemy 2.0 cursor results, we can access by attribute or column
         # Let's run a clean update directly
         print(f"Found user: {email}. Upgrading to Pro...")
-        stmt_update = (
-            update(User)
-            .where(User.email == email)
-            .values(is_pro=True)
-        )
+        stmt_update = update(User).where(User.email == email).values(is_pro=True)
         await conn.execute(stmt_update)
         print(f"[OK] User '{email}' upgraded to Pro successfully!")
 

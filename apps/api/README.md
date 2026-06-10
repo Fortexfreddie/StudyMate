@@ -38,27 +38,31 @@ apps/api/
 ├── main.py                    # App entry: CORS, exception handler, router includes, lifespan
 ├── core/
 │   ├── config.py              # pydantic-settings — ALL env vars (single source of truth)
-│   ├── dependencies.py        # FastAPI DI: get_current_user, get_db, services
+│   ├── dependencies.py        # FastAPI DI: get_current_user, get_db, cached services
 │   ├── errors.py              # StudyMateError hierarchy → JSON error responses
+│   ├── middleware.py          # SecurityHeadersMiddleware (OWASP headers, CSP)
+│   ├── rate_limit.py          # slowapi limiter + 429 handler
 │   └── security.py            # JWT encode/decode, password hashing
 ├── models/
 │   ├── database.py            # SQLAlchemy models + async engine/session
 │   └── schemas.py             # Pydantic request/response models (typed API contract)
 ├── routers/                   # One module per feature; thin — no business logic
-│   ├── auth.py                # signup, login, refresh, GET/PATCH me
+│   ├── auth.py                # signup, login, refresh, logout, GET/PATCH me
 │   ├── documents.py           # upload, list, get one, delete
 │   ├── chat.py                # RAG Q&A
 │   ├── summary.py             # format-aware summaries
 │   ├── quiz.py                # generate + submit/grade
-│   ├── history.py             # paginated chat & quiz history
-│   └── stats.py               # aggregate metrics + streak
+│   ├── history.py             # paginated chat / quiz / summary history
+│   ├── stats.py               # aggregate metrics + streak
+│   └── usage.py               # daily token consumption
 ├── services/                  # ALL business logic lives here
-│   ├── auth_service.py        # credentials, token issuance
+│   ├── auth_service.py        # credentials, token issuance, rotation, pruning
 │   ├── pdf_processor.py       # pypdf extraction + LangChain chunking
 │   ├── embedder.py            # Google embedding calls (batched)
 │   ├── vector_store.py        # Qdrant upsert/search/delete
 │   ├── retriever.py           # embed query → cosine search → filter
 │   ├── generator.py           # Gemini prompts, JSON parsing, retry/fallback
+│   ├── token_service.py       # atomic quota reserve/reconcile + usage logging
 │   └── activity_service.py    # record_activity + compute_streak (study streaks)
 ├── migrations/                # Alembic migrations
 └── scripts/wipe_db.py         # Full reset of Postgres + Qdrant
@@ -104,7 +108,9 @@ alembic upgrade head             # create/upgrade tables
 uvicorn main:app --reload --port 8000
 ```
 
-Verify: `curl http://localhost:8000/health` → `{"status":"ok","version":"1.0.0"}`
+Verify: `curl http://localhost:8000/health` → `{"status":"ok","version":"1.0.0"}` (liveness).
+Readiness (probes Postgres + Qdrant): `curl http://localhost:8000/health/ready` →
+`{"status":"ready","checks":{"database":"ok","qdrant":"ok"}}` (200), or `503` if a dependency is down.
 Interactive docs: **http://localhost:8000/docs** (Swagger) — click **Authorize** and
 paste `Bearer <access_token>` after signup/login.
 
@@ -122,7 +128,8 @@ paste `Bearer <access_token>` after signup/login.
 | `user_activity` | One row per user per active day (for streaks) | `user_id`, `activity_date`, unique `(user_id, activity_date)` |
 | `refresh_tokens` | Active refresh tokens (token rotation) | `id`, `user_id`, `token_hash` (unique), `expires_at`, `is_revoked`, `created_at` |
 | `summary_history` | Generated summaries (cached & paginated) | `id`, `user_id`, `doc_id`, `topic`, `summary_text`, `format`, `structured` (JSONB), `context_sufficient`, `sources` (JSONB), `performance_mode`, `created_at` |
-| **`token_usage`** | Granular per-request LLM token consumption tracking | `id`, `user_id`, `tokens_used`, `model_used`, `performance_mode`, `request_type` (chat/summary/quiz), `created_at` |
+| **`token_usage`** | Append-only per-request LLM token consumption log | `id`, `user_id`, `input_tokens`, `output_tokens`, `total_tokens`, `model_used`, `request_type` (chat/summary/quiz), `performance_mode`, `created_at` |
+| **`daily_token_usage`** | Atomic per-user/per-day quota counter (authoritative balance) | `id`, `user_id`, `usage_date`, `reserved_tokens`, unique `(user_id, usage_date)`, `updated_at` |
 
 **Migration for this integration:** Run `alembic upgrade head` before starting the server. This applies all migrations including `372dee4b2ff1_combined_auth_and_summaries` which updates indexes, adds Argon2 password hashing support, refresh token rotation table, and summary history table.
 
@@ -146,6 +153,7 @@ All errors return `{ "detail": "human-readable message" }`.
 
 **`POST /auth/login`** → 200 → `{ access_token, refresh_token, token_type }`
 **`POST /auth/refresh`** → 200 → `{ access_token, refresh_token, token_type }` (rotates both tokens)
+**`POST /auth/logout`** → 200 → `{ "success": true }` — revokes the supplied refresh token (idempotent). Body: `{ "refresh_token": "..." }`. The short-lived access token is not server-revocable; it expires on its own.
 **`GET /auth/me`** → 200 → user profile (now includes `major`)
 
 **`PATCH /auth/me`** → 200 — update editable fields (email is immutable)
@@ -219,7 +227,8 @@ See [Summary Formats](#summary-formats--how-they-work) for every `structured` sh
 { "session_id": "uuid", "score": 4, "total_questions": 5,
   "results": [ { "question_index": 0, "selected_index": 1, "correct_index": 1, "is_correct": true, "explanation": "…" } ] }
 ```
-Skipped questions default to index 0 and are graded as answered.
+Skipped questions (no submission for that index) are recorded with `selected_index: -1`
+and graded as incorrect — distinct from a deliberate choice of option A (`0`).
 
 ### History
 
@@ -276,8 +285,8 @@ Implemented across `retriever.py` + `generator.py`, called by chat/summary/quiz:
 3. **Generate** — `generator.py` builds a prompt with a strict grounding
    `SYSTEM_PROMPT` (no outside knowledge, admit gaps, no fabrication) plus the
    retrieved context, and calls Gemini with **JSON mode** enforced.
-4. **Retry/fallback** — on quota/rate-limits (429), it triggers a fast fallback to the secondary model immediately to protect quota. On transient errors (503, empty/malformed responses), it retries the primary model (governed by `MAX_RETRIES` in `config.py`, default `1`) after a brief delay (`RETRY_DELAY_SECONDS`) before falling back to the secondary model.
-5. **Persist** — the interaction is saved to `chat_history` / `quiz_sessions`, and a study-activity day is recorded.
+4. **Retry/fallback** — failures are classified: **rate-limit/quota (429)** triggers a fast fallback to the secondary model immediately; **transient errors** (503, empty/malformed) retry the primary model (governed by `MAX_RETRIES`, default `1`) after `RETRY_DELAY_SECONDS` before falling back; **fatal errors** (auth/permission/invalid-argument — e.g. bad API key) fail fast with no retry or fallback. If generation ultimately fails, a `503` is raised (the token reservation is released and nothing is persisted).
+5. **Persist** — on success the interaction is saved to `chat_history` / `summary_history` / `quiz_sessions`, token usage is reconciled and logged, and a study-activity day is recorded.
 
 `context_sufficient: false` is returned (not an error) when the retrieved context
 doesn't cover the question — the frontend renders this as a clear notice.
@@ -389,7 +398,34 @@ the new shape in the frontend summary page.
 - `/chat` checks the `chat_history` table for an identical prior Q&A request (matching user, `doc_id`, normalized query, and performance mode).
 - `/summary/generate` checks the `summary_history` table for an identical prior summary request (matching user, `doc_id`, normalized topic, `format`, and performance mode).
 - If cached data is found, the result is served directly from the database with `meta.cached: true`, reducing latency from ~3-5 seconds to ~10-20 milliseconds. Since structured summaries are persisted in the database, cached summary responses return the fully populated structured payload.
+- **Only document-scoped requests are cached.** A document's content is immutable once uploaded, so a cached `(doc_id, query/topic, mode)` result is always safe. **Global requests (`doc_id` omitted) are never served from cache**, because they span the user's whole document set — a cached global answer would go stale the moment a new document is uploaded.
 - *Note:* Caching does not strictly filter on `top_k` or the source array length. This ensures consistent cache hits even if the number of retrieved chunks varies slightly or falls below the similarity threshold.
+
+---
+
+## Token Quotas (atomic reserve / reconcile)
+
+Each user has a daily token limit (`FREE_DAILY_TOKEN_LIMIT` / `PRO_DAILY_TOKEN_LIMIT`)
+enforced against a **fixed calendar-day window that resets at 00:00 UTC** (not a
+sliding 24-hour window).
+
+Enforcement is **atomic** to prevent concurrent requests from collectively
+overshooting the limit (`services/token_service.py`):
+
+1. **Estimate** — a cheap, local char-based estimate of the request's token cost
+   (input ≈ chars⁄4 + a fixed per-type output budget). No extra API call.
+2. **Reserve** — the estimate is added to the user's `daily_token_usage` counter in a
+   single atomic `INSERT … ON CONFLICT DO UPDATE … RETURNING`. If the post-increment
+   total exceeds the limit, the reservation is rolled back and the request is rejected
+   with `403` **before** any LLM call. Concurrent requests serialize on the counter row.
+3. **Generate** — the LLM call runs.
+4. **Reconcile / release** — on success the counter is trued up by
+   `(actual − estimate)` and a per-request row is written to the `token_usage` log; on
+   failure the full estimate is released so a failed generation is never charged.
+
+`GET /usage` and `GET /stats` report `tokens_used_today` from the authoritative
+counter; the per-type breakdown comes from the `token_usage` log.
+
 ---
 
 ## Error Handling
@@ -400,11 +436,18 @@ subclass into `{ "detail": message }` with the right status:
 | Exception | Status | When |
 |---|---|---|
 | `DocumentProcessingError` | 400 | PDF unparseable / image-only |
-| `AuthenticationError` | 401 | bad/expired token or credentials |
+| `AuthenticationError` | 401 | bad/expired/malformed token or credentials |
 | `DocumentNotFoundError` | 404 | doc_id missing |
-| `GenerationError` | 422 | unparseable quiz JSON after retry |
-| `ServiceUnavailableError` | 503 | Gemini/Qdrant/embedding unreachable |
+| `GenerationError` | 422 | (defined; reserved for unparseable generation) |
+| `ServiceUnavailableError` | 503 | Gemini/Qdrant/embedding unreachable, or generation failed after retries (chat, summary, **and** quiz) |
 | `ConfigurationError` | 500 | required config missing |
+
+Any **unhandled** exception is caught by a catch-all handler in `main.py` and
+normalized to `{ "detail": "An unexpected error occurred. Please try again." }` with
+status `500` — no stack trace is leaked to the client (it is logged server-side).
+On a generation failure, chat and summary now behave like quiz: they raise `503`,
+do **not** persist a history row, and do **not** charge tokens (the reservation is
+released).
 
 ---
 
@@ -417,8 +460,12 @@ ones touched by this integration:
 | Var | Default | Notes |
 |---|---|---|
 | `MAX_RETRIES` | `1` | Max primary model retries for transient errors (503/empty/malformed responses) before falling back |
-| `MAX_QUIZ_QUESTIONS` | `30` | **Now authoritative** — enforced by a `field_validator` on `QuizGenerateRequest` |
+| `QUIZ_REPROMPT_SINGLE_ATTEMPT` | `true` | When the quiz parser rejects the first generation, the stricter reformat reprompt is a single primary-model call (no internal retry/fallback). Caps worst-case LLM calls per quiz request at 4 (was 6). Set `false` to let the reprompt use the full `MAX_RETRIES` + fallback path |
+| `FREE_DAILY_TOKEN_LIMIT` | `50000` | Daily token quota for free-tier users (fixed UTC-day window) |
+| `PRO_DAILY_TOKEN_LIMIT` | `500000` | Daily token quota for pro-tier users |
+| `MAX_QUIZ_QUESTIONS` | `30` | **Authoritative** — enforced by a `field_validator` on `QuizGenerateRequest` |
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | default `num_questions` |
+| `MAX_UPLOAD_SIZE_MB` | `20` | Upload size cap; enforced via bounded chunked reads (oversized files rejected without full buffering) |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | accepts a comma-separated string in `.env` (add the Vercel URL for prod) |
 | `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.60` | min cosine score to keep a chunk |
 

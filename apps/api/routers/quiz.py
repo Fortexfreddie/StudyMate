@@ -24,7 +24,13 @@ from models.schemas import (
 from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
-from services.token_service import check_token_budget, record_token_usage
+from services.token_service import (
+    estimate_request_tokens,
+    reconcile_tokens,
+    record_token_usage,
+    release_tokens,
+    reserve_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,16 +57,6 @@ async def generate_quiz(
     The questions are synthesized strictly from the retrieved document context.
     A quiz session is created in the database to track submission and grading.
     """
-    # 0. Check token budget
-    allowed, remaining, limit = await check_token_budget(
-        db, current_user.id, current_user.is_pro
-    )
-    if not allowed:
-        raise StudyMateError(
-            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
-            status_code=403,
-        )
-
     logger.info(
         "User %s initiated quiz generation on topic: '%s' (doc_id: %s, count: %d, mode: %s)",
         current_user.id,
@@ -71,7 +67,9 @@ async def generate_quiz(
     )
 
     # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
-    effective_top_k = payload.top_k if payload.top_k is not None else generator.default_top_k
+    effective_top_k = (
+        payload.top_k if payload.top_k is not None else generator.default_top_k
+    )
 
     # 1.5. Verify document ownership / retrieve allowed doc IDs for security
     user_doc_ids = None
@@ -81,7 +79,9 @@ async def generate_quiz(
         )
         doc_res = await db.execute(stmt_doc)
         if not doc_res.scalar_one_or_none():
-            raise StudyMateError("Document not found or access denied.", status_code=404)
+            raise StudyMateError(
+                "Document not found or access denied.", status_code=404
+            )
     else:
         # Global query: fetch all doc IDs owned by user to restrict search
         stmt_docs = select(Document.id).where(Document.user_id == current_user.id)
@@ -101,19 +101,41 @@ async def generate_quiz(
         top_k=effective_top_k,
     )
 
-    # 3. Command Gemini to generate structured multiple-choice questions
-    generated_questions, usage = await generator.generate_quiz(
-        topic=payload.topic,
-        context=matched_chunks,
-        num_questions=payload.num_questions,
+    # 3. Reserve the estimated token cost atomically BEFORE the LLM call. Quiz can
+    #    issue multiple LLM attempts; the single reservation covers them and is
+    #    reconciled against the *accumulated* usage afterwards.
+    context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)
+    estimate = estimate_request_tokens(context_text, payload.topic, "quiz")
+    allowed, _used, limit = await reserve_tokens(
+        current_user.id, current_user.is_pro, estimate
     )
+    if not allowed:
+        raise StudyMateError(
+            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
+            status_code=403,
+        )
 
-    # 4. Record token usage (best-effort)
+    # 4. Command Gemini to generate structured multiple-choice questions. On
+    #    failure, refund the reservation and let the 503 propagate.
+    try:
+        generated_questions, usage = await generator.generate_quiz(
+            topic=payload.topic,
+            context=matched_chunks,
+            num_questions=payload.num_questions,
+        )
+    except Exception:
+        await release_tokens(current_user.id, estimate)
+        raise
+
+    # 5. Reconcile against actual accumulated usage + log the per-request row.
+    await reconcile_tokens(
+        current_user.id, estimate, int(usage.get("total_tokens", 0) or 0)
+    )
     await record_token_usage(
         db, current_user.id, usage, "quiz", generator.performance_mode
     )
 
-    # 5. Store the full session in the database
+    # 6. Store the full session in the database
     db_session = QuizSession(
         user_id=current_user.id,
         doc_id=payload.doc_id,
@@ -123,6 +145,9 @@ async def generate_quiz(
         score=0,
     )
     db.add(db_session)
+    # Generating a quiz is a study action — record it for the streak, consistent
+    # with chat and summary (best-effort; never breaks the request).
+    await record_activity(db, current_user.id)
     await db.commit()
     await db.refresh(db_session)
 
@@ -233,17 +258,24 @@ async def submit_quiz(
 
     for idx, question in enumerate(session.questions):
         selected_idx = submission_map.get(idx)
+        # -1 is the canonical "skipped" sentinel, stored and returned as-is so a
+        # skip stays distinguishable from a genuine choice of option A (index 0).
         if selected_idx is None:
-            # Default to -1 (guaranteed wrong) if the student skipped
             selected_idx = -1
 
         correct_val = question.get("correct_index", 0)
         correct_idx = int(correct_val) if isinstance(correct_val, int | str) else 0
 
-        # Clamp correct_idx to valid range [0, 3]
-        correct_idx = max(0, min(3, correct_idx))
+        # A stored correct_index outside 0..3 means the generation was corrupt for
+        # this question. Don't clamp it into range (that could let a skip-to-0 or a
+        # genuine answer falsely match) — treat it as ungradeable: nothing matches.
+        correct_in_range = 0 <= correct_idx <= 3
 
-        is_correct = selected_idx == correct_idx
+        # Skipped (-1) is always wrong; otherwise compare against the correct index
+        # only when that index is itself valid.
+        is_correct = (
+            selected_idx >= 0 and correct_in_range and selected_idx == correct_idx
+        )
         explanation = str(question.get("explanation") or "")
 
         if is_correct:
@@ -252,18 +284,18 @@ async def submit_quiz(
         results.append(
             AnswerResult(
                 question_index=idx,
-                selected_index=max(0, selected_idx),  # Clamp for response schema
+                selected_index=selected_idx,  # -1 preserved for "skipped"
                 correct_index=correct_idx,
                 is_correct=is_correct,
                 explanation=explanation,
             )
         )
 
-        # Persist separate answer row
+        # Persist separate answer row (selected_index = -1 means skipped)
         db_answer = QuizAnswer(
             session_id=session.id,
             question_index=idx,
-            selected_index=max(0, selected_idx),
+            selected_index=selected_idx,
             correct_index=correct_idx,
             is_correct=is_correct,
         )

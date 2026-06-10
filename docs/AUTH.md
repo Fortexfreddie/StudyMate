@@ -57,13 +57,16 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
-    """Create a longer-lived refresh token."""
+def create_refresh_token(user_id: str) -> tuple[str, str]:
+    """Create a longer-lived refresh token. Returns (token_string, token_hash);
+    only the SHA-256 hash is stored in the refresh_tokens table."""
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
     payload = {"sub": user_id, "exp": expire, "type": "refresh"}
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    token_str = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    token_hash = hashlib.sha256(token_str.encode()).hexdigest()
+    return token_str, token_hash
 
 
 def decode_token(token: str) -> dict:
@@ -233,6 +236,18 @@ Rotate the refresh token and get a new access token.
 
 **Errors:**
 - `401` — invalid, expired, or reused refresh token (token reuse triggers revocation of all active sessions for the compromised user)
+
+On each login/refresh the user's **expired** refresh-token rows are pruned to bound
+table growth. Revoked-but-unexpired rows are intentionally retained so reuse detection
+can still catch a replay until they expire naturally.
+
+### `POST /auth/logout`
+
+Revoke a refresh token. Idempotent — always returns `{ "success": true }`, even for an
+unknown/expired token. The short-lived access token is not server-revocable; it expires
+on its own.
+
+**Request body:** `{ "refresh_token": "eyJ..." }` · **Response 200:** `{ "success": true }`
 
 ### `GET /auth/me`
 

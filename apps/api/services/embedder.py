@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -80,8 +81,6 @@ class Embedder:
         self, func: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> Any:
         """Execute embedding API call with exponential backoff on 429 rate limit."""
-        import re
-
         max_attempts = 5
         delay = settings.RETRY_DELAY_SECONDS
 
@@ -94,16 +93,18 @@ class Embedder:
                 is_rate_limited = "429" in err_str or "ResourceExhausted" in err_str
 
                 if is_rate_limited and attempt < max_attempts:
-                    # Dynamically parse the requested retry delay from Google's error message
+                    # Prefer the explicit retry delay Google supplies in the error;
+                    # only fall back to our own exponential backoff when absent.
                     match = re.search(r"[Pp]lease retry in (\d+(?:\.\d+)?)s", err_str)
+                    match_sec = re.search(r"retryDelay':\s*'(\d+)s'", err_str)
                     if match:
                         sleep_time = float(match.group(1)) + 1.0
+                    elif match_sec:
+                        sleep_time = float(match_sec.group(1)) + 1.0
                     else:
-                        match_sec = re.search(r"retryDelay':\s*'(\d+)s'", err_str)
-                        if match_sec:
-                            sleep_time = float(match_sec.group(1)) + 1.0
-                        else:
-                            sleep_time = delay
+                        # No server-provided delay — use and then grow our backoff.
+                        sleep_time = delay
+                        delay *= 2
 
                     logger.warning(
                         "Embedding API rate limited (429). Retrying in "
@@ -113,7 +114,6 @@ class Embedder:
                         max_attempts,
                     )
                     await asyncio.sleep(sleep_time)
-                    delay *= 2  # Exponential fallback if no regex matches
                     continue
 
                 logger.exception(

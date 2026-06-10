@@ -121,6 +121,61 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
 }
 
 
+# Upper bound on input handed to the ast.literal_eval fallback. The fallback can
+# recurse/allocate on adversarial nested input, and a legitimate generation is far
+# smaller than this — so anything larger is rejected rather than parsed.
+_MAX_AST_FALLBACK_CHARS = 200_000
+
+
+def _jsonish_literals_to_python(text: str) -> str:
+    """Convert bareword ``true``/``false``/``null`` to Python ``True``/``False``/``None``.
+
+    Critically, replacements happen **only outside quoted strings**, so content like
+    ``"the statement is true"`` is left untouched. A naive ``\\btrue\\b`` regex would
+    corrupt such text inside string values before the AST fallback parses it.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    quote: str | None = None  # active string delimiter, or None when outside a string
+    mapping = {"true": "True", "false": "False", "null": "None"}
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                # Preserve escaped char verbatim (e.g. \" inside a string).
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        # Outside a string.
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        # Try to match a bareword literal at the current position.
+        matched = False
+        for word, repl in mapping.items():
+            end = i + len(word)
+            if text[i:end] == word:
+                before_ok = i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")
+                after_ok = end >= n or not (text[end].isalnum() or text[end] == "_")
+                if before_ok and after_ok:
+                    out.append(repl)
+                    i = end
+                    matched = True
+                    break
+        if not matched:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def robust_json_loads(text: str) -> Any:
     """Robustly parses a JSON string, falling back to AST literal evaluation
     if the LLM output contains single quotes, trailing commas, or Python-style literals.
@@ -138,14 +193,12 @@ def robust_json_loads(text: str) -> Any:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as json_err:
-        # Try to parse using AST evaluation if it looks like a single-quoted structure
+        # Bound the work the AST fallback will do on adversarial/huge input.
+        if len(cleaned) > _MAX_AST_FALLBACK_CHARS:
+            raise json_err
+        # Try AST evaluation for single-quoted / Python-style literal structures.
         try:
-            # Standardize lowercase JSON representations to Python equivalents for AST
-            # Use word boundary regex to avoid replacing parts of words/strings
-            ast_text = re.sub(r"\btrue\b", "True", cleaned)
-            ast_text = re.sub(r"\bfalse\b", "False", ast_text)
-            ast_text = re.sub(r"\bnull\b", "None", ast_text)
-
+            ast_text = _jsonish_literals_to_python(cleaned)
             result = ast.literal_eval(ast_text)
             logger.warning(
                 "JSON parsing failed with error: %s. AST literal_eval fallback succeeded.",
@@ -186,7 +239,9 @@ class Generator:
         # Map string thinking level to numeric thinking_budget for Gemini 2.0 / 2.5 / 1.5 models,
         # or use thinking_level for Gemini 3+ models.
         primary_kwargs: dict[str, Any] = {}
-        is_primary_gemini_2_5 = any(v in self._primary_model_name for v in ("2.5", "2.0", "1.5"))
+        is_primary_gemini_2_5 = any(
+            v in self._primary_model_name for v in ("2.5", "2.0", "1.5")
+        )
         if is_primary_gemini_2_5:
             budget_map = {
                 "minimal": 0,
@@ -201,7 +256,9 @@ class Generator:
             primary_kwargs["thinking_level"] = thinking
 
         fallback_kwargs: dict[str, Any] = {}
-        is_fallback_gemini_2_5 = any(v in self._fallback_model_name for v in ("2.5", "2.0", "1.5"))
+        is_fallback_gemini_2_5 = any(
+            v in self._fallback_model_name for v in ("2.5", "2.0", "1.5")
+        )
         if is_fallback_gemini_2_5:
             budget_map = {
                 "minimal": 0,
@@ -284,18 +341,16 @@ class Generator:
             answer = parsed.get("answer", "").strip()
             context_sufficient = bool(parsed.get("context_sufficient", False))
             return answer, context_sufficient, usage
-        except Exception:
+        except ServiceUnavailableError:
+            # Already a clean, user-facing 503 from the retry/fallback layer.
+            raise
+        except Exception as e:
+            # Parsing or other unexpected failure — surface as a 503 so the router
+            # can refund the token reservation and avoid persisting a bogus answer.
             logger.exception("Failed to parse or generate chat response from LLM.")
-            return (
-                "I encountered an error generating an answer based on your document. Please try again.",
-                False,
-                {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "model_used": "error",
-                },
-            )
+            raise ServiceUnavailableError(
+                "Failed to generate an answer from your document. Please try again."
+            ) from e
 
     async def generate_summary(
         self, topic: str, context: list[dict[str, Any]], summary_format: str = "bullets"
@@ -339,20 +394,13 @@ class Generator:
                 response_text, summary_format
             )
             return plain, structured, sufficient, usage
-        except Exception:
+        except ServiceUnavailableError:
+            raise
+        except Exception as e:
             logger.exception("Failed to parse or generate summary from LLM.")
-            return (
-                "I encountered an error generating a topic summary based on your "
-                "document. Please try again.",
-                None,
-                False,
-                {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "model_used": "error",
-                },
-            )
+            raise ServiceUnavailableError(
+                "Failed to generate a summary from your document. Please try again."
+            ) from e
 
     async def generate_quiz(
         self, topic: str, context: list[dict[str, Any]], num_questions: int = 5
@@ -435,7 +483,10 @@ class Generator:
 
             try:
                 response_text, usage = await self._call_llm_with_retry(
-                    retry_instruction, prompt, require_json=True
+                    retry_instruction,
+                    prompt,
+                    require_json=True,
+                    single_attempt=settings.QUIZ_REPROMPT_SINGLE_ATTEMPT,
                 )
                 self._accumulate_usage(accumulated_usage, usage)
                 questions = self._parse_and_validate_quiz(response_text, num_questions)
@@ -632,8 +683,6 @@ class Generator:
         Also cross-checks that correct_index actually points to a plausible answer
         by verifying the explanation references the selected option.
         """
-        import re
-
         data = robust_json_loads(response_text)
 
         # If data is a dictionary, scan its keys for any list (e.g. {"questions": [...]})
@@ -784,12 +833,58 @@ class Generator:
 
         return validated
 
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        """Classify an LLM-call failure to decide the recovery strategy.
+
+        Returns one of:
+
+        * ``"rate_limited"`` — 429 / quota / resource-exhausted. Fail over to the
+          fallback model immediately to protect primary quota.
+        * ``"fatal"`` — authentication / permission / invalid-argument (bad API key,
+          disabled model). Retrying or failing over won't help, so fail fast.
+        * ``"transient"`` — everything else (503, timeouts, empty/malformed output).
+          Worth one bounded retry, then fallback.
+        """
+        err_str = str(exc).lower()
+        if (
+            "429" in err_str
+            or "resourceexhausted" in err_str
+            or "resource_exhausted" in err_str
+            or "quota" in err_str
+            or "rate limit" in err_str
+        ):
+            return "rate_limited"
+        if (
+            "401" in err_str
+            or "403" in err_str
+            or "permission" in err_str
+            or "api key" in err_str
+            or "api_key" in err_str
+            or "unauthenticated" in err_str
+            or "invalid argument" in err_str
+            or "invalid_argument" in err_str
+        ):
+            return "fatal"
+        return "transient"
+
     async def _call_llm_with_retry(
-        self, system_instruction: str, user_prompt: str, require_json: bool = False
+        self,
+        system_instruction: str,
+        user_prompt: str,
+        require_json: bool = False,
+        single_attempt: bool = False,
     ) -> tuple[str, dict[str, int | str]]:
         """Executes LLM generation with retries and primary → fallback failover.
 
         Returns ``(content, usage)`` where usage contains token counts and model name.
+
+        When ``single_attempt`` is True, the primary model is tried exactly once
+        with no transient-retry and no fallback. This caps amplification for
+        callers that already wrap this in their own outer retry (e.g. the quiz
+        stricter-reprompt path). Whether to pass it is a *policy* decision the
+        caller takes from config (``QUIZ_REPROMPT_SINGLE_ATTEMPT``); the normal
+        path remains governed by ``settings.MAX_RETRIES``.
         """
         messages = [
             SystemMessage(content=system_instruction),
@@ -797,10 +892,12 @@ class Generator:
         ]
 
         primary_attempts = 0
-        max_primary_attempts = settings.MAX_RETRIES + 1  # e.g. 1 initial + MAX_RETRIES (1) for transient errors
+        # Normal path: 1 initial + MAX_RETRIES transient retries. single_attempt: 1.
+        max_primary_attempts = 1 if single_attempt else settings.MAX_RETRIES + 1
 
         fallback_attempts = 0
-        max_fallback_attempts = 1  # 0 retries for fallback
+        # Normal path: one fallback try. single_attempt: no fallback.
+        max_fallback_attempts = 0 if single_attempt else 1
 
         use_fallback = False
         delay = settings.RETRY_DELAY_SECONDS
@@ -808,13 +905,19 @@ class Generator:
         while True:
             # Select appropriate model client
             if not use_fallback:
-                client = self._primary_client_json if require_json else self._primary_client
+                client = (
+                    self._primary_client_json if require_json else self._primary_client
+                )
                 current_model = self._primary_model_name
                 primary_attempts += 1
                 attempt_num = primary_attempts
                 max_attempts = max_primary_attempts
             else:
-                client = self._fallback_client_json if require_json else self._fallback_client
+                client = (
+                    self._fallback_client_json
+                    if require_json
+                    else self._fallback_client
+                )
                 current_model = self._fallback_model_name
                 fallback_attempts += 1
                 attempt_num = fallback_attempts
@@ -863,27 +966,53 @@ class Generator:
 
             except Exception as e:
                 err_str = str(e)
-                is_rate_limited = "429" in err_str or "ResourceExhausted" in err_str or "Quota" in err_str
+                error_kind = self._classify_error(e)
 
                 logger.warning(
-                    "LLM Generation failed on model %s (Attempt %d/%d): %s",
+                    "LLM Generation failed on model %s (Attempt %d/%d, kind=%s): %s",
                     current_model,
                     attempt_num,
                     max_attempts,
+                    error_kind,
                     err_str,
                 )
 
+                # Authentication / permission / invalid-argument errors are not
+                # recoverable by retry or fallback (same key, same bad request).
+                # Fail fast instead of burning a fallback call.
+                if error_kind == "fatal":
+                    logger.error(
+                        "Non-recoverable LLM error (%s). Failing fast without fallback.",
+                        error_kind,
+                    )
+                    raise ServiceUnavailableError(
+                        "Generation service is misconfigured or unavailable. "
+                        "Please try again later."
+                    ) from e
+
+                # single_attempt callers get exactly one primary try and no
+                # fallback — surface the failure to their own outer retry logic.
+                if single_attempt:
+                    logger.warning(
+                        "single_attempt primary call failed (%s). No retry/fallback.",
+                        error_kind,
+                    )
+                    raise ServiceUnavailableError(
+                        "Generation service is currently overloaded. Please try again."
+                    ) from e
+
                 # If we are using the primary model and fail:
                 if not use_fallback:
-                    # 1. 429 Rate limit / Quota issue: trigger fast fallback immediately
-                    if is_rate_limited:
+                    # 1. Rate limit / Quota: fail over to the fallback immediately.
+                    if error_kind == "rate_limited":
                         logger.warning(
                             "Primary model rate limited (429/Quota). Triggering fast fallback to secondary model."
                         )
                         use_fallback = True
                         continue
 
-                    # 2. Transient error (e.g. 503 / empty response): retry at most once
+                    # 2. Transient error (e.g. 503 / empty / malformed): retry at
+                    #    most once, then fall back.
                     if attempt_num < max_attempts:
                         logger.warning(
                             "Primary model failed. Retrying in %d seconds...",

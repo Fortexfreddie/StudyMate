@@ -66,13 +66,18 @@ class Settings(BaseSettings):
     GENERATION_TEMPERATURE: float = 0.3
     MAX_RETRIES: int = 1  # number of primary model retries for transient errors
     RETRY_DELAY_SECONDS: int = 2
+    # When the quiz parser rejects the first generation, a stricter reformat prompt
+    # is sent. If True, that reprompt is a single primary-model call (no internal
+    # transient-retry or fallback), capping worst-case LLM calls per quiz request.
+    # Set False to let the reprompt use the full MAX_RETRIES + fallback path.
+    QUIZ_REPROMPT_SINGLE_ATTEMPT: bool = True
 
     # Performance tier model overrides (medium/low use cheaper, faster models)
     # GEMINI_MEDIUM_MODEL: str = "gemini-3-flash-preview"
     GEMINI_MEDIUM_MODEL: str = "gemini-3.5-flash"
     GEMINI_LOW_MODEL: str = "gemini-3.1-flash-lite"
 
-    # Token usage limits (per 24-hour rolling window, per user)
+    # Token usage limits (per calendar-day window resetting at 00:00 UTC, per user)
     FREE_DAILY_TOKEN_LIMIT: int = 50_000
     PRO_DAILY_TOKEN_LIMIT: int = 500_000
     # Embedding

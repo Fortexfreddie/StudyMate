@@ -69,6 +69,24 @@ async def refresh(
     return TokenResponse(access_token=access, refresh_token=refresh)
 
 
+@router.post("/logout", status_code=status.HTTP_200_OK)
+@limiter.limit(REFRESH_LIMIT)
+async def logout(
+    request: Request,
+    payload: RefreshRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> dict[str, bool]:
+    """Revoke a refresh token. Idempotent — always returns success.
+
+    The short-lived access token is not server-side revocable; it expires on its
+    own. This kills the long-lived refresh credential so it can't mint new access
+    tokens. Clients should also discard both tokens locally.
+    """
+    auth_service = AuthService(db)
+    await auth_service.logout(refresh_token=payload.refresh_token)
+    return {"success": True}
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(
     current_user: User = Depends(get_current_user),  # noqa: B008

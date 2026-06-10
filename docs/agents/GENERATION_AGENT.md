@@ -11,56 +11,44 @@ This agent owns the **final generation step** of the RAG pipeline. It assembles 
 
 ---
 
-## Inputs
+## Interface (actual)
 
-### For Chat / Summary
+`Generator` is constructed with `(api_key, performance_mode="high")` and exposes three
+async methods. Each is a **separate method** (there is no `mode` parameter), context is
+a `list[dict]` of retrieved chunks, and each returns a **tuple** (not a dataclass). All
+generation uses Gemini **JSON mode** (`response_mime_type="application/json"`).
 
-| Parameter | Type | Description |
+### `generate_answer(query, context) -> (answer, context_sufficient, usage)`
+
+| Field | Type | Description |
 |---|---|---|
-| `query` | `str` | The student's question or topic |
-| `chunks` | `List[RetrievedChunk]` | Top-k retrieved chunks from the Retrieval Agent |
-| `mode` | `Literal["chat", "summary"]` | Determines which prompt template to use |
+| `answer` | `str` | Grounded markdown answer |
+| `context_sufficient` | `bool` | False when the context didn't cover the question |
+| `usage` | `dict` | `{input_tokens, output_tokens, total_tokens, model_used}` |
 
-### For Quiz Generation
+### `generate_summary(topic, context, summary_format="bullets") -> (plain_text, structured, context_sufficient, usage)`
 
-| Parameter | Type | Description |
-|---|---|---|
-| `topic` | `str` | The topic or scope for quiz generation |
-| `chunks` | `List[RetrievedChunk]` | Relevant retrieved chunks |
-| `num_questions` | `int` | Number of MCQs to generate (default: 5, max: 10) |
+`summary_format` is one of `bullets`, `key_concepts`, `study_guide`, `flashcards`,
+`cheat_sheet`, `mind_map` (see `SUMMARY_FORMAT_SPECS`). `structured` is the
+format-specific shape (or `None` if validation fails / context insufficient);
+`plain_text` is always a safe markdown fallback.
 
----
+### `generate_quiz(topic, context, num_questions=5) -> (questions, usage)`
 
-## Outputs
+`num_questions` default `5`, **max `30`** (`MAX_QUIZ_QUESTIONS`, enforced by a
+`field_validator` on `QuizGenerateRequest`). `questions` is a `list[dict]` with keys
+`question`, `options` (exactly 4), `correct_index` (0–3), `explanation`.
 
-### Chat / Summary
-Returns a `GenerationResult`:
+On a generation/parse failure all three methods raise `ServiceUnavailableError` (503);
+the router releases the token reservation and persists nothing.
 
-```python
-@dataclass
-class GenerationResult:
-    content: str                        # Generated text (answer or summary)
-    source_chunks: List[RetrievedChunk] # Chunks used as context
-    context_sufficient: bool            # Whether context was adequate
-```
+### Retry / fallback / error classification
 
-### Quiz
-Returns a `QuizResult`:
-
-```python
-@dataclass
-class QuizQuestion:
-    question: str
-    options: list[str]      # Always exactly 4 options
-    correct_index: int      # 0-based index of the correct option
-    explanation: str        # Brief explanation grounded in the chunk
-
-@dataclass
-class QuizResult:
-    questions: list[QuizQuestion]
-    source_chunks: list[RetrievedChunk]
-    topic: str
-```
+`_call_llm_with_retry` classifies failures: **rate-limit (429)** → immediate fallback;
+**transient (503/empty/malformed)** → retry primary up to `MAX_RETRIES` then fallback;
+**fatal (auth/permission/invalid-argument)** → fail fast. The quiz stricter-reprompt
+uses a single primary call when `QUIZ_REPROMPT_SINGLE_ATTEMPT=true` (worst case 4 LLM
+calls per quiz request).
 
 ---
 
@@ -103,6 +91,12 @@ These rules override ALL other instructions. You MUST follow them without except
   for lists, and numbered steps for sequential processes.
 • Be encouraging and supportive — never condescending.
 ```
+
+> **Note:** The templates below are illustrative of the grounding *philosophy*. The
+> actual implementation appends a strict `OUTPUT FORMAT` JSON block to `SYSTEM_PROMPT`
+> and calls Gemini in JSON mode — see `generate_answer` / `generate_summary` /
+> `generate_quiz` and `SUMMARY_FORMAT_SPECS` in `services/generator.py` for the
+> authoritative prompts.
 
 ### Chat Prompt Template
 
@@ -196,21 +190,27 @@ Never call the LLM with an empty context.
 The generation agent uses a two-model strategy to handle rate limits gracefully:
 
 ```python
-# Model configuration (from core/config.py)
-GEMINI_PRIMARY_MODEL = "gemini-3-flash-preview"       # Free tier, Preview
-GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"  # Free tier, GA
-MAX_RETRIES = 2
+# Model configuration (from core/config.py) — the "high" tier; medium/low tiers
+# use GEMINI_MEDIUM_MODEL / GEMINI_LOW_MODEL (see PERFORMANCE_MODES).
+GEMINI_PRIMARY_MODEL = "gemini-3.5-flash"
+GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"
+MAX_RETRIES = 1
 RETRY_DELAY_SECONDS = 2
+QUIZ_REPROMPT_SINGLE_ATTEMPT = True
 ```
 
-### Retry flow:
-1. Call primary model (`gemini-3-flash-preview`)
-2. If rate-limited (429) → wait `RETRY_DELAY_SECONDS` → retry with fallback model (`gemini-3.1-flash-lite`)
-3. If fallback also fails → raise `ServiceUnavailableError`
+### Retry flow (errors are classified, not matched by substring):
+1. Call primary model.
+2. **Rate-limit (429)** → fail over to the fallback model immediately.
+3. **Transient (503/empty/malformed)** → retry primary up to `MAX_RETRIES`, then fallback.
+4. **Fatal (auth/permission/invalid-argument)** → fail fast, no retry/fallback.
+5. If the fallback also fails → raise `ServiceUnavailableError` (503).
 
-For **quiz generation**, there is an additional retry path:
-1. If the primary model returns unparseable JSON → retry once with a stricter prompt on the same model
-2. If still unparseable → raise `GenerationError`
+For **quiz generation**, there is an additional outer retry path:
+1. If the first generation is unparseable → retry once with a stricter reformat prompt.
+2. With `QUIZ_REPROMPT_SINGLE_ATTEMPT=true`, that reprompt is a single primary call
+   (no internal retry/fallback), capping worst-case LLM calls at **4** per quiz request.
+3. If still unparseable → raise `ServiceUnavailableError` (503).
 
 ---
 
@@ -237,7 +237,7 @@ def parse_quiz_response(raw: str) -> list[QuizQuestion]:
 | Empty chunks list | Return "insufficient context" — do NOT call Gemini |
 | Gemini API rate limit (429) | Retry with fallback model; if still fails, raise `ServiceUnavailableError` |
 | Gemini API error (network, 5xx) | Raise `ServiceUnavailableError("Generation service unavailable. Try again.")` |
-| Quiz JSON parse failure | Retry once with stricter prompt; if still fails, raise `GenerationError` |
+| Quiz JSON parse failure | Retry once with stricter prompt; if still fails, raise `ServiceUnavailableError` (503) |
 | Gemini returns out-of-context content | Log warning — this is a prompt engineering failure, flag for review |
 
 ---
@@ -247,13 +247,14 @@ def parse_quiz_response(raw: str) -> list[QuizQuestion]:
 ```python
 # apps/api/core/config.py
 
-GEMINI_PRIMARY_MODEL = "gemini-3-flash-preview"
+GEMINI_PRIMARY_MODEL = "gemini-3.5-flash"
 GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_QUIZ_QUESTIONS = 5
-MAX_QUIZ_QUESTIONS = 10
+MAX_QUIZ_QUESTIONS = 30          # authoritative — enforced by a field_validator
 GENERATION_TEMPERATURE = 0.3    # Low temperature = more factual, less creative
-MAX_RETRIES = 2
+MAX_RETRIES = 1
 RETRY_DELAY_SECONDS = 2
+QUIZ_REPROMPT_SINGLE_ATTEMPT = True
 ```
 
 Temperature is intentionally low (0.3) because factual accuracy is more important than creative variety in an academic grounding system.

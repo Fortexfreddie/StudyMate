@@ -2,10 +2,11 @@
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import HTTPException, status
 from jwt.exceptions import InvalidTokenError
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -101,6 +102,10 @@ class AuthService:
             expires_at=expires_at,
         )
         self._db.add(db_token)
+
+        # Opportunistically prune this user's expired tokens to bound table growth.
+        await self._prune_expired_tokens(user.id)
+
         await self._db.commit()
 
         return access_token, refresh_str
@@ -170,6 +175,48 @@ class AuthService:
             expires_at=expires_at,
         )
         self._db.add(new_db_token)
+
+        # Opportunistically prune this user's dead tokens to bound table growth.
+        await self._prune_expired_tokens(user.id)
+
         await self._db.commit()
 
         return access_token, refresh_str
+
+    async def logout(self, refresh_token: str) -> None:
+        """Revoke a refresh token on explicit logout (idempotent, never raises).
+
+        Decoding is intentionally lenient: a malformed/expired token simply has no
+        active DB row to revoke, so logout is a no-op rather than an error. This
+        kills the long-lived refresh credential; the short-lived access token
+        expires on its own (ACCESS_TOKEN_EXPIRE_MINUTES).
+        """
+        try:
+            token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+            await self._db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.token_hash == token_hash)
+                .values(is_revoked=True)
+            )
+            await self._db.commit()
+        except Exception:
+            await self._db.rollback()
+            # Logout must always succeed from the client's perspective.
+
+    async def _prune_expired_tokens(self, user_id: UUID) -> None:
+        """Delete a user's **expired** refresh-token rows (best-effort).
+
+        Staged on the caller's transaction (no commit here). Bounds the unbounded
+        growth of ``refresh_tokens`` from every login/refresh issuing a new row.
+
+        Only *expired* rows are removed. Revoked-but-unexpired rows are deliberately
+        kept so token-reuse detection in ``refresh`` can still catch a replay of a
+        rotated token until it expires naturally.
+        """
+        now = datetime.now(UTC)
+        await self._db.execute(
+            delete(RefreshToken).where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.expires_at < now,
+            )
+        )

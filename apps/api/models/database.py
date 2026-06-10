@@ -234,6 +234,39 @@ class TokenUsage(Base):
     user: Mapped["User"] = relationship(back_populates="token_usage")
 
 
+class DailyTokenUsage(Base):
+    """Atomic per-user, per-day token counter used to enforce daily quotas.
+
+    Unlike ``token_usage`` (an append-only per-request *log*), this table holds a
+    single mutable running total per ``(user_id, usage_date)``. Quota enforcement
+    increments ``reserved_tokens`` atomically *before* an LLM call (via
+    ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING``) so concurrent requests can
+    never collectively overshoot the limit, and reconciles it to the actual token
+    count *after* the call. See ``services/token_service.py``.
+    """
+
+    __tablename__ = "daily_token_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="uq_daily_token_usage_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Running total of tokens reserved/consumed today. Reservations bump this up
+    # front; reconciliation adjusts it by (actual - estimate); failures release it.
+    reserved_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class RefreshToken(Base):
     """Stores hashed active refresh tokens to enforce rotation & revoking."""
 

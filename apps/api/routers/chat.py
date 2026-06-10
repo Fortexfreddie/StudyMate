@@ -16,7 +16,13 @@ from models.schemas import ChatRequest, ChatResponse, GenerationMeta, SourceInfo
 from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
-from services.token_service import check_token_budget, record_token_usage
+from services.token_service import (
+    estimate_request_tokens,
+    reconcile_tokens,
+    record_token_usage,
+    release_tokens,
+    reserve_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +49,10 @@ async def chat_with_docs(
     If `doc_id` is supplied, the conversation is grounded strictly within that document.
     If `doc_id` is omitted, the retrieval executes globally across all user documents.
     """
-    # 0. Check token budget before any expensive work
-    allowed, remaining, limit = await check_token_budget(
-        db, current_user.id, current_user.is_pro
-    )
-    if not allowed:
-        raise StudyMateError(
-            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
-            status_code=403,
-        )
-
     # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
-    effective_top_k = payload.top_k if payload.top_k is not None else generator.default_top_k
+    effective_top_k = (
+        payload.top_k if payload.top_k is not None else generator.default_top_k
+    )
 
     # 1.5. Verify document ownership / retrieve allowed doc IDs for security
     user_doc_ids = None
@@ -64,7 +62,9 @@ async def chat_with_docs(
         )
         doc_res = await db.execute(stmt_doc)
         if not doc_res.scalar_one_or_none():
-            raise StudyMateError("Document not found or access denied.", status_code=404)
+            raise StudyMateError(
+                "Document not found or access denied.", status_code=404
+            )
     else:
         # Global query: fetch all doc IDs owned by user to restrict search
         stmt_docs = select(Document.id).where(Document.user_id == current_user.id)
@@ -76,21 +76,29 @@ async def chat_with_docs(
                 status_code=400,
             )
 
-    # 2. Check for a cached response
-    stmt = (
-        select(ChatMessage)
-        .where(
-            ChatMessage.user_id == current_user.id,
-            ChatMessage.doc_id == payload.doc_id,
-            func.lower(func.trim(ChatMessage.query)) == payload.query.strip().lower(),
-            ChatMessage.context_sufficient,
-            ChatMessage.performance_mode == generator.performance_mode,
+    # 2. Check for a cached response.
+    #    Only doc-scoped queries are cacheable: a document's content is immutable
+    #    once uploaded, so an identical (doc_id, query, mode) is safe to reuse.
+    #    Global queries (doc_id is None) span the user's whole — mutable — document
+    #    set, so a cached global answer can go stale the moment a new doc is added.
+    #    We therefore never serve a cached result for global queries.
+    cached_msg = None
+    if payload.doc_id is not None:
+        stmt = (
+            select(ChatMessage)
+            .where(
+                ChatMessage.user_id == current_user.id,
+                ChatMessage.doc_id == payload.doc_id,
+                func.lower(func.trim(ChatMessage.query))
+                == payload.query.strip().lower(),
+                ChatMessage.context_sufficient,
+                ChatMessage.performance_mode == generator.performance_mode,
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
         )
-        .order_by(ChatMessage.created_at.desc())
-        .limit(1)
-    )
-    result = await db.execute(stmt)
-    cached_msg = result.scalar_one_or_none()
+        result = await db.execute(stmt)
+        cached_msg = result.scalar_one_or_none()
 
     if cached_msg:
         logger.info(
@@ -157,13 +165,35 @@ async def chat_with_docs(
         top_k=effective_top_k,
     )
 
-    # 4. Synthesize the grounded response using Gemini
-    answer, context_sufficient, usage = await generator.generate_answer(
-        query=payload.query,
-        context=matched_chunks,
+    # 4. Reserve the estimated token cost atomically BEFORE the LLM call. This
+    #    closes the concurrent-burst race: even 10 parallel requests are serialized
+    #    on the per-user/day counter row and cannot collectively exceed the limit.
+    context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)
+    estimate = estimate_request_tokens(context_text, payload.query, "chat")
+    allowed, _used, limit = await reserve_tokens(
+        current_user.id, current_user.is_pro, estimate
     )
+    if not allowed:
+        raise StudyMateError(
+            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
+            status_code=403,
+        )
 
-    # 5. Record token usage (best-effort)
+    # 5. Synthesize the grounded response using Gemini. On failure, refund the
+    #    reservation and surface a 503 — never persist a bogus answer or charge it.
+    try:
+        answer, context_sufficient, usage = await generator.generate_answer(
+            query=payload.query,
+            context=matched_chunks,
+        )
+    except Exception:
+        await release_tokens(current_user.id, estimate)
+        raise
+
+    # 6. Reconcile the reservation against actual usage + log the per-request row.
+    await reconcile_tokens(
+        current_user.id, estimate, int(usage.get("total_tokens", 0) or 0)
+    )
     await record_token_usage(
         db, current_user.id, usage, "chat", generator.performance_mode
     )
