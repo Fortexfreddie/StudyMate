@@ -41,6 +41,7 @@ function QuizContent() {
   // Generated session
   const [sessionId, setSessionId] = useState<string>("");
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  // TODO: Add state for sources (e.g. const [sources, setSources] = useState<SourceInfo[]>([])) to cache generation citations.
 
   // Active play state
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -91,6 +92,7 @@ function QuizContent() {
       }
       setSessionId(res.session_id);
       setQuestions(res.questions);
+      // TODO: setSources(res.sources) here so we can show "Source #X" citations on the results screen.
       setAnswers(new Array(res.questions.length).fill(undefined));
       setCurrentIndex(0);
       setSelectedIndex(null);
