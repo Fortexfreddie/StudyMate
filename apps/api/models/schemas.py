@@ -401,6 +401,7 @@ class ChatHistoryItem(BaseModel):
     query: str
     answer: str
     context_sufficient: bool
+    sources: list[SourceInfo] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   HelpCircle,
@@ -13,8 +13,10 @@ import {
 import { ResultsTrophySvg } from "./components/ResultsTrophySvg";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { GeneratingState } from "@/components/dashboard/GeneratingState";
+import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
-import type { QuizQuestion, QuizResult } from "@/lib/types";
+import { getActivePerfConfig } from "@/lib/performance";
+import type { QuizQuestion, QuizResult, Source } from "@/lib/types";
 
 // Presets stay within the backend MAX_QUIZ_QUESTIONS (30). The hint warns that
 // larger quizzes take longer to generate.
@@ -41,7 +43,7 @@ function QuizContent() {
   // Generated session
   const [sessionId, setSessionId] = useState<string>("");
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  // TODO: Add state for sources (e.g. const [sources, setSources] = useState<SourceInfo[]>([])) to cache generation citations.
+  const [sources, setSources] = useState<Source[]>([]);
 
   // Active play state
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -58,22 +60,12 @@ function QuizContent() {
   const activeQuestion = questions[currentIndex];
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
-  useState(() => {
-    if (typeof window !== "undefined") {
-      const mode = localStorage.getItem("studymate_performance_mode") || "high";
-      const config: Record<string, { default: number; max: number }> = {
-        low: { default: 5, max: 10 },
-        medium: { default: 8, max: 15 },
-        high: { default: 10, max: 20 },
-        very_high: { default: 15, max: 25 },
-        max: { default: 20, max: 30 },
-      };
-      const activeConf = config[mode] ?? config.high;
-      setTopK(activeConf.default);
-      setMaxK(activeConf.max);
-      setPerfMode(mode);
-    }
-  });
+  useEffect(() => {
+    const { mode, config } = getActivePerfConfig();
+    setTopK(config.default);
+    setMaxK(config.max);
+    setPerfMode(mode);
+  }, []);
 
   const startQuiz = async () => {
     setError(null);
@@ -92,7 +84,7 @@ function QuizContent() {
       }
       setSessionId(res.session_id);
       setQuestions(res.questions);
-      // TODO: setSources(res.sources) here so we can show "Source #X" citations on the results screen.
+      setSources(res.sources);
       setAnswers(new Array(res.questions.length).fill(undefined));
       setCurrentIndex(0);
       setSelectedIndex(null);
@@ -159,6 +151,7 @@ function QuizContent() {
   const handleResetQuiz = () => {
     setStep("setup");
     setQuestions([]);
+    setSources([]);
     setResults([]);
     setAnswers([]);
     setScore(0);
@@ -227,8 +220,13 @@ function QuizContent() {
             {/* Context Depth (K) */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-text-muted">
+                <span className="text-xs font-bold text-text-muted inline-flex items-center gap-1">
                   Context Window Depth (K)
+                  <InfoTooltip label="What is Context Window Depth?">
+                    How many excerpts (&ldquo;chunks&rdquo;) from your document the AI reads to write
+                    questions. Higher = broader coverage but slower; the cap depends on your
+                    performance level.
+                  </InfoTooltip>
                 </span>
                 <span className="text-xs font-extrabold text-brand-primary">
                   {topK} / {maxK} Chunks
@@ -496,7 +494,10 @@ function QuizContent() {
                     </span>
                   </div>
                   <div className="pl-6 flex flex-col gap-1">
-                    {selected !== undefined && !correct && (
+                    {selected === -1 && (
+                      <span className="text-[11px] text-accent-coral">Skipped</span>
+                    )}
+                    {selected !== undefined && selected >= 0 && !correct && (
                       <span className="text-[11px] text-accent-coral">
                         Your answer: {OPTION_KEYS[selected]}. {q.options[selected]?.replace(/^[A-D]\)\s*/, "")}
                       </span>
@@ -514,6 +515,35 @@ function QuizContent() {
               );
             })}
           </div>
+
+          {/* Source citations the quiz was grounded in */}
+          {sources.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-text-muted px-1">
+                Grounded in {sources.length} source{sources.length > 1 ? "s" : ""}
+              </h3>
+              <div className="flex flex-col gap-2">
+                {sources.map((s, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-card-bg border border-border-subtle rounded-xl p-3 flex flex-col gap-0.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-white truncate">
+                        {s.filename} • p.{s.page_number}
+                      </span>
+                      <span className="text-[9px] font-bold text-brand-primary shrink-0">
+                        {Math.round(s.similarity_score * 100)}% match
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-text-muted leading-snug line-clamp-2">
+                      {s.text_preview}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-3">
             <button

@@ -13,7 +13,11 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { GeneratingState } from "@/components/dashboard/GeneratingState";
+import { SourceCard, linkifySources } from "@/components/shared/SourceReferences";
+import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
+import { getActivePerfConfig } from "@/lib/performance";
+import { useSourceCite } from "@/lib/useSourceCite";
 import { getDocumentColor, getDocumentTitle } from "@/lib/format";
 import type {
   SummaryFormat,
@@ -53,24 +57,16 @@ function SummaryContent() {
   // Interactive output state
   const [expandedConcept, setExpandedConcept] = useState<number | null>(0);
   const [flippedCards, setFlippedCards] = useState<Record<number, boolean>>({});
+  // Clickable "Source #N" citations scroll to / highlight the matching card.
+  const { registerRef, cite, active } = useSourceCite<number>();
 
   const { bgColor, textColor } = getDocumentColor(docId ?? "default");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const mode = localStorage.getItem("studymate_performance_mode") || "high";
-      const config: Record<string, { default: number; max: number }> = {
-        low: { default: 5, max: 10 },
-        medium: { default: 8, max: 15 },
-        high: { default: 10, max: 20 },
-        very_high: { default: 15, max: 25 },
-        max: { default: 20, max: 30 },
-      };
-      const activeConf = config[mode] ?? config.high;
-      setTopK(activeConf.default);
-      setMaxK(activeConf.max);
-      setPerfMode(mode);
-    }
+    const { mode, config } = getActivePerfConfig();
+    setTopK(config.default);
+    setMaxK(config.max);
+    setPerfMode(mode);
   }, []);
 
   useEffect(() => {
@@ -169,8 +165,13 @@ function SummaryContent() {
             {/* Context Depth (K) */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-text-muted">
+                <span className="text-xs font-bold text-text-muted inline-flex items-center gap-1">
                   Context Window Depth (K)
+                  <InfoTooltip label="What is Context Window Depth?">
+                    How many excerpts (&ldquo;chunks&rdquo;) from your document the AI reads to build
+                    the summary. Higher = more detail but slower; the cap depends on your performance
+                    level.
+                  </InfoTooltip>
                 </span>
                 <span className="text-xs font-extrabold text-brand-primary">
                   {topK} / {maxK} Chunks
@@ -238,9 +239,16 @@ function SummaryContent() {
             style={{ backgroundColor: bgColor }}
             className="w-full rounded-3xl p-5 flex flex-col gap-2 shadow-lg shadow-black/25"
           >
-            <span className="text-[9px] font-black uppercase tracking-widest leading-none opacity-80" style={{ color: textColor }}>
-              {activeLabel} summary
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-black uppercase tracking-widest leading-none opacity-80" style={{ color: textColor }}>
+                {activeLabel} summary
+              </span>
+              {result.meta?.cached && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/15" style={{ color: textColor }}>
+                  ⚡ INSTANT
+                </span>
+              )}
+            </div>
             <h2 style={{ color: textColor }} className="text-sm sm:text-base font-black leading-tight">
               {getDocumentTitle({ filename: docName })}
             </h2>
@@ -262,7 +270,27 @@ function SummaryContent() {
               setExpandedConcept={setExpandedConcept}
               flippedCards={flippedCards}
               setFlippedCards={setFlippedCards}
+              link={(children) => linkifySources(children, result.sources.length, cite)}
             />
+          )}
+
+          {/* Sources the summary was grounded in */}
+          {result.sources.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[9px] font-black uppercase tracking-wider text-text-muted pl-1">
+                Grounded in {result.sources.length} source
+                {result.sources.length > 1 ? "s" : ""}
+              </span>
+              {result.sources.map((s, idx) => (
+                <SourceCard
+                  key={idx}
+                  source={s}
+                  index={idx}
+                  highlighted={active === idx}
+                  registerRef={registerRef}
+                />
+              ))}
+            </div>
           )}
 
           <div className="flex flex-col gap-3">
@@ -281,12 +309,15 @@ function SummaryContent() {
 
 // ── Structured renderers ──────────────────────────────────────────────────────
 
+type LinkFn = (children: React.ReactNode) => React.ReactNode;
+
 interface StructuredProps {
   result: SummaryResponse;
   expandedConcept: number | null;
   setExpandedConcept: (v: number | null) => void;
   flippedCards: Record<number, boolean>;
   setFlippedCards: (v: Record<number, boolean>) => void;
+  link: LinkFn;
 }
 
 function StructuredSummary({
@@ -295,6 +326,7 @@ function StructuredSummary({
   setExpandedConcept,
   flippedCards,
   setFlippedCards,
+  link,
 }: StructuredProps) {
   const { format, structured, summary } = result;
 
@@ -303,14 +335,14 @@ function StructuredSummary({
     return (
       <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 shadow-md">
         <p className="text-xs sm:text-sm text-text-muted leading-relaxed whitespace-pre-wrap">
-          {summary}
+          {link(summary)}
         </p>
       </div>
     );
   }
 
   if (format === "bullets") {
-    return <Bullets items={structured as string[]} />;
+    return <Bullets items={structured as string[]} link={link} />;
   }
   if (format === "key_concepts") {
     return (
@@ -318,6 +350,7 @@ function StructuredSummary({
         items={structured as ConceptItem[]}
         expanded={expandedConcept}
         setExpanded={setExpandedConcept}
+        link={link}
       />
     );
   }
@@ -325,8 +358,8 @@ function StructuredSummary({
     const sg = structured as StudyGuide;
     return (
       <>
-        <Bullets items={sg.bullets} />
-        <Concepts items={sg.concepts} expanded={expandedConcept} setExpanded={setExpandedConcept} />
+        <Bullets items={sg.bullets} link={link} />
+        <Concepts items={sg.concepts} expanded={expandedConcept} setExpanded={setExpandedConcept} link={link} />
       </>
     );
   }
@@ -336,19 +369,20 @@ function StructuredSummary({
         cards={structured as Flashcard[]}
         flipped={flippedCards}
         setFlipped={setFlippedCards}
+        link={link}
       />
     );
   }
   if (format === "cheat_sheet") {
-    return <CheatSheetView data={structured as CheatSheet} />;
+    return <CheatSheetView data={structured as CheatSheet} link={link} />;
   }
   if (format === "mind_map") {
-    return <MindMapView data={structured as MindMap} />;
+    return <MindMapView data={structured as MindMap} link={link} />;
   }
   return null;
 }
 
-function Bullets({ items }: { items: string[] }) {
+function Bullets({ items, link }: { items: string[]; link: LinkFn }) {
   return (
     <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col gap-4 shadow-md shadow-black/15">
       <h3 className="text-xs sm:text-sm font-extrabold text-white tracking-tight flex items-center gap-1.5">
@@ -361,7 +395,7 @@ function Bullets({ items }: { items: string[] }) {
             <span className="h-5 w-5 rounded-full bg-accent-coral/15 border border-accent-coral/20 flex items-center justify-center text-accent-coral shrink-0 mt-0.5">
               <Check className="h-3 w-3" />
             </span>
-            <p className="text-xs sm:text-sm text-text-muted leading-relaxed">{bullet}</p>
+            <p className="text-xs sm:text-sm text-text-muted leading-relaxed">{link(bullet)}</p>
           </div>
         ))}
       </div>
@@ -373,10 +407,12 @@ function Concepts({
   items,
   expanded,
   setExpanded,
+  link,
 }: {
   items: ConceptItem[];
   expanded: number | null;
   setExpanded: (v: number | null) => void;
+  link: LinkFn;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -407,7 +443,7 @@ function Concepts({
               {isOpen && (
                 <div className="px-4 pb-4 border-t border-border-subtle/50 pt-3 animate-in fade-in slide-in-from-top-1 duration-200">
                   <p className="text-xs sm:text-sm text-text-muted leading-relaxed">
-                    {concept.description}
+                    {link(concept.description)}
                   </p>
                 </div>
               )}
@@ -423,10 +459,12 @@ function Flashcards({
   cards,
   flipped,
   setFlipped,
+  link,
 }: {
   cards: Flashcard[];
   flipped: Record<number, boolean>;
   setFlipped: (v: Record<number, boolean>) => void;
+  link: LinkFn;
 }) {
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -442,11 +480,12 @@ function Flashcards({
               style={{ perspective: "1000px" }}
             >
               <div
-                className="w-full h-full rounded-2xl relative shadow-md border transition-transform duration-500"
+                className={`w-full h-full rounded-2xl relative shadow-md border transition-transform duration-500 ${
+                  isFlipped ? "border-accent-coral/30" : "border-white/5"
+                }`}
                 style={{
                   transform: isFlipped ? "rotateY(180deg)" : "none",
                   transformStyle: "preserve-3d",
-                  borderColor: isFlipped ? "rgba(239,104,104,0.3)" : "rgba(255,255,255,0.05)",
                 }}
               >
                 <div
@@ -470,7 +509,7 @@ function Flashcards({
                       Answer
                     </span>
                     <p className="text-xs sm:text-sm font-semibold text-white leading-normal">
-                      {card.back}
+                      {link(card.back)}
                     </p>
                   </div>
                   <RefreshCw className="h-4.5 w-4.5 text-accent-coral shrink-0" />
@@ -484,7 +523,7 @@ function Flashcards({
   );
 }
 
-function CheatSheetView({ data }: { data: CheatSheet }) {
+function CheatSheetView({ data, link }: { data: CheatSheet; link: LinkFn }) {
   return (
     <div className="flex flex-col gap-5 w-full">
       {data.formulas.length > 0 && (
@@ -497,7 +536,7 @@ function CheatSheetView({ data }: { data: CheatSheet }) {
               <div key={idx}>
                 <div className="flex justify-between items-center gap-3 text-xs">
                   <span className="font-bold text-white">{f.label}</span>
-                  <span className="font-mono text-accent-gold text-right">{f.value}</span>
+                  <span className="font-mono text-accent-gold text-right">{link(f.value)}</span>
                 </div>
                 {idx < data.formulas.length - 1 && (
                   <div className="h-[1px] w-full bg-border-subtle/50 mt-3" />
@@ -516,7 +555,7 @@ function CheatSheetView({ data }: { data: CheatSheet }) {
             {data.definitions.map((d, idx) => (
               <div key={idx} className="flex flex-col gap-1">
                 <span className="text-xs font-extrabold text-white">{d.term}</span>
-                <span className="text-xs text-text-muted">{d.meaning}</span>
+                <span className="text-xs text-text-muted">{link(d.meaning)}</span>
               </div>
             ))}
           </div>
@@ -526,7 +565,7 @@ function CheatSheetView({ data }: { data: CheatSheet }) {
   );
 }
 
-function MindMapView({ data }: { data: MindMap }) {
+function MindMapView({ data, link }: { data: MindMap; link: LinkFn }) {
   return (
     <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-6 flex flex-col items-center shadow-md">
       <span className="text-[9px] font-black text-accent-coral uppercase tracking-widest mb-6">
@@ -546,7 +585,7 @@ function MindMapView({ data }: { data: MindMap }) {
             <div className="flex flex-col gap-1.5 w-full text-center">
               {branch.children.map((child, cIdx) => (
                 <span key={cIdx} className="text-[10px] text-text-muted px-2 py-1 bg-surface/30 rounded-lg">
-                  {child}
+                  {link(child)}
                 </span>
               ))}
             </div>

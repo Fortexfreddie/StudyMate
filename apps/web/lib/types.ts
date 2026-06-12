@@ -44,6 +44,7 @@ export interface RefreshRequest {
 
 export interface RefreshResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
 }
 
@@ -79,6 +80,16 @@ export interface Source {
   text_preview: string;
 }
 
+export interface GenerationMeta {
+  model_used: string;
+  performance_mode: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cached: boolean;
+  retrieval_chunks_used: number;
+}
+
 export interface ChatRequest {
   query: string;
   doc_id?: string;
@@ -89,6 +100,7 @@ export interface ChatResponse {
   answer: string;
   context_sufficient: boolean;
   sources: Source[];
+  meta?: GenerationMeta;
 }
 
 export type SummaryFormat =
@@ -164,6 +176,7 @@ export interface SummaryResponse {
   structured: SummaryStructured;
   context_sufficient: boolean;
   sources: Source[];
+  meta?: GenerationMeta;
 }
 
 export interface QuizQuestion {
@@ -185,6 +198,7 @@ export interface QuizResponse {
   topic: string;
   questions: QuizQuestion[];
   sources: Source[];
+  meta?: GenerationMeta;
 }
 
 export interface QuizAnswer {
@@ -213,10 +227,11 @@ export interface QuizSubmitResponse {
 
 export interface ChatHistoryItem {
   id: string;
-  doc_id: string;
+  doc_id: string | null;
   query: string;
   answer: string;
   context_sufficient: boolean;
+  sources: Source[];
   created_at: string;
 }
 
@@ -229,7 +244,7 @@ export interface ChatHistoryResponse {
 
 export interface QuizHistoryItem {
   id: string;
-  doc_id: string;
+  doc_id: string | null;
   topic: string;
   total_questions: number;
   score: number;
@@ -238,6 +253,23 @@ export interface QuizHistoryItem {
 
 export interface QuizHistoryResponse {
   sessions: QuizHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SummaryHistoryItem {
+  id: string;
+  doc_id: string | null;
+  topic: string;
+  summary_text: string;
+  format: SummaryFormat;
+  context_sufficient: boolean;
+  created_at: string;
+}
+
+export interface SummaryHistoryResponse {
+  summaries: SummaryHistoryItem[];
   total: number;
   limit: number;
   offset: number;

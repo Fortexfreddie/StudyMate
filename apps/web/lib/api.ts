@@ -17,6 +17,7 @@ import type {
   SignupRequest,
   SignupResponse,
   StatsResponse,
+  SummaryHistoryResponse,
   SummaryRequest,
   SummaryResponse,
   UpdateProfileRequest,
@@ -111,7 +112,7 @@ async function request<T>(
 
         if (refreshResponse.ok) {
           const data: RefreshResponse = await refreshResponse.json();
-          setTokens(data.access_token, refreshToken);
+          setTokens(data.access_token, data.refresh_token ?? refreshToken);
           return request<T>(path, options, false);
         }
       } catch {
@@ -154,6 +155,13 @@ export const api = {
 
     refresh(refreshToken: string): Promise<RefreshResponse> {
       return request<RefreshResponse>("/auth/refresh", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+    },
+
+    logout(refreshToken: string): Promise<{ success: boolean }> {
+      return request<{ success: boolean }>("/auth/logout", {
         method: "POST",
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
@@ -278,6 +286,21 @@ export const api = {
 
     quizDetail(sessionId: string): Promise<QuizDetailResponse> {
       return request<QuizDetailResponse>(`/history/quizzes/${sessionId}`);
+    },
+
+    summaryHistory(params?: {
+      doc_id?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<SummaryHistoryResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.doc_id) searchParams.set("doc_id", params.doc_id);
+      if (params?.limit) searchParams.set("limit", String(params.limit));
+      if (params?.offset) searchParams.set("offset", String(params.offset));
+      const query = searchParams.toString();
+      return request<SummaryHistoryResponse>(
+        `/history/summaries${query ? `?${query}` : ""}`
+      );
     },
   },
 };

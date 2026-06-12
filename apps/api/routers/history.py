@@ -18,9 +18,38 @@ from models.schemas import (
     QuizDetailResponse,
     QuizHistoryItem,
     QuizHistoryResponse,
+    SourceInfo,
     SummaryHistoryItem,
     SummaryHistoryResponse,
 )
+
+
+def _coerce_sources(raw: object) -> list[SourceInfo]:
+    """Map a stored JSONB sources blob back into SourceInfo models.
+
+    Persisted chat rows hold sources as a list of dicts; this defensively
+    rebuilds the typed shape (tolerating missing/odd values) so history answers
+    can render the same clickable source cards as a live response.
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[SourceInfo] = []
+    for s in raw:
+        if not isinstance(s, dict):
+            continue
+        p_val = s.get("page_number")
+        sc_val = s.get("similarity_score")
+        page = int(p_val) if isinstance(p_val, int | str) else 1
+        score = float(sc_val) if isinstance(sc_val, float | int | str) else 0.0
+        out.append(
+            SourceInfo(
+                filename=str(s.get("filename") or "Unknown Document"),
+                page_number=page,
+                similarity_score=score,
+                text_preview=str(s.get("text_preview") or ""),
+            )
+        )
+    return out
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +110,7 @@ async def get_chat_history(
             query=msg.query,
             answer=msg.answer,
             context_sufficient=msg.context_sufficient,
+            sources=_coerce_sources(msg.sources),
             created_at=msg.created_at,
         )
         for msg in messages

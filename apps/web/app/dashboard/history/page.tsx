@@ -3,7 +3,6 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bell,
   Search,
   FileText,
   HelpCircle,
@@ -12,7 +11,6 @@ import {
   ExternalLink,
   Plus,
 } from "lucide-react";
-import { IconButton } from "@/components/shared/IconButton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -34,8 +32,6 @@ interface TimelineItem {
   href: string;
 }
 
-const SUMMARY_PREFIX = "Summary request:";
-
 function formatDate(iso: string) {
   const d = new Date(iso);
   return {
@@ -55,42 +51,40 @@ export default function HistoryPage() {
     useApi(() => api.history.chatHistory({ limit: 100 }), []);
   const { data: quizData, isLoading: quizLoading, error: quizError, refetch: refetchQuiz } =
     useApi(() => api.history.quizHistory({ limit: 100 }), []);
+  const { data: summaryData, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } =
+    useApi(() => api.history.summaryHistory({ limit: 100 }), []);
 
-  const isLoading = chatLoading || quizLoading;
-  const error = chatError || quizError;
+  const isLoading = chatLoading || quizLoading || summaryLoading;
+  const error = chatError || quizError || summaryError;
 
-  // Merge chat (split into chat vs summary by prefix) + quiz into one timeline.
+  // Merge chat + summary + quiz history into one sortable timeline.
   const items = useMemo<TimelineItem[]>(() => {
     const merged: TimelineItem[] = [];
 
     for (const m of chatData?.messages ?? []) {
       const t = formatDate(m.created_at);
-      const isSummary = m.query.startsWith(SUMMARY_PREFIX);
-      if (isSummary) {
-        const topic = m.query
-          .replace(SUMMARY_PREFIX, "")
-          .replace(/\s*\[format=[^\]]*\]\s*$/, "")
-          .trim();
-        merged.push({
-          key: `sum-${m.id}`,
-          title: topic || "Document summary",
-          type: "summary",
-          status: "Summary Generated",
-          statusColor: "bg-[#d6b2d1]/10 text-[#d6b2d1] border-[#d6b2d1]/10",
-          ...t,
-          href: m.doc_id ? `/dashboard/summary?doc=${m.doc_id}` : "/dashboard/summary",
-        });
-      } else {
-        merged.push({
-          key: `chat-${m.id}`,
-          title: m.query,
-          type: "chat",
-          status: "Chat Session",
-          statusColor: "bg-sky-400/10 text-sky-400 border-sky-400/10",
-          ...t,
-          href: m.doc_id ? `/dashboard/chat?doc=${m.doc_id}` : "/dashboard/chat",
-        });
-      }
+      merged.push({
+        key: `chat-${m.id}`,
+        title: m.query,
+        type: "chat",
+        status: "Chat Session",
+        statusColor: "bg-sky-400/10 text-sky-400 border-sky-400/10",
+        ...t,
+        href: m.doc_id ? `/dashboard/chat?doc=${m.doc_id}` : "/dashboard/chat",
+      });
+    }
+
+    for (const s of summaryData?.summaries ?? []) {
+      const t = formatDate(s.created_at);
+      merged.push({
+        key: `sum-${s.id}`,
+        title: s.topic || "Document summary",
+        type: "summary",
+        status: "Summary Generated",
+        statusColor: "bg-status-summary/10 text-status-summary border-status-summary/10",
+        ...t,
+        href: s.doc_id ? `/dashboard/summary?doc=${s.doc_id}` : "/dashboard/summary",
+      });
     }
 
     for (const s of quizData?.sessions ?? []) {
@@ -107,7 +101,7 @@ export default function HistoryPage() {
     }
 
     return merged;
-  }, [chatData, quizData]);
+  }, [chatData, quizData, summaryData]);
 
   const filtered = useMemo(() => {
     const matchesTab = (i: TimelineItem) =>
@@ -148,7 +142,6 @@ export default function HistoryPage() {
     <div className="flex-1 flex flex-col max-w-[760px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5">
       <header className="flex items-center justify-between w-full select-none">
         <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Study History</h1>
-        <IconButton aria-label="Notifications" icon={<Bell className="h-4.5 w-4.5 text-white" />} />
       </header>
 
       {/* Search */}
@@ -204,6 +197,7 @@ export default function HistoryPage() {
           onRetry={() => {
             refetchChat();
             refetchQuiz();
+            refetchSummary();
           }}
         />
       ) : (

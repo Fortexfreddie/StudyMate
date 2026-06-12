@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Plus, AlertTriangle } from "lucide-react";
+import { FileText, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DocumentCard } from "../components/DocumentCard";
-import { api } from "@/lib/api";
+import { api, ApiClientError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { getDocumentColor, getDocumentCategory } from "@/lib/format";
 
@@ -19,6 +20,13 @@ export default function DocumentsPage() {
     []
   );
   const documents = data?.documents ?? [];
+
+  const [query, setQuery] = useState("");
+  const filteredDocuments = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return documents;
+    return documents.filter((doc) => doc.filename.toLowerCase().includes(q));
+  }, [documents, query]);
 
   const [documentToDelete, setDocumentToDelete] = useState<{ id: string; title: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -32,8 +40,12 @@ export default function DocumentsPage() {
       await api.documents.remove(documentToDelete.id);
       setDocumentToDelete(null);
       refetch();
-    } catch (err: any) {
-      setDeleteError(err?.detail || "Failed to delete document. Please try again.");
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiClientError
+          ? err.detail
+          : "Failed to delete document. Please try again."
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -57,22 +69,48 @@ export default function DocumentsPage() {
           onRetry={refetch}
         />
       ) : documents.length > 0 ? (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-          {documents.map((doc) => {
-            const { bgColor, textColor } = getDocumentColor(doc.doc_id);
-            return (
-              <DocumentCard
-                key={doc.doc_id}
-                id={doc.doc_id}
-                title={doc.filename}
-                bgColor={bgColor}
-                textColor={textColor}
-                type={getDocumentCategory(doc.filename)}
-                onDeleteClick={(id, title) => setDocumentToDelete({ id, title })}
-              />
-            );
-          })}
-        </section>
+        <>
+          <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4 flex items-center gap-3 shadow shadow-black/10 mb-5">
+            <Search className="h-4.5 w-4.5 text-text-muted shrink-0" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search documents by name…"
+              className="flex-1 bg-transparent border-none outline-none text-xs sm:text-sm text-white placeholder:text-text-muted focus:ring-0 focus:outline-none"
+            />
+          </div>
+
+          {filteredDocuments.length > 0 ? (
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {filteredDocuments.map((doc) => {
+                const { bgColor, textColor } = getDocumentColor(doc.doc_id);
+                return (
+                  <DocumentCard
+                    key={doc.doc_id}
+                    id={doc.doc_id}
+                    title={doc.filename}
+                    bgColor={bgColor}
+                    textColor={textColor}
+                    type={getDocumentCategory(doc.filename)}
+                    onDeleteClick={(id, title) => setDocumentToDelete({ id, title })}
+                  />
+                );
+              })}
+            </section>
+          ) : (
+            <EmptyState
+              className="mt-12"
+              icon={
+                <span className="h-14 w-14 rounded-2xl bg-card-bg border border-border-subtle flex items-center justify-center text-text-muted">
+                  <Search className="h-7 w-7" />
+                </span>
+              }
+              title="No matching documents"
+              description={`Nothing matches “${query.trim()}”. Try a different name.`}
+            />
+          )}
+        </>
       ) : (
         <EmptyState
           className="mt-16"
@@ -95,54 +133,22 @@ export default function DocumentsPage() {
         />
       )}
 
-      {/* Premium Global Confirm Delete Modal */}
-      {documentToDelete && (
-        <div 
-          className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => {
-            if (!isDeleting) setDocumentToDelete(null);
-          }}
-        >
-          <div 
-            className="bg-[#121212] border border-[#262626] rounded-3xl p-6 max-w-sm w-full flex flex-col gap-4 shadow-2xl animate-scale-in text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <h3 className="text-base font-extrabold text-white">Delete Document</h3>
-            </div>
-            
-            <p className="text-xs text-text-muted leading-relaxed">
-              Are you sure you want to delete <strong className="text-white font-bold">{documentToDelete.title}</strong>? This action cannot be undone and will remove all associated summaries and quizzes.
-            </p>
-
-            {deleteError && (
-              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
-                {deleteError}
-              </p>
-            )}
-
-            <div className="flex items-center gap-3 mt-2">
-              <button
-                disabled={isDeleting}
-                onClick={() => setDocumentToDelete(null)}
-                className="flex-1 py-2.5 rounded-full border border-[#262626] hover:bg-[#1a1a1a] text-xs font-bold text-white transition cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={isDeleting}
-                onClick={handleDelete}
-                className="flex-1 py-2.5 rounded-full bg-red-500 hover:bg-red-600 text-xs font-bold text-white transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                {isDeleting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!documentToDelete}
+        title="Delete Document"
+        message={
+          <>
+            Are you sure you want to delete{" "}
+            <strong className="text-white font-bold">{documentToDelete?.title}</strong>?
+            This action cannot be undone and will remove all associated summaries and
+            quizzes.
+          </>
+        }
+        loading={isDeleting}
+        error={deleteError}
+        onConfirm={handleDelete}
+        onCancel={() => setDocumentToDelete(null)}
+      />
     </div>
   );
 }

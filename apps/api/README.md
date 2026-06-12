@@ -232,7 +232,7 @@ and graded as incorrect — distinct from a deliberate choice of option A (`0`).
 
 ### History
 
-**`GET /history/chat?doc_id=&limit=10&offset=0`** → `{ messages[], total, limit, offset }`
+**`GET /history/chat?doc_id=&limit=10&offset=0`** → `{ messages[], total, limit, offset }` — each message includes a `sources` array (same `SourceInfo` shape as `POST /chat`; empty array for rows persisted before this field was added)
 **`GET /history/quizzes?doc_id=&limit=10&offset=0`** → `{ sessions[], total, limit, offset }`
 **`GET /history/quizzes/{session_id}`** → full graded detail.
 **`GET /history/summaries?doc_id=&limit=10&offset=0`** → `{ summaries[], total, limit, offset }`

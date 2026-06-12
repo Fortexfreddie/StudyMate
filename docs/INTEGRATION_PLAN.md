@@ -106,10 +106,16 @@ New `routers/stats.py`, registered in [main.py](../apps/api/main.py). New
 `StatsResponse` schema:
 - `documents_uploaded` = `COUNT(documents WHERE user_id)`
 - `quizzes_taken` = `COUNT(quiz_sessions WHERE user_id)`
-- `summaries_generated` = `COUNT(chat_history WHERE user_id AND query LIKE 'Summary request:%')`
-  *(summaries persist as chat rows with that prefix — [summary.py](../apps/api/routers/summary.py:146))*
+- `summaries_generated` = `COUNT(summary_history WHERE user_id)`
+  *(summaries persist in the dedicated `SummaryHistory` table —
+  [stats.py](../apps/api/routers/stats.py) / [summary.py](../apps/api/routers/summary.py).
+  **Superseded:** the original plan stored summaries as `chat_history` rows prefixed
+  `Summary request:`; they now have their own table, so the prefix scheme is dead.)*
 - `current_streak` = computed from `user_activity` (§3.4)
-- *(optional)* `average_quiz_score`, `chats_count`
+- `average_quiz_score` (0–100 across graded sessions), `chats_count` — **both always
+  returned** (not optional).
+- `tokens_used_today`, `token_limit`, `is_pro` — daily token quota surface (added with
+  the token-quota system; see the per-day reserve/reconcile counter).
 - **No XP** (removed per decision).
 
 ### 3.4 Schema changes (migration required)

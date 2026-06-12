@@ -3,8 +3,14 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Sparkles, FileText, Send, MessageSquare, AlertTriangle } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { SourceCard, linkifySources } from "@/components/shared/SourceReferences";
+import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
+import { getActivePerfConfig } from "@/lib/performance";
+import { useSourceCite } from "@/lib/useSourceCite";
 import type { Source } from "@/lib/types";
 
 interface MessageItem {
@@ -14,6 +20,7 @@ interface MessageItem {
   time: string;
   sources?: Source[];
   contextSufficient?: boolean;
+  cached?: boolean;
 }
 
 function formatTime(iso?: string): string {
@@ -35,22 +42,16 @@ function ChatContent() {
   const [isTyping, setIsTyping] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // Clickable "Source #N" citations scroll to / highlight the matching card.
+  // Keys are namespaced per message (`${msgId}:${index}`) since each AI reply
+  // carries its own source list.
+  const { registerRef, cite, active } = useSourceCite<string>();
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const mode = localStorage.getItem("studymate_performance_mode") || "high";
-      const config: Record<string, { default: number; max: number }> = {
-        low: { default: 5, max: 10 },
-        medium: { default: 8, max: 15 },
-        high: { default: 10, max: 20 },
-        very_high: { default: 15, max: 25 },
-        max: { default: 20, max: 30 },
-      };
-      const activeConf = config[mode] ?? config.high;
-      setTopK(activeConf.default);
-      setMaxK(activeConf.max);
-      setPerfMode(mode);
-    }
+    const { mode, config } = getActivePerfConfig();
+    setTopK(config.default);
+    setMaxK(config.max);
+    setPerfMode(mode);
   }, []);
 
   // Load the document name (for the header) and prior chat history for this doc.
@@ -75,8 +76,6 @@ function ChatContent() {
         // each query/answer row into a user + ai message pair.
         const hydrated: MessageItem[] = [];
         for (const m of [...history.messages].reverse()) {
-          // Skip summary rows that share the chat_history table.
-          if (m.query.startsWith("Summary request:")) continue;
           hydrated.push({
             id: `${m.id}-q`,
             sender: "user",
@@ -88,6 +87,7 @@ function ChatContent() {
             sender: "ai",
             text: m.answer,
             time: formatTime(m.created_at),
+            sources: m.sources,
             contextSufficient: m.context_sufficient,
           });
         }
@@ -134,6 +134,7 @@ function ChatContent() {
           time: formatTime(),
           sources: res.sources,
           contextSufficient: res.context_sufficient,
+          cached: res.meta?.cached,
         },
       ]);
     } catch (err) {
@@ -207,13 +208,70 @@ function ChatContent() {
                 )}
 
                 <div
-                  className={`p-3.5 px-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
+                  className={`p-3.5 px-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
                     isAI
                       ? "bg-surface-raised border border-border-subtle text-white rounded-tl-sm"
-                      : "bg-brand-primary text-accent-gold-fg font-bold rounded-tr-sm"
+                      : "bg-brand-primary text-accent-gold-fg font-bold rounded-tr-sm whitespace-pre-wrap"
                   }`}
                 >
-                  {msg.text}
+                  {isAI ? (
+                    <div className="markdown-body flex flex-col gap-2">
+                      {(() => {
+                        const n = msg.sources?.length ?? 0;
+                        const link = (children: React.ReactNode) =>
+                          linkifySources(children, n, (i) => cite(`${msg.id}:${i}`));
+                        return (
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              table: ({ children }) => (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-[11px] border-collapse">{children}</table>
+                                </div>
+                              ),
+                              th: ({ children }) => (
+                                <th className="border border-border-subtle bg-white/5 px-2 py-1 text-left font-extrabold text-white">
+                                  {children}
+                                </th>
+                              ),
+                              td: ({ children }) => (
+                                <td className="border border-border-subtle px-2 py-1 align-top">{link(children)}</td>
+                              ),
+                              p: ({ children }) => <p>{link(children)}</p>,
+                              li: ({ children }) => <li>{link(children)}</li>,
+                              ul: ({ children }) => (
+                                <ul className="list-disc pl-4 flex flex-col gap-1">{children}</ul>
+                              ),
+                              ol: ({ children }) => (
+                                <ol className="list-decimal pl-4 flex flex-col gap-1">{children}</ol>
+                              ),
+                              strong: ({ children }) => (
+                                <strong className="font-extrabold text-white">{children}</strong>
+                              ),
+                              code: ({ children }) => (
+                                <code className="bg-black/30 rounded px-1 py-0.5 font-mono text-[11px] text-brand-primary">
+                                  {children}
+                                </code>
+                              ),
+                              h1: ({ children }) => (
+                                <h3 className="font-extrabold text-white text-sm">{children}</h3>
+                              ),
+                              h2: ({ children }) => (
+                                <h3 className="font-extrabold text-white text-sm">{children}</h3>
+                              ),
+                              h3: ({ children }) => (
+                                <h4 className="font-bold text-white">{children}</h4>
+                              ),
+                            }}
+                          >
+                            {msg.text}
+                          </ReactMarkdown>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    msg.text
+                  )}
                 </div>
 
                 {/* Sources */}
@@ -223,32 +281,28 @@ function ChatContent() {
                       Sources
                     </span>
                     {msg.sources.map((s, idx) => (
-                      <div
+                      <SourceCard
                         key={idx}
-                        className="bg-card-bg border border-border-subtle rounded-xl p-2.5 flex flex-col gap-0.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold text-white truncate">
-                            {s.filename} • p.{s.page_number}
-                          </span>
-                          <span className="text-[9px] font-bold text-brand-primary shrink-0">
-                            {Math.round(s.similarity_score * 100)}% match
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-text-muted leading-snug line-clamp-2">
-                          {s.text_preview}
-                        </span>
-                      </div>
+                        source={s}
+                        index={idx}
+                        highlighted={active === `${msg.id}:${idx}`}
+                        registerRef={(i, el) => registerRef(`${msg.id}:${i}`, el)}
+                      />
                     ))}
                   </div>
                 )}
 
                 <div
-                  className={`flex items-center gap-1 text-[10px] text-text-muted ${
+                  className={`flex items-center gap-1.5 text-[10px] text-text-muted ${
                     isAI ? "justify-start pl-1" : "justify-end pr-1"
                   }`}
                 >
                   <span>{msg.time}</span>
+                  {isAI && msg.cached && (
+                    <span className="text-[9px] font-bold text-brand-primary">
+                      ⚡ instant
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -280,6 +334,11 @@ function ChatContent() {
             <span>Context Depth (K):</span>
             <span className="font-extrabold text-brand-primary">{topK} / {maxK} Chunks</span>
             <span className="text-[8px] text-text-muted">({perfMode.toUpperCase()} limit)</span>
+            <InfoTooltip label="What is Context Depth?">
+              <strong className="text-white">Context Depth (K)</strong> is how many excerpts
+              (&ldquo;chunks&rdquo;) from your document the AI reads before answering. Higher = more
+              thorough but slower; the cap depends on your performance level.
+            </InfoTooltip>
           </div>
           <div className="flex items-center gap-2">
             <span className="scale-75 origin-right">

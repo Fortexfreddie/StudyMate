@@ -32,7 +32,7 @@ A full-stack web application that lets students upload PDF lecture notes and int
 | Backend | Python 3.11 + FastAPI + slowapi (rate limiter) |
 | Database | PostgreSQL (Neon) + SQLAlchemy 2.0 + Alembic |
 | Auth | JWT (PyJWT) + Argon2id |
-| LLM | Google Gemini API (`gemini-3.1-pro-preview` with `gemini-3-flash-preview` fallback) |
+| LLM | Google Gemini API (`gemini-3.5-flash` primary with `gemini-3.1-flash-lite` fallback) |
 | Embeddings | `gemini-embedding-2` |
 | Vector DB | Qdrant Cloud |
 | RAG | LangChain + Dynamic performance-based retrieval |
@@ -339,7 +339,10 @@ No body needed. Returns real counts plus your study streak:
   "summaries_generated": 2,
   "chats_count": 11,
   "current_streak": 4,
-  "average_quiz_score": 82.0
+  "average_quiz_score": 82.0,
+  "tokens_used_today": 12500,
+  "token_limit": 50000,
+  "is_pro": false
 }
 ```
 
@@ -400,10 +403,10 @@ To prevent burning excessive LLM tokens, balance generation quality with executi
 ### 1. Dynamic Performance-Tier System
 Users can toggle between five performance modes inside their profile (persisted in local storage and attached via the `X-Performance-Mode` header):
 *   **Low Level (Flash Lite):** Uses `gemini-3.1-flash-lite` with thinking turned off. Dynamic RAG settings: `default_top_k=5`, `max_top_k=10`. Optimized for rapid, lightweight operations.
-*   **Medium Level (Flash):** Uses `gemini-3-flash-preview` with lightweight thinking. Dynamic RAG settings: `default_top_k=8`, `max_top_k=15`.
-*   **High Level (Pro - Default):** Uses `gemini-3.1-pro-preview` with medium thinking. Dynamic RAG settings: `default_top_k=10`, `max_top_k=20`. Highly recommended for optimal academic reasoning.
-*   **Very High Level (Pro + Deep Thinking):** Uses `gemini-3.1-pro-preview` with deep reasoning settings. Dynamic RAG settings: `default_top_k=15`, `max_top_k=25`.
-*   **Max Level (Pro + Max Thinking):** Uses `gemini-3.1-pro-preview` with maximum reasoning/depth. Dynamic RAG settings: `default_top_k=20`, `max_top_k=30` for extensive data extraction.
+*   **Medium Level (Flash):** Uses `gemini-3.5-flash` with lightweight thinking, falling back to `gemini-3.1-flash-lite`. Dynamic RAG settings: `default_top_k=8`, `max_top_k=15`.
+*   **High Level (Default):** Uses `gemini-3.5-flash` with medium thinking, falling back to `gemini-3.1-flash-lite`. Dynamic RAG settings: `default_top_k=10`, `max_top_k=20`. Highly recommended for optimal academic reasoning.
+*   **Very High Level (Deep Thinking):** Uses `gemini-3.5-flash` with deep reasoning settings, falling back to `gemini-3.1-flash-lite`. Dynamic RAG settings: `default_top_k=15`, `max_top_k=25`.
+*   **Max Level (Max Thinking):** Uses `gemini-3.5-flash` with maximum reasoning/depth (no downgrade fallback). Dynamic RAG settings: `default_top_k=20`, `max_top_k=30` for extensive data extraction.
 
 ### 2. Interactive Context Depth (K) Control
 *   **Real-time Override:** In Chat, Summary, and Quiz screens, the user can manually override the dynamic default `top_k` value using an interactive slider.

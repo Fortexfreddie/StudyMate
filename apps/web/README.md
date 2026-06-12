@@ -172,9 +172,9 @@ local `isLoading`/`error` state in the component.
 | **Upload** | — | `documents.upload` | client-side PDF + 20MB check; redirects to the new doc; honest "processing" state |
 | **Documents** | `documents.list` | — | loading/empty/error states; cards link to detail |
 | **Document detail** | `documents.get` | `documents.remove` | actions to quiz/summary/chat; confirm-to-delete danger zone |
-| **Chat** | `documents.get`, `history.chatHistory` | `chat.send` | renders `sources` + a "limited context" notice on `context_sufficient:false` |
+| **Chat** | `documents.get`, `history.chatHistory` | `chat.send` | renders `sources` + a "limited context" notice on `context_sufficient:false`; inline `Source #N` citations in the answer are clickable and scroll to / highlight the matching source card |
 | **Quiz** | — | `quiz.generate` → `quiz.submit` | presets 5/10/15/20/30 (cap 30) with a "larger quizzes take longer" hint; **server-graded**; per-question review with explanations |
-| **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text |
+| **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text; renders `sources` cards with clickable inline `Source #N` citations |
 | **History** | `history.chatHistory`, `history.quizHistory` | — | merges chat/summary/quiz into one sortable, filterable, searchable timeline |
 | **Profile** | `auth` (context), `stats.get`, `usage.get` | `auth.updateProfile` | name + major persist server-side; stats + streak real; daily token usage telemetry card; theme + performance saved to `localStorage` |
 
@@ -198,7 +198,17 @@ setup  → pick a format (bullets | key_concepts | study_guide | flashcards | ch
 completed → StructuredSummary switches on res.format and renders res.structured
             (Flashcards flip, Mind Map branches, Cheat Sheet tables, …);
             if structured is null it shows res.summary (plain text).
+            res.sources render as cards below; inline "Source #N" mentions
+            link to them.
 ```
+
+### Source citations (chat + summary)
+
+The model cites retrieved chunks inline as `Source #N`, where `N` is the 1-based
+index into the response's `sources` array. `components/shared/SourceReferences.tsx`
+(`linkifySources` + `SourceCard`) turns each mention into a chip that, via the
+`lib/useSourceCite.ts` hook, scrolls to and briefly highlights the matching card.
+Mentions whose `N` exceeds the returned source count are left as plain text.
 
 ---
 

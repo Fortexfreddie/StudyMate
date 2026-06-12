@@ -17,6 +17,18 @@
   --color-text-muted: #8a8a8a;
   --color-error-text: #ef4444;
 
+  /* Refactored theme tokens */
+  --color-surface-modal: #121212;
+  --color-brand-primary-dark: #e58e49;
+  --color-brand-primary-fg: #52331c;
+  --color-status-warning: #ffb03a;
+  --color-status-summary: #d6b2d1;
+  --color-ring-track: #161616;
+
+  /* Custom shadows */
+  --shadow-avatar-gold: 0 0 20px rgba(243, 196, 148, 0.25);
+  --shadow-card-selected: 0 0 15px rgba(243, 196, 148, 0.1);
+
   --animate-progress-slide: progress-slide 1.5s infinite linear;
 
   @keyframes progress-slide {

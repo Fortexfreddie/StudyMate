@@ -1,0 +1,73 @@
+"use client";
+
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Info } from "lucide-react";
+
+interface InfoTooltipProps {
+  /** Short plain-language explanation of the adjacent jargon. */
+  children: ReactNode;
+  /** Accessible label for the trigger (e.g. "What is Context Depth?"). */
+  label?: string;
+  className?: string;
+}
+
+/**
+ * A small inline "(i)" affordance for explaining jargon (Context Depth, chunks,
+ * performance tiers, …). Tap to toggle (mobile) or hover/focus to reveal
+ * (desktop); closes on outside-click or Escape. Pure client, no library.
+ */
+export function InfoTooltip({ children, label = "More info", className = "" }: InfoTooltipProps) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const panelId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <span
+      ref={wrapRef}
+      className={`relative inline-flex items-center align-middle ${className}`}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        aria-describedby={open ? panelId : undefined}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="text-text-muted hover:text-brand-primary transition cursor-help focus:outline-none focus-visible:text-brand-primary"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <span
+          id={panelId}
+          role="tooltip"
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 w-56 max-w-[70vw] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 animate-in fade-in zoom-in-95 duration-150 normal-case tracking-normal text-left"
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}

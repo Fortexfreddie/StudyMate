@@ -175,7 +175,7 @@ export default function DocumentDetailPage() {
                 <span className="text-sm sm:text-base font-extrabold text-accent-gold-fg leading-snug">
                   Ask a Question
                 </span>
-                <span className="text-xs text-[#52331c]/80 font-semibold leading-tight mt-0.5 max-w-[200px] sm:max-w-md">
+                <span className="text-xs text-brand-primary-fg/80 font-semibold leading-tight mt-0.5 max-w-[200px] sm:max-w-md">
                   Chat with AI about this document and get instant answers.
                 </span>
               </div>

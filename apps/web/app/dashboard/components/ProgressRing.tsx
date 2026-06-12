@@ -30,7 +30,7 @@ export function ProgressRing({
             cx="44"
             cy="44"
             r={radius}
-            stroke="#161616"
+            stroke="var(--color-ring-track)"
             strokeWidth={strokeWidth}
             fill="transparent"
           />

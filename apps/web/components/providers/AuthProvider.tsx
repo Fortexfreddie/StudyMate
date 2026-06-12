@@ -13,6 +13,7 @@ import {
   setTokens,
   clearTokens,
   getAccessToken,
+  getRefreshToken,
 } from "@/lib/api";
 
 interface AuthContextValue {
@@ -77,6 +78,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   function logout(): void {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      // Revoke the refresh token server-side; fire-and-forget so logout is instant.
+      api.auth.logout(refreshToken).catch(() => {});
+    }
     clearTokens();
     setUser(null);
   }

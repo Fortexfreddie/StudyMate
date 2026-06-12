@@ -2,14 +2,16 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
-import { Search, Bell, HelpCircle, FileUp, FileText, ChevronRight, Plus, AlertTriangle } from "lucide-react";
+import { Search, HelpCircle, FileUp, FileText, ChevronRight, Plus } from "lucide-react";
 import { ProgressRing } from "./components/ProgressRing";
 import { DocumentCard } from "./components/DocumentCard";
 import { IconButton } from "@/components/shared/IconButton";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { LoadingState } from "@/components/shared/LoadingState";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { getFirstName } from "@/lib/user";
-import { api } from "@/lib/api";
+import { api, ApiClientError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { getDocumentColor, getDocumentCategory } from "@/lib/format";
 
@@ -25,7 +27,7 @@ export default function DashboardPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
 
-  const { data: docData, isLoading: docsLoading, refetch: refetchDocs } = useApi(
+  const { data: docData, isLoading: docsLoading, error: docsError, refetch: refetchDocs } = useApi(
     () => api.documents.list(),
     []
   );
@@ -42,8 +44,12 @@ export default function DashboardPage() {
       await api.documents.remove(documentToDelete.id);
       setDocumentToDelete(null);
       refetchDocs();
-    } catch (err: any) {
-      setDeleteError(err?.detail || "Failed to delete document. Please try again.");
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiClientError
+          ? err.detail
+          : "Failed to delete document. Please try again."
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -73,8 +79,9 @@ export default function DashboardPage() {
           Hello, <span className="font-extrabold">{getFirstName(user)}</span>
         </h2>
         <div className="flex items-center gap-3">
-          <IconButton aria-label="Search" icon={<Search className="h-4.5 w-4.5 text-white" />} />
-          <IconButton aria-label="Notifications" dot icon={<Bell className="h-4.5 w-4.5 text-white" />} />
+          <Link href="/dashboard/documents">
+            <IconButton aria-label="Search documents" icon={<Search className="h-4.5 w-4.5 text-white" />} />
+          </Link>
         </div>
       </header>
 
@@ -92,8 +99,8 @@ export default function DashboardPage() {
           percentage={pct(stats?.documents_uploaded ?? 0, RING_SCALE.documents)}
           label="Documents"
           sublabel={`${stats?.documents_uploaded ?? 0} Uploaded`}
-          strokeColor="#e58e49"
-          icon={<FileUp className="h-4.5 w-4.5 text-[#e58e49]" />}
+          strokeColor="var(--color-brand-primary-dark)"
+          icon={<FileUp className="h-4.5 w-4.5 text-brand-primary-dark" />}
         />
         <div className="hidden sm:block h-12 w-[1px] bg-border-subtle" />
         <ProgressRing
@@ -117,6 +124,13 @@ export default function DashboardPage() {
 
         {docsLoading ? (
           <LoadingState className="py-10" label="Loading documents…" />
+        ) : docsError ? (
+          <ErrorState
+            className="py-10"
+            title="Couldn't load documents"
+            message={docsError}
+            onRetry={refetchDocs}
+          />
         ) : recentDocs.length === 0 ? (
           <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-8 flex flex-col items-center text-center gap-3">
             <span className="h-12 w-12 rounded-2xl bg-surface-raised flex items-center justify-center text-text-muted">
@@ -203,54 +217,22 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Premium Global Confirm Delete Modal */}
-      {documentToDelete && (
-        <div 
-          className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => {
-            if (!isDeleting) setDocumentToDelete(null);
-          }}
-        >
-          <div 
-            className="bg-[#121212] border border-[#262626] rounded-3xl p-6 max-w-sm w-full flex flex-col gap-4 shadow-2xl animate-scale-in text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <h3 className="text-base font-extrabold text-white">Delete Document</h3>
-            </div>
-            
-            <p className="text-xs text-text-muted leading-relaxed">
-              Are you sure you want to delete <strong className="text-white font-bold">{documentToDelete.title}</strong>? This action cannot be undone and will remove all associated summaries and quizzes.
-            </p>
-
-            {deleteError && (
-              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-xl">
-                {deleteError}
-              </p>
-            )}
-
-            <div className="flex items-center gap-3 mt-2">
-              <button
-                disabled={isDeleting}
-                onClick={() => setDocumentToDelete(null)}
-                className="flex-1 py-2.5 rounded-full border border-[#262626] hover:bg-[#1a1a1a] text-xs font-bold text-white transition cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={isDeleting}
-                onClick={handleDelete}
-                className="flex-1 py-2.5 rounded-full bg-red-500 hover:bg-red-600 text-xs font-bold text-white transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                {isDeleting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={!!documentToDelete}
+        title="Delete Document"
+        message={
+          <>
+            Are you sure you want to delete{" "}
+            <strong className="text-white font-bold">{documentToDelete?.title}</strong>?
+            This action cannot be undone and will remove all associated summaries and
+            quizzes.
+          </>
+        }
+        loading={isDeleting}
+        error={deleteError}
+        onConfirm={handleDelete}
+        onCancel={() => setDocumentToDelete(null)}
+      />
     </div>
   );
 }

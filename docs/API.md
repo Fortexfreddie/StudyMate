@@ -330,6 +330,8 @@ Create a new user account.
     "id": "uuid",
     "email": "student@futo.edu.ng",
     "full_name": "Ekwem Kamsiyochukwu",
+    "major": null,
+    "is_pro": false,
     "created_at": "2026-05-25T10:00:00Z"
   },
   "access_token": "eyJ...",
@@ -420,6 +422,7 @@ Get current user profile.
   "email": "student@futo.edu.ng",
   "full_name": "Ekwem Kamsiyochukwu",
   "major": "Computer Science",
+  "is_pro": false,
   "created_at": "2026-05-25T10:00:00Z"
 }
 ```
@@ -515,6 +518,9 @@ Get the current user's chat history, paginated.
       "query": "What is cognitive load theory?",
       "answer": "Cognitive load theory posits that...",
       "context_sufficient": true,
+      "sources": [
+        { "filename": "lecture_notes.pdf", "page_number": 12, "relevance_score": 0.91, "excerpt": "Cognitive load theory..." }
+      ],
       "created_at": "2026-05-25T10:30:00Z"
     }
   ],
@@ -523,6 +529,8 @@ Get the current user's chat history, paginated.
   "offset": 0
 }
 ```
+
+> `sources` is the same `SourceInfo` array returned by `POST /chat`. For older rows stored before this field was added, `sources` is an empty array `[]`.
 
 ---
 

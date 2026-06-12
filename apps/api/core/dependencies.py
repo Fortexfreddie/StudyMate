@@ -1,7 +1,6 @@
 """FastAPI dependency injection — shared resources for route handlers."""
 
 import logging
-from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends, Header
@@ -70,12 +69,13 @@ async def get_current_user(
 
 
 def get_performance_mode(
-    x_performance_mode: Literal["low", "medium", "high", "very_high", "max"]
-    | None = Header(default="high", alias="X-Performance-Mode"),
+    x_performance_mode: str | None = Header(default="high", alias="X-Performance-Mode"),
 ) -> str:
     """Extract performance mode from the X-Performance-Mode header.
 
     Falls back to 'high' if the header is missing or contains an invalid value.
+    Accepts a plain ``str`` (not a ``Literal``) so an unknown value falls back
+    gracefully here rather than being rejected with a 422 before this runs.
     """
     mode = (x_performance_mode or "high").lower().strip()
     return mode if mode in _VALID_MODES else "high"

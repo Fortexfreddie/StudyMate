@@ -169,13 +169,23 @@ export default function SignupPage() {
               label={
                 <>
                   I agree to the{" "}
-                  <span className="text-brand-primary hover:underline cursor-pointer">
+                  <Link
+                    href="/terms"
+                    target="_blank"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-brand-primary hover:underline cursor-pointer"
+                  >
                     Terms of Service
-                  </span>{" "}
+                  </Link>{" "}
                   and{" "}
-                  <span className="text-brand-primary hover:underline cursor-pointer">
+                  <Link
+                    href="/privacy"
+                    target="_blank"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-brand-primary hover:underline cursor-pointer"
+                  >
                     Privacy Policy
-                  </span>
+                  </Link>
                 </>
               }
             />

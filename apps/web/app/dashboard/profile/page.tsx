@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bell,
   FileText,
   HelpCircle,
   Flame,
@@ -19,9 +18,9 @@ import {
   Loader2,
   Zap,
   AlertCircle,
-  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError, getPerformanceMode, setPerformanceMode } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { PerformanceMode, UsageResponse } from "@/lib/types";
@@ -31,10 +30,21 @@ type ThemeKey = "midnight" | "obsidian" | "sepia";
 
 const THEME_STORAGE_KEY = "studymate_theme";
 
+// The daily token window resets at a fixed 00:00 UTC; show the time until then.
+function formatResetLabel(resetTime?: string): string {
+  if (!resetTime) return "Resets daily";
+  const diffMs = new Date(resetTime).getTime() - Date.now();
+  if (diffMs <= 0) return "Resetting now";
+  const hours = Math.floor(diffMs / 3_600_000);
+  const minutes = Math.floor((diffMs % 3_600_000) / 60_000);
+  if (hours > 0) return `Resets in ${hours}h ${minutes}m`;
+  return `Resets in ${minutes}m`;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const { user, logout, updateUser } = useAuth();
-  const { data: stats, refetch: reloadStats } = useApi(() => api.stats.get(), []);
+  const { data: stats } = useApi(() => api.stats.get(), []);
 
   const [activeScreen, setActiveScreen] = useState<ScreenType>("main");
   const [fullName, setFullName] = useState(user?.full_name ?? "");
@@ -45,6 +55,7 @@ export default function ProfilePage() {
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>("midnight");
   const [selectedPerformanceMode, setSelectedPerformanceMode] = useState<PerformanceMode>("high");
   const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
   const [faqOpenIndex, setFaqOpenIndex] = useState<number | null>(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -54,6 +65,18 @@ export default function ProfilePage() {
     setMajor(user?.major ?? "");
   }, [user]);
 
+  const fetchUsage = async () => {
+    setUsageError(null);
+    try {
+      const u = await api.usage.get();
+      setUsage(u);
+    } catch (err) {
+      setUsageError(
+        err instanceof ApiClientError ? err.detail : "Failed to load token usage."
+      );
+    }
+  };
+
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeKey | null;
     if (savedTheme) setSelectedTheme(savedTheme);
@@ -61,16 +84,8 @@ export default function ProfilePage() {
     const savedPerf = getPerformanceMode() as PerformanceMode;
     setSelectedPerformanceMode(savedPerf);
 
-    // Fetch daily token usage
-    const fetchUsage = async () => {
-      try {
-        const u = await api.usage.get();
-        setUsage(u);
-      } catch (err) {
-        console.error("Failed to load token usage stats:", err);
-      }
-    };
     fetchUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeScreen]); // Refresh usage when returning/switching screens
 
   const showToast = (message: string) => {
@@ -158,16 +173,9 @@ export default function ProfilePage() {
       {/* MAIN */}
       {activeScreen === "main" && (
         <>
-          <header className="flex items-center justify-end w-full">
-            <button className="relative flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 transition shrink-0">
-              <Bell className="h-4.5 w-4.5 text-white" />
-              <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-accent-coral" />
-            </button>
-          </header>
-
           {/* Avatar + name */}
           <section className="flex flex-col items-center text-center gap-3 mt-1.5 select-none">
-            <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-accent-gold/30 via-accent-gold/90 to-accent-gold/20 shadow-[0_0_20px_rgba(243,196,148,0.25)] flex items-center justify-center">
+            <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-accent-gold/30 via-accent-gold/90 to-accent-gold/20 shadow-avatar-gold flex items-center justify-center">
               <div className="h-full w-full rounded-full overflow-hidden bg-surface-raised border border-black/80 flex items-center justify-center text-accent-gold text-2xl font-black">
                 {initials}
               </div>
@@ -234,7 +242,14 @@ export default function ProfilePage() {
               <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/20">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-xs sm:text-sm font-extrabold text-white">Daily Token Usage</h4>
+                    <h4 className="text-xs sm:text-sm font-extrabold text-white inline-flex items-center gap-1.5">
+                      Daily Token Usage
+                      <InfoTooltip label="What are tokens?">
+                        Tokens are small pieces of text the AI processes (roughly ¾ of a word each).
+                        Every chat, summary, and quiz uses some. Your plan has a daily limit that
+                        resets at midnight UTC; lower performance levels use fewer.
+                      </InfoTooltip>
+                    </h4>
                     <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
                       usage?.is_pro
                         ? "bg-accent-gold/10 border-accent-gold text-accent-gold"
@@ -244,7 +259,7 @@ export default function ProfilePage() {
                     </span>
                   </div>
                   <span className="text-[10px] font-extrabold text-accent-gold shrink-0">
-                    Resets in 24h
+                    {formatResetLabel(usage?.reset_time)}
                   </span>
                 </div>
 
@@ -267,7 +282,7 @@ export default function ProfilePage() {
                           usage.tokens_used_today >= usage.token_limit
                             ? "bg-accent-coral"
                             : usage.tokens_used_today >= usage.token_limit * 0.8
-                            ? "bg-[#ffb03a]"
+                            ? "bg-status-warning"
                             : "bg-accent-gold"
                         }`}
                         style={{ width: `${Math.min(100, (usage.tokens_used_today / usage.token_limit) * 100)}%` }}
@@ -280,6 +295,16 @@ export default function ProfilePage() {
                         Lower performance levels consume significantly fewer tokens and allow more requests per day.
                       </span>
                     </p>
+                  </div>
+                ) : usageError ? (
+                  <div className="flex items-center justify-between gap-2 py-3">
+                    <span className="text-[11px] text-error-text font-semibold">{usageError}</span>
+                    <button
+                      onClick={fetchUsage}
+                      className="text-[11px] font-bold text-accent-gold hover:underline shrink-0 cursor-pointer"
+                    >
+                      Retry
+                    </button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-center py-4">
@@ -418,7 +443,7 @@ export default function ProfilePage() {
                 key={theme.key}
                 onClick={() => setSelectedTheme(theme.key)}
                 className={`bg-surface rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
-                  selectedTheme === theme.key ? "border-accent-gold shadow-[0_0_15px_rgba(243,196,148,0.1)]" : "border-white/5 hover:border-white/10"
+                  selectedTheme === theme.key ? "border-accent-gold shadow-card-selected" : "border-white/5 hover:border-white/10"
                 }`}
               >
                 <div className="flex items-center gap-3.5">
@@ -450,7 +475,14 @@ export default function ProfilePage() {
             <button type="button" onClick={() => setActiveScreen("main")} className="flex items-center justify-center h-10 w-10 rounded-full bg-surface border border-white/5 hover:bg-white/5 transition cursor-pointer">
               <ArrowLeft className="h-4.5 w-4.5 text-white" />
             </button>
-            <h1 className="text-base sm:text-lg font-black text-white tracking-tight">Performance Level</h1>
+            <h1 className="text-base sm:text-lg font-black text-white tracking-tight inline-flex items-center gap-1.5">
+              Performance Level
+              <InfoTooltip label="What is Performance Level?">
+                Sets how much reasoning the AI uses for chat, summaries, and quizzes. Higher levels
+                give deeper, more thorough answers but are slower and use more of your daily token
+                budget. It also raises the maximum Context Depth you can pick.
+              </InfoTooltip>
+            </h1>
           </header>
 
           <div className="grid grid-cols-1 gap-3.5 w-full">
@@ -465,7 +497,7 @@ export default function ProfilePage() {
                 key={mode.key}
                 onClick={() => setSelectedPerformanceMode(mode.key)}
                 className={`bg-surface rounded-3xl p-4.5 flex items-center justify-between border cursor-pointer select-none transition ${
-                  selectedPerformanceMode === mode.key ? "border-accent-gold shadow-[0_0_15px_rgba(243,196,148,0.1)]" : "border-white/5 hover:border-white/10"
+                  selectedPerformanceMode === mode.key ? "border-accent-gold shadow-card-selected" : "border-white/5 hover:border-white/10"
                 }`}
               >
                 <div className="flex items-center gap-3.5">
