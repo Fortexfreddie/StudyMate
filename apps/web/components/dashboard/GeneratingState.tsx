@@ -22,16 +22,30 @@ export function GeneratingState({
   return (
     <section className="flex flex-col items-center justify-center text-center my-auto gap-6 animate-in fade-in duration-300">
       <div className="relative h-20 w-20 flex items-center justify-center">
-        <div className="absolute h-full w-full rounded-full border-4 border-border-subtle" />
+        {/* Soft glowing backdrop */}
         <div
-          style={{ clipPath: "polygon(50% 0%, 100% 0%, 100% 100%, 50% 100%)", borderColor: accentColor }}
+          style={{ backgroundColor: accentColor }}
+          className="absolute h-16 w-16 rounded-full opacity-15 blur-xl animate-pulse [animation-duration:2s]"
+        />
+        
+        {/* Underlay tracks */}
+        <div className="absolute h-full w-full rounded-full border-4 border-white/5" />
+        
+        {/* Graceful gradient rotating ring */}
+        <div
+          style={{
+            borderColor: accentColor,
+            borderTopColor: "transparent",
+            borderRightColor: "transparent",
+          }}
           className="absolute h-full w-full rounded-full border-4 animate-spin"
         />
-        <GeneratingLoader className={`h-7 w-7 ${accentClass}`} />
+        
+        <GeneratingLoader className={`h-7 w-7 relative z-10 ${accentClass}`} />
       </div>
 
-      <div className="flex flex-col gap-1.5 mt-2">
-        <h2 className="text-base font-extrabold text-white leading-none">{title}</h2>
+      <div className="flex flex-col gap-2 mt-2 animate-pulse [animation-duration:2.5s]">
+        <h2 className="text-base font-extrabold text-white leading-none tracking-tight">{title}</h2>
         <p className="text-xs text-text-muted">{subtitle}</p>
       </div>
 

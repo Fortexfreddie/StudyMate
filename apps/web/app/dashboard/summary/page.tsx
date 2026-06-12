@@ -425,20 +425,20 @@ function Concepts({
           return (
             <div
               key={idx}
-              className={`w-full bg-card-bg border rounded-2xl overflow-hidden transition shadow-sm ${
+              className={`w-full bg-card-bg border rounded-2xl overflow-hidden transition-all duration-300 shadow-sm ${
                 isOpen ? "border-accent-coral/30 shadow-md" : "border-border-subtle hover:border-white/5"
               }`}
             >
               <button
                 onClick={() => setExpanded(isOpen ? null : idx)}
-                className="w-full p-4 flex items-center justify-between font-bold text-left cursor-pointer focus:outline-none"
+                className="w-full p-4 flex items-center justify-between font-bold text-left cursor-pointer focus:outline-none transition duration-200 hover:bg-white/5"
               >
                 <span className="text-xs sm:text-sm font-extrabold text-white">{concept.title}</span>
-                {isOpen ? (
-                  <ChevronUp className="h-4.5 w-4.5 text-accent-coral" />
-                ) : (
-                  <ChevronDown className="h-4.5 w-4.5 text-text-muted" />
-                )}
+                <ChevronDown
+                  className={`h-4.5 w-4.5 transition-transform duration-350 ease-out ${
+                    isOpen ? "text-accent-coral rotate-180" : "text-text-muted"
+                  }`}
+                />
               </button>
               {isOpen && (
                 <div className="px-4 pb-4 border-t border-border-subtle/50 pt-3 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -476,33 +476,34 @@ function Flashcards({
             <div
               key={idx}
               onClick={() => setFlipped({ ...flipped, [idx]: !isFlipped })}
-              className="relative w-full h-32 cursor-pointer select-none group"
-              style={{ perspective: "1000px" }}
+              className="relative w-full h-32 cursor-pointer select-none group perspective-1000"
             >
               <div
-                className={`w-full h-full rounded-2xl relative shadow-md border transition-transform duration-500 ${
-                  isFlipped ? "border-accent-coral/30" : "border-white/5"
+                className={`w-full h-full rounded-2xl relative border transform-style-3d transition-all duration-500 ease-out hover:scale-[1.01] active:scale-[0.99] ${
+                  isFlipped
+                    ? "border-accent-coral/30 shadow-[0_12px_24px_rgba(243,124,115,0.12)]"
+                    : "border-white/5 shadow-md shadow-black/15 hover:border-white/10 hover:shadow-lg"
                 }`}
                 style={{
                   transform: isFlipped ? "rotateY(180deg)" : "none",
-                  transformStyle: "preserve-3d",
                 }}
               >
+                {/* Front card side */}
                 <div
-                  className="absolute inset-0 w-full h-full bg-card-bg rounded-2xl p-5 flex items-center justify-between"
-                  style={{ backfaceVisibility: "hidden" }}
+                  className="absolute inset-0 w-full h-full bg-card-bg rounded-2xl p-5 flex items-center justify-between backface-hidden"
                 >
                   <div className="flex flex-col gap-1.5 pr-4">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-accent-coral/90">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-accent-coral/90 animate-pulse">
                       Question {idx + 1}
                     </span>
                     <p className="text-sm font-extrabold text-white leading-snug">{card.front}</p>
                   </div>
-                  <RefreshCw className="h-4.5 w-4.5 text-text-muted group-hover:text-white shrink-0 transition" />
+                  <RefreshCw className="h-4.5 w-4.5 text-text-muted group-hover:text-white group-hover:rotate-180 shrink-0 transition-transform duration-500" />
                 </div>
+                
+                {/* Back card side */}
                 <div
-                  className="absolute inset-0 w-full h-full bg-accent-coral/5 rounded-2xl p-5 flex items-center justify-between"
-                  style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+                  className="absolute inset-0 w-full h-full bg-accent-coral/5 rounded-2xl p-5 flex items-center justify-between backface-hidden rotate-y-180"
                 >
                   <div className="flex flex-col gap-1 pr-4">
                     <span className="text-[8px] font-black uppercase tracking-widest text-accent-coral">
@@ -527,7 +528,7 @@ function CheatSheetView({ data, link }: { data: CheatSheet; link: LinkFn }) {
   return (
     <div className="flex flex-col gap-5 w-full">
       {data.formulas.length > 0 && (
-        <div className="w-full bg-card-bg border border-border-subtle rounded-2xl p-4 shadow-sm">
+        <div className="w-full bg-card-bg border border-border-subtle rounded-2xl p-4 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
           <span className="text-[9px] font-black text-accent-coral uppercase tracking-wider">
             Core Formulas &amp; Facts
           </span>
@@ -547,7 +548,7 @@ function CheatSheetView({ data, link }: { data: CheatSheet; link: LinkFn }) {
         </div>
       )}
       {data.definitions.length > 0 && (
-        <div className="w-full bg-card-bg border border-border-subtle rounded-2xl p-4 shadow-sm">
+        <div className="w-full bg-card-bg border border-border-subtle rounded-2xl p-4 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 [animation-delay:100ms]">
           <span className="text-[9px] font-black text-accent-coral uppercase tracking-wider">
             Key Definitions
           </span>
@@ -567,24 +568,24 @@ function CheatSheetView({ data, link }: { data: CheatSheet; link: LinkFn }) {
 
 function MindMapView({ data, link }: { data: MindMap; link: LinkFn }) {
   return (
-    <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-6 flex flex-col items-center shadow-md">
+    <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-6 flex flex-col items-center shadow-md animate-in fade-in slide-in-from-bottom-3 duration-500">
       <span className="text-[9px] font-black text-accent-coral uppercase tracking-widest mb-6">
         Visual Branch Map
       </span>
-      <div className="px-4 py-3 rounded-2xl bg-brand-primary border border-brand-primary text-black font-extrabold text-xs text-center shadow-md select-none max-w-[220px]">
+      <div className="px-4 py-3 rounded-2xl bg-brand-primary border border-brand-primary text-black font-extrabold text-xs text-center shadow-md select-none max-w-[220px] transition-transform duration-300 hover:scale-105 cursor-default">
         {data.root}
       </div>
       <div className="w-[2px] bg-brand-primary/30 h-6" />
       <div className="grid grid-cols-2 gap-4 w-full mt-1">
         {data.branches.map((branch, idx) => (
-          <div key={idx} className="flex flex-col items-center">
-            <div className="px-3 py-2 rounded-xl bg-card-bg border border-border-subtle text-white font-extrabold text-[10px] text-center select-none shadow">
+          <div key={idx} className="flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${(idx + 1) * 75}ms` }}>
+            <div className="px-3 py-2 rounded-xl bg-card-bg border border-border-subtle text-white font-extrabold text-[10px] text-center select-none shadow transition duration-200 hover:border-brand-primary/30 hover:scale-103 cursor-default">
               {branch.label}
             </div>
             <div className="w-[1.5px] bg-border-subtle h-4" />
             <div className="flex flex-col gap-1.5 w-full text-center">
               {branch.children.map((child, cIdx) => (
-                <span key={cIdx} className="text-[10px] text-text-muted px-2 py-1 bg-surface/30 rounded-lg">
+                <span key={cIdx} className="text-[10px] text-text-muted px-2 py-1 bg-surface/30 rounded-lg transition duration-200 hover:text-white hover:bg-surface/50 cursor-default">
                   {link(child)}
                 </span>
               ))}

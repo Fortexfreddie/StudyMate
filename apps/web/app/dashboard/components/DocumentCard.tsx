@@ -417,8 +417,11 @@ export function DocumentCard({
 }: DocumentCardProps) {
   return (
     <div
-      style={{ backgroundColor: bgColor }}
-      className="relative flex flex-col justify-between w-full h-[270px] rounded-3xl p-5 select-none transition-transform duration-300 hover:scale-103 shadow-lg shadow-black/20"
+      style={{
+        backgroundColor: bgColor,
+        "--card-glow-color": `${bgColor}35`,
+      } as React.CSSProperties}
+      className="relative flex flex-col justify-between w-full h-[270px] rounded-3xl p-5 select-none transition-all duration-300 hover:-translate-y-2 hover:scale-[1.01] shadow-lg shadow-black/20 hover:shadow-[0_16px_24px_rgba(0,0,0,0.25),0_0_24px_var(--card-glow-color)] group"
     >
       
       {/* Top section: Title and Action */}
@@ -437,7 +440,7 @@ export function DocumentCard({
                 e.stopPropagation();
                 onDeleteClick(id, title);
               }}
-              className="flex items-center justify-center h-7 w-7 rounded-full bg-white/35 hover:bg-white/50 transition cursor-pointer"
+              className="flex items-center justify-center h-7 w-7 rounded-full bg-white/35 hover:bg-white/50 transition duration-200 hover:scale-110 active:scale-95 cursor-pointer"
             >
               <Trash2 style={{ color: textColor }} className="h-3.5 w-3.5" />
             </button>
@@ -453,7 +456,7 @@ export function DocumentCard({
       </div>
 
       {/* Illustration Area */}
-      <div className="flex-1 flex items-center justify-center my-1.5">
+      <div className="flex-1 flex items-center justify-center my-1.5 transition-transform duration-500 ease-out group-hover:scale-105">
         {type === "computer-science" && <ComputerScienceSvg className="w-full h-full max-h-[90px]" />}
         {type === "medical" && <MedicalSvg className="w-full h-full max-h-[90px]" />}
         {type === "business" && <BusinessSvg className="w-full h-full max-h-[90px]" />}
@@ -468,11 +471,11 @@ export function DocumentCard({
 
       {/* Bottom overlay Start Reading pill */}
       <Link href={`/dashboard/document/${id}`} className="w-full">
-        <div className="w-full bg-bg-main rounded-2xl py-3 px-4 flex items-center justify-between transition hover:bg-card-bg cursor-pointer">
+        <div className="w-full bg-bg-main rounded-2xl py-3 px-4 flex items-center justify-between transition duration-250 group-hover:bg-bg-main/90 cursor-pointer">
           <span className="text-xs font-bold text-white leading-none">
             Start Reading
           </span>
-          <Eye className="h-4 w-4 text-brand-primary" />
+          <Eye className="h-4 w-4 text-brand-primary transition-transform duration-300 group-hover:translate-x-1 group-hover:scale-110" />
         </div>
       </Link>
     </div>

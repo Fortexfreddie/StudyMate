@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState, useEffect } from "react";
 
 interface ProgressRingProps {
   percentage: number;
@@ -15,10 +15,20 @@ export function ProgressRing({
   strokeColor,
   icon,
 }: ProgressRingProps) {
+  const [currentPercent, setCurrentPercent] = useState(0);
+
+  useEffect(() => {
+    // Small delay to ensure the browser has rendered the initial 0% state
+    const t = setTimeout(() => {
+      setCurrentPercent(percentage);
+    }, 50);
+    return () => clearTimeout(t);
+  }, [percentage]);
+
   const radius = 38;
   const strokeWidth = 5;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  const strokeDashoffset = circumference - (currentPercent / 100) * circumference;
 
   return (
     <div className="flex flex-col items-center gap-3 select-none flex-1 min-w-[90px]">

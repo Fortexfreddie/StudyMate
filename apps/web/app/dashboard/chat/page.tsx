@@ -169,10 +169,10 @@ function ChatContent() {
         className="pb-4 border-b border-border-subtle shrink-0"
       />
 
-      <div className="flex-1 overflow-y-auto py-6 flex flex-col gap-5 px-1 scrollbar-none">
+      <div className="flex-1 overflow-y-auto py-6 flex flex-col gap-5 px-1 scrollbar-none scroll-smooth">
         {/* Greeting / empty state */}
         {historyLoaded && messages.length === 0 && (
-          <div className="flex gap-3 max-w-[85%] self-start items-start animate-in fade-in duration-250">
+          <div className="flex gap-3 max-w-[85%] self-start items-start animate-in fade-in slide-in-from-bottom-2 duration-250">
             <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
               <AIAssistantIcon className="h-4.5 w-4.5" />
             </div>
@@ -191,7 +191,7 @@ function ChatContent() {
               key={msg.id}
               className={`flex gap-3 max-w-[85%] ${
                 isAI ? "self-start items-start" : "self-end items-end flex-row-reverse"
-              } animate-in fade-in duration-250`}
+              } animate-in fade-in slide-in-from-bottom-2 duration-250`}
             >
               {isAI && (
                 <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
@@ -306,7 +306,7 @@ function ChatContent() {
         })}
 
         {isTyping && (
-          <div className="flex gap-3 items-center self-start max-w-[80%] pl-1">
+          <div className="flex gap-3 items-center self-start max-w-[80%] pl-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 shadow animate-pulse">
               <AIAssistantIcon className="h-4.5 w-4.5" />
             </div>
@@ -344,12 +344,12 @@ function ChatContent() {
                 max={maxK}
                 value={topK}
                 onChange={(e) => setTopK(Number(e.target.value))}
-                className="w-24 h-1 bg-surface rounded-lg appearance-none cursor-pointer accent-brand-primary"
+                className="w-24 h-1 bg-surface rounded-lg appearance-none cursor-pointer accent-brand-primary transition-all duration-300"
               />
             </span>
           </div>
         </div>
-        <div className="w-full bg-surface-raised border border-border-subtle rounded-full p-2 pl-4 flex items-center gap-3 shadow-md">
+        <div className="w-full bg-surface-raised border border-border-subtle rounded-full p-2 pl-4 flex items-center gap-3 shadow-md transition-all duration-300 focus-within:border-brand-primary/40 focus-within:ring-1 focus-within:ring-brand-primary/20">
           <div className="h-7 w-7 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary shrink-0 select-none">
             <MessageSquare className="h-3.5 w-3.5 fill-current" />
           </div>
@@ -364,9 +364,9 @@ function ChatContent() {
           <button
             type="submit"
             disabled={!inputText.trim() || isTyping}
-            className={`h-8 w-8 rounded-full flex items-center justify-center transition shrink-0 select-none cursor-pointer ${
+            className={`h-8 w-8 rounded-full flex items-center justify-center transition-all duration-300 shrink-0 select-none cursor-pointer ${
               inputText.trim() && !isTyping
-                ? "bg-brand-primary text-accent-gold-fg hover:bg-brand-primary-hover shadow"
+                ? "bg-brand-primary text-accent-gold-fg hover:bg-brand-primary-hover hover:scale-105 active:scale-95 shadow"
                 : "bg-white/5 text-text-muted cursor-not-allowed"
             }`}
           >

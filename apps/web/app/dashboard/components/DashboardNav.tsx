@@ -51,12 +51,15 @@ export function DashboardNav() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`flex flex-col items-center gap-1 focus:outline-none transition ${
+                className={`relative flex flex-col items-center gap-1 focus:outline-none transition-all duration-300 hover:scale-105 active:scale-95 pb-1 ${
                   active ? "text-brand-primary" : "text-text-muted hover:text-white"
                 }`}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className={`h-5 w-5 transition-transform duration-300 ${active ? "scale-110" : ""}`} />
                 <span className="text-[10px] font-semibold leading-none">{item.label}</span>
+                {active && (
+                  <span className="absolute bottom-0 h-1 w-1 rounded-full bg-brand-primary animate-in fade-in duration-200" />
+                )}
               </Link>
             );
           })}
@@ -82,13 +85,13 @@ export function DashboardNav() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`flex items-center gap-3 w-full rounded-2xl py-3.5 px-4 font-bold text-sm focus:outline-none transition ${
+                className={`flex items-center gap-3 w-full rounded-2xl py-3.5 px-4 font-bold text-sm focus:outline-none transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${
                   active
-                    ? "bg-brand-primary text-black"
-                    : "text-text-muted hover:text-white hover:bg-white/5"
+                    ? "bg-brand-primary text-black shadow-lg shadow-brand-primary/10"
+                    : "text-text-muted hover:text-white hover:bg-white/5 hover:-translate-y-0.5"
                 }`}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className={`h-5 w-5 transition-transform duration-300 ${active ? "scale-105" : ""}`} />
                 <span>{item.label}</span>
               </Link>
             );

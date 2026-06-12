@@ -325,7 +325,7 @@ function QuizContent() {
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => setSelectedIndex(idx)}
-                    className={`w-full text-left rounded-2xl p-4 flex items-center gap-3 transition border cursor-pointer group focus:outline-none ${
+                    className={`w-full text-left rounded-2xl p-4 flex items-center gap-3 transition-all duration-250 border cursor-pointer group focus:outline-none hover:bg-surface/20 active:scale-[0.99] ${
                       isSelected
                         ? "bg-brand-primary/5 border-brand-primary shadow-inner shadow-black/10"
                         : "bg-surface/40 border-border-subtle hover:border-white/10"
@@ -334,7 +334,7 @@ function QuizContent() {
                     <div
                       className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 font-extrabold text-xs transition duration-200 ${
                         isSelected
-                          ? "bg-brand-primary text-accent-gold-fg"
+                          ? "bg-brand-primary text-accent-gold-fg scale-105 shadow"
                           : "bg-card-bg border border-border-subtle text-white group-hover:bg-white/5"
                       }`}
                     >
@@ -342,7 +342,7 @@ function QuizContent() {
                     </div>
                     <span
                       className={`text-xs sm:text-sm font-semibold transition ${
-                        isSelected ? "text-white" : "text-text-muted hover:text-white"
+                        isSelected ? "text-white animate-in fade-in" : "text-text-muted group-hover:text-white"
                       }`}
                     >
                       {opt.replace(/^[A-D]\)\s*/, "")}
@@ -362,9 +362,9 @@ function QuizContent() {
           <button
             onClick={handleConfirmAnswer}
             disabled={selectedIndex === null || isSubmitting}
-            className={`w-full py-4.5 rounded-2xl font-bold text-sm text-center transition cursor-pointer select-none ${
+            className={`w-full py-4.5 rounded-2xl font-bold text-sm text-center transition-all duration-300 cursor-pointer select-none ${
               selectedIndex !== null && !isSubmitting
-                ? "bg-brand-primary hover:bg-brand-primary-hover text-accent-gold-fg shadow-lg shadow-brand-primary/10"
+                ? "bg-brand-primary hover:bg-brand-primary-hover hover:scale-[1.01] active:scale-[0.99] text-accent-gold-fg shadow-lg shadow-brand-primary/10"
                 : "bg-card-bg border border-border-subtle text-text-muted cursor-not-allowed opacity-50"
             }`}
           >
@@ -389,7 +389,7 @@ function QuizContent() {
                 setSelectedIndex(answers[currentIndex - 1] ?? null);
               }}
               disabled={currentIndex === 0 || isSubmitting}
-              className="flex-1 py-3.5 bg-surface/50 hover:bg-surface border border-border-subtle rounded-2xl text-xs font-extrabold text-white transition cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed text-center select-none"
+              className="flex-1 py-3.5 bg-surface/50 hover:bg-surface border border-border-subtle rounded-2xl text-xs font-extrabold text-white transition-all duration-200 active:scale-[0.98] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed text-center select-none"
             >
               ← Previous
             </button>
@@ -405,7 +405,7 @@ function QuizContent() {
                 setSelectedIndex(answers[currentIndex + 1] ?? null);
               }}
               disabled={isLastQuestion || isSubmitting}
-              className="flex-1 py-3.5 bg-surface/50 hover:bg-surface border border-border-subtle rounded-2xl text-xs font-extrabold text-white transition cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed text-center select-none"
+              className="flex-1 py-3.5 bg-surface/50 hover:bg-surface border border-border-subtle rounded-2xl text-xs font-extrabold text-white transition-all duration-200 active:scale-[0.98] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed text-center select-none"
             >
               Skip / Next →
             </button>
@@ -416,7 +416,7 @@ function QuizContent() {
               onClick={handleSubmitEarly}
               type="button"
               disabled={isSubmitting}
-              className="w-full bg-surface/80 hover:bg-input-bg border border-border-subtle rounded-2xl py-4.5 text-xs font-bold text-white transition cursor-pointer select-none disabled:opacity-50"
+              className="w-full bg-surface/80 hover:bg-input-bg border border-border-subtle rounded-2xl py-4.5 text-xs font-bold text-white transition-all duration-250 active:scale-[0.99] cursor-pointer select-none disabled:opacity-50"
             >
               Submit Quiz Now
             </button>
@@ -426,14 +426,14 @@ function QuizContent() {
 
       {/* RESULTS */}
       {step === "results" && (
-        <section className="flex flex-col gap-6 w-full animate-in fade-in duration-300">
-          <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col items-center justify-center shadow-lg shadow-black/25">
+        <section className="flex flex-col gap-6 w-full animate-in fade-in duration-500">
+          <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col items-center justify-center shadow-lg shadow-black/25 animate-in fade-in slide-in-from-bottom-3 duration-500">
             <ResultsTrophySvg
               scorePercentage={scorePercentage}
               correct={correctCount}
               total={totalQuestions}
             />
-            <div className="flex flex-col items-center justify-center mt-6 text-center">
+            <div className="flex flex-col items-center justify-center mt-6 text-center animate-in fade-in duration-300 [animation-delay:200ms]">
               <div className="flex items-center gap-1">
                 <span className="text-base font-normal text-white">You scored</span>
                 <span className="text-base font-extrabold text-accent-gold">{scorePercentage}%</span>
