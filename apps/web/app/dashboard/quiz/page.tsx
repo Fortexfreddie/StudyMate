@@ -4,12 +4,12 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   HelpCircle,
-  Sparkles,
   CheckCircle2,
   XCircle,
   Clock,
   AlertTriangle,
 } from "lucide-react";
+import { SparklesIcon } from "@/components/shared/Icons";
 import { ResultsTrophySvg } from "./components/ResultsTrophySvg";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { GeneratingState } from "@/components/dashboard/GeneratingState";
@@ -277,7 +277,7 @@ function QuizContent() {
             onClick={startQuiz}
             className="w-full flex items-center justify-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-accent-gold-fg font-bold py-4.5 rounded-2xl transition cursor-pointer shadow-lg shadow-brand-primary/15"
           >
-            <Sparkles className="h-4.5 w-4.5" />
+            <SparklesIcon className="h-4.5 w-4.5" />
             Generate Quiz
           </button>
         </section>

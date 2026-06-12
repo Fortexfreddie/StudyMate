@@ -19,21 +19,51 @@ interface InfoTooltipProps {
 export function InfoTooltip({ children, label = "More info", className = "" }: InfoTooltipProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLSpanElement>(null);
   const panelId = useId();
+  const [positionStyle, setPositionStyle] = useState<React.CSSProperties>({
+    left: "50%",
+    transform: "translateX(-50%)",
+  });
 
   useEffect(() => {
     if (!open) return;
+
+    const adjustPosition = () => {
+      if (!panelRef.current) return;
+      const rect = panelRef.current.getBoundingClientRect();
+      const padding = 16;
+      let offset = 0;
+
+      if (rect.right > window.innerWidth - padding) {
+        offset = window.innerWidth - padding - rect.right;
+      } else if (rect.left < padding) {
+        offset = padding - rect.left;
+      }
+
+      setPositionStyle({
+        left: "50%",
+        transform: `translateX(calc(-50% + ${offset}px))`,
+      });
+    };
+
+    const rafId = requestAnimationFrame(adjustPosition);
+
     const onDocClick = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
+
     return () => {
+      cancelAnimationFrame(rafId);
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
+      setPositionStyle({ left: "50%", transform: "translateX(-50%)" });
     };
   }, [open]);
 
@@ -61,9 +91,11 @@ export function InfoTooltip({ children, label = "More info", className = "" }: I
       </button>
       {open && (
         <span
+          ref={panelRef}
           id={panelId}
           role="tooltip"
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 w-56 max-w-[70vw] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 animate-in fade-in zoom-in-95 duration-150 normal-case tracking-normal text-left"
+          style={positionStyle}
+          className="absolute bottom-full mb-1.5 z-50 w-56 max-w-[70vw] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 animate-in fade-in zoom-in-95 duration-150 normal-case tracking-normal text-left"
         >
           {children}
         </span>

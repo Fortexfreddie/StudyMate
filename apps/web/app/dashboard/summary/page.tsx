@@ -3,7 +3,6 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
-  Sparkles,
   FileText,
   Check,
   ChevronDown,
@@ -11,6 +10,7 @@ import {
   RefreshCw,
   AlertTriangle,
 } from "lucide-react";
+import { SparklesIcon, SleekLightningIcon } from "@/components/shared/Icons";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { GeneratingState } from "@/components/dashboard/GeneratingState";
 import { SourceCard, linkifySources } from "@/components/shared/SourceReferences";
@@ -216,7 +216,7 @@ function SummaryContent() {
             onClick={generate}
             className="w-full flex items-center justify-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-accent-gold-fg font-bold py-4.5 rounded-2xl transition cursor-pointer shadow-lg shadow-brand-primary/15"
           >
-            <Sparkles className="h-4.5 w-4.5" />
+            <SparklesIcon className="h-4.5 w-4.5" />
             Generate Summary
           </button>
         </section>
@@ -244,8 +244,8 @@ function SummaryContent() {
                 {activeLabel} summary
               </span>
               {result.meta?.cached && (
-                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/15" style={{ color: textColor }}>
-                  ⚡ INSTANT
+                <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-black/15" style={{ color: textColor }}>
+                  <SleekLightningIcon className="h-3 w-3" /> INSTANT
                 </span>
               )}
             </div>

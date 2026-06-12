@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Sparkles, FileText, Send, MessageSquare, AlertTriangle } from "lucide-react";
+import { FileText, Send, MessageSquare, AlertTriangle } from "lucide-react";
+import { AIAssistantIcon, SleekLightningIcon } from "@/components/shared/Icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { SourceCard, linkifySources } from "@/components/shared/SourceReferences";
+import { CollapsibleSources, linkifySources } from "@/components/shared/SourceReferences";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
 import { getActivePerfConfig } from "@/lib/performance";
@@ -158,7 +159,7 @@ function ChatContent() {
   };
 
   return (
-    <div className="flex-1 flex flex-col max-w-3xl mx-auto w-full h-[100dvh] justify-between p-4 sm:p-6 md:p-8">
+    <div className="flex-1 flex flex-col max-w-3xl mx-auto w-full h-[calc(100dvh-7rem)] md:h-[100dvh] justify-between p-4 sm:p-6 md:p-8">
       <PageHeader
         title={docName}
         onBack={() =>
@@ -173,7 +174,7 @@ function ChatContent() {
         {historyLoaded && messages.length === 0 && (
           <div className="flex gap-3 max-w-[85%] self-start items-start animate-in fade-in duration-250">
             <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
-              <Sparkles className="h-4 w-4" />
+              <AIAssistantIcon className="h-4.5 w-4.5" />
             </div>
             <div className="p-3.5 px-4 rounded-2xl rounded-tl-sm text-xs sm:text-sm leading-relaxed bg-surface-raised border border-border-subtle text-white shadow-sm">
               Hi! Ask me anything about{" "}
@@ -194,7 +195,7 @@ function ChatContent() {
             >
               {isAI && (
                 <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
-                  <Sparkles className="h-4 w-4" />
+                  <AIAssistantIcon className="h-4.5 w-4.5" />
                 </div>
               )}
 
@@ -274,22 +275,17 @@ function ChatContent() {
                   )}
                 </div>
 
-                {/* Sources */}
+                {/* Collapsible Sources */}
                 {isAI && msg.sources && msg.sources.length > 0 && (
-                  <div className="flex flex-col gap-1.5 mt-0.5">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-text-muted pl-1">
-                      Sources
-                    </span>
-                    {msg.sources.map((s, idx) => (
-                      <SourceCard
-                        key={idx}
-                        source={s}
-                        index={idx}
-                        highlighted={active === `${msg.id}:${idx}`}
-                        registerRef={(i, el) => registerRef(`${msg.id}:${i}`, el)}
-                      />
-                    ))}
-                  </div>
+                  <CollapsibleSources
+                    sources={msg.sources}
+                    activeIdx={
+                      active && active.startsWith(`${msg.id}:`)
+                        ? Number(active.split(":")[1])
+                        : null
+                    }
+                    registerRef={(idx, el) => registerRef(`${msg.id}:${idx}`, el)}
+                  />
                 )}
 
                 <div
@@ -299,8 +295,8 @@ function ChatContent() {
                 >
                   <span>{msg.time}</span>
                   {isAI && msg.cached && (
-                    <span className="text-[9px] font-bold text-brand-primary">
-                      ⚡ instant
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-brand-primary">
+                      <SleekLightningIcon className="h-3 w-3" /> instant
                     </span>
                   )}
                 </div>
@@ -312,7 +308,7 @@ function ChatContent() {
         {isTyping && (
           <div className="flex gap-3 items-center self-start max-w-[80%] pl-1">
             <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 shadow animate-pulse">
-              <Sparkles className="h-4 w-4" />
+              <AIAssistantIcon className="h-4.5 w-4.5" />
             </div>
             <div className="bg-surface-raised border border-border-subtle rounded-2xl px-4 py-3 text-xs text-text-muted flex items-center gap-1 shadow-sm">
               <span className="font-semibold">AI is searching your document</span>

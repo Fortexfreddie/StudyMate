@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import {
   FileText,
@@ -16,19 +17,21 @@ import {
   ArrowLeft,
   CheckCircle,
   Loader2,
-  Zap,
   AlertCircle,
 } from "lucide-react";
+import { SleekLightningIcon } from "@/components/shared/Icons";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
+import { Input } from "@/components/shared/Input";
+import { Button } from "@/components/shared/Button";
 import { api, ApiClientError, getPerformanceMode, setPerformanceMode } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { PerformanceMode, UsageResponse } from "@/lib/types";
 
 type ScreenType = "main" | "edit" | "theme" | "help" | "performance";
-type ThemeKey = "midnight" | "obsidian" | "sepia";
+type ThemeKey = "midnight" | "obsidian" | "nord-ice" | "forest" | "oceanic";
 
-const THEME_STORAGE_KEY = "studymate_theme";
+
 
 // The daily token window resets at a fixed 00:00 UTC; show the time until then.
 function formatResetLabel(resetTime?: string): string {
@@ -52,7 +55,9 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>("midnight");
+  const [mounted, setMounted] = useState(false);
   const [selectedPerformanceMode, setSelectedPerformanceMode] = useState<PerformanceMode>("high");
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
@@ -78,9 +83,16 @@ export default function ProfilePage() {
   };
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeKey | null;
-    if (savedTheme) setSelectedTheme(savedTheme);
+    setMounted(true);
+  }, []);
 
+  useEffect(() => {
+    if (mounted && resolvedTheme) {
+      setSelectedTheme(resolvedTheme as ThemeKey);
+    }
+  }, [mounted, resolvedTheme]);
+
+  useEffect(() => {
     const savedPerf = getPerformanceMode() as PerformanceMode;
     setSelectedPerformanceMode(savedPerf);
 
@@ -126,11 +138,13 @@ export default function ProfilePage() {
 
   const handleApplyTheme = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem(THEME_STORAGE_KEY, selectedTheme);
+    setTheme(selectedTheme);
     const labels: Record<ThemeKey, string> = {
       midnight: "Midnight Black",
       obsidian: "Deep Obsidian",
-      sepia: "Warm Sepia",
+      "nord-ice": "Nord Ice",
+      forest: "Forest Night",
+      oceanic: "Deep Ocean",
     };
     showToast(`Applied ${labels[selectedTheme]} theme!`);
     setActiveScreen("main");
@@ -162,7 +176,7 @@ export default function ProfilePage() {
       .toUpperCase() || "?";
 
   return (
-    <div className="flex-1 flex flex-col max-w-[820px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5 relative">
+    <div className="flex-1 flex flex-col max-w-5xl mx-auto w-full p-4 sm:p-6 md:p-10 justify-start gap-5 relative">
       {toastMessage && (
         <div role="status" aria-live="polite" className="absolute top-6 left-1/2 -translate-x-1/2 bg-surface border border-accent-gold/30 px-4 py-2.5 rounded-full flex items-center gap-2 z-50 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
           <CheckCircle className="h-4 w-4 text-accent-gold" />
@@ -240,9 +254,9 @@ export default function ProfilePage() {
 
               {/* Token Usage Card */}
               <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/20">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs sm:text-sm font-extrabold text-white inline-flex items-center gap-1.5">
+                <div className="flex flex-row flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <h4 className="text-xs sm:text-sm font-extrabold text-white inline-flex items-center gap-1.5 shrink-0">
                       Daily Token Usage
                       <InfoTooltip label="What are tokens?">
                         Tokens are small pieces of text the AI processes (roughly ¾ of a word each).
@@ -250,7 +264,7 @@ export default function ProfilePage() {
                         resets at midnight UTC; lower performance levels use fewer.
                       </InfoTooltip>
                     </h4>
-                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border shrink-0 ${
                       usage?.is_pro
                         ? "bg-accent-gold/10 border-accent-gold text-accent-gold"
                         : "bg-white/5 border-white/10 text-text-muted"
@@ -319,7 +333,7 @@ export default function ProfilePage() {
               {[
                 { label: "Edit Profile", icon: User },
                 { label: "Theme Preference", icon: Palette },
-                { label: "Performance Level", icon: Zap },
+                { label: "Performance Level", icon: SleekLightningIcon },
                 { label: "Help & Support", icon: Headphones },
                 { label: "Logout", icon: LogOut },
               ].map((item, idx, arr) => {
@@ -369,56 +383,49 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">Full Name</label>
-              <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4">
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-white font-extrabold focus:ring-0"
-                  required
-                />
-              </div>
+              <Input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+              />
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">Email Address</label>
-              <div className="w-full bg-surface/50 border border-white/5 rounded-2xl p-3 px-4 opacity-85">
-                <input
-                  type="email"
-                  value={user?.email ?? ""}
-                  className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-text-muted font-bold cursor-not-allowed"
-                  disabled
-                />
-              </div>
+              <Input
+                type="email"
+                value={user?.email ?? ""}
+                disabled
+              />
               <span className="text-[10px] text-text-muted px-1">Email cannot be changed.</span>
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-text-muted uppercase tracking-wider px-1">Study Major / Institution</label>
-              <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4">
-                <input
-                  type="text"
-                  value={major}
-                  onChange={(e) => setMajor(e.target.value)}
-                  placeholder="e.g. Computer Science & Engineering"
-                  className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-white font-extrabold focus:ring-0 placeholder:text-text-muted/50 placeholder:font-semibold"
-                />
-              </div>
+              <Input
+                type="text"
+                value={major}
+                onChange={(e) => setMajor(e.target.value)}
+                placeholder="e.g. Computer Science & Engineering"
+              />
             </div>
           </div>
 
           <div className="flex flex-col gap-2.5 mt-5">
-            <button
+            <Button
               type="submit"
-              disabled={isSaving}
-              className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2 transition shadow cursor-pointer disabled:opacity-60"
+              loading={isSaving}
             >
-              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSaving ? "Saving…" : "Save Profile Changes"}
-            </button>
-            <button type="button" onClick={() => setActiveScreen("main")} className="w-full py-4 bg-transparent hover:bg-white/5 border border-white/10 text-white font-bold rounded-2xl text-xs sm:text-sm transition cursor-pointer">
+              Save Profile Changes
+            </Button>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setActiveScreen("main")}
+            >
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -435,9 +442,11 @@ export default function ProfilePage() {
 
           <div className="grid grid-cols-1 gap-3.5 w-full">
             {([
-              { key: "midnight", title: "Midnight Black", desc: "Pitch black palette, gold accenting", swatch: "bg-bg-main border-accent-gold/30" },
-              { key: "obsidian", title: "Obsidian Charcoal", desc: "Dark grey palette, gold elements", swatch: "bg-surface-raised border-white/10" },
-              { key: "sepia", title: "Warm Sepia", desc: "Cozy warm aesthetics, orange-gold", swatch: "bg-[#1d1916] border-accent-gold/20" },
+              { key: "midnight", title: "Midnight Black", desc: "Pitch black palette, gold accenting", swatch: "bg-[#0d0d0d] border-[#f3c494]/30" },
+              { key: "obsidian", title: "Obsidian Charcoal", desc: "Dark grey palette, icy blue elements", swatch: "bg-[#08090a] border-white/10" },
+              { key: "nord-ice", title: "Nord Ice", desc: "Slate grey palette, frosty blue accents", swatch: "bg-[#1e222a] border-[#8fbcbb]/20" },
+              { key: "forest", title: "Forest Night", desc: "Deep green palette, moss and mint accents", swatch: "bg-[#0c1912] border-[#a3c9a8]/20" },
+              { key: "oceanic", title: "Deep Ocean", desc: "Rich navy palette, electric cyan accents", swatch: "bg-[#0b132b] border-[#90e0ef]/20" },
             ] as const).map((theme) => (
               <div
                 key={theme.key}
@@ -462,9 +471,9 @@ export default function ProfilePage() {
             Theme preference is saved on this device.
           </span>
 
-          <button type="submit" className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm transition shadow cursor-pointer">
+          <Button type="submit">
             Apply Theme
-          </button>
+          </Button>
         </form>
       )}
 
@@ -502,7 +511,7 @@ export default function ProfilePage() {
               >
                 <div className="flex items-center gap-3.5">
                   <div className={`h-7 w-7 rounded-full bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center shrink-0`}>
-                    <Zap className={`h-4 w-4 ${selectedPerformanceMode === mode.key ? "text-accent-gold" : "text-text-muted"}`} />
+                    <SleekLightningIcon className={`h-4 w-4 ${selectedPerformanceMode === mode.key ? "text-accent-gold" : "text-text-muted"}`} />
                   </div>
                   <div className="flex flex-col pr-2">
                     <div className="flex items-center gap-2">
@@ -526,9 +535,9 @@ export default function ProfilePage() {
             </span>
           </p>
 
-          <button type="submit" className="w-full py-4 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-2xl text-xs sm:text-sm transition shadow cursor-pointer">
+          <Button type="submit">
             Apply Performance Settings
-          </button>
+          </Button>
         </form>
       )}
 

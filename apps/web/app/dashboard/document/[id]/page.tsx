@@ -8,11 +8,11 @@ import {
   FileText,
   ChevronRight,
   HelpCircle,
-  Sparkles,
   MessageSquare,
   Trash2,
   Loader2,
 } from "lucide-react";
+import { SparklesIcon } from "@/components/shared/Icons";
 import { DocumentDetailIllustration } from "./components/DocumentDetailIllustration";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -150,7 +150,7 @@ export default function DocumentDetailPage() {
           <div className="w-full bg-card-bg border border-border-subtle hover:border-accent-coral/20 rounded-3xl p-4 sm:p-5 flex items-center justify-between transition-all duration-200 cursor-pointer shadow-lg shadow-black/20 group">
             <div className="flex items-center gap-4">
               <div className="h-12 w-12 rounded-2xl bg-accent-coral/10 border border-accent-coral/20 flex items-center justify-center text-accent-coral group-hover:scale-105 transition duration-200">
-                <Sparkles className="h-6 w-6" />
+                <SparklesIcon className="h-6 w-6" />
               </div>
               <div className="flex flex-col">
                 <span className="text-sm sm:text-base font-extrabold text-white leading-snug">

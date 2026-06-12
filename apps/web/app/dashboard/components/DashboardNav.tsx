@@ -25,7 +25,16 @@ export function DashboardNav() {
 
   const checkActive = (href: string) => {
     if (href === "/dashboard") {
-      return pathname === "/dashboard" || pathname.startsWith("/dashboard/document/");
+      // Home covers the dashboard itself plus all study sub-pages
+      // that don't have their own sidebar entry.
+      return (
+        pathname === "/dashboard" ||
+        pathname.startsWith("/dashboard/document/") ||
+        pathname.startsWith("/dashboard/documents") ||
+        pathname.startsWith("/dashboard/quiz") ||
+        pathname.startsWith("/dashboard/summary") ||
+        pathname.startsWith("/dashboard/chat")
+      );
     }
     return pathname.startsWith(href);
   };
@@ -55,7 +64,7 @@ export function DashboardNav() {
       </div>
 
       {/* Desktop/Tablet Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-card-bg border-r border-border-subtle min-h-screen p-6 shrink-0">
+      <aside className="hidden md:flex flex-col w-64 bg-card-bg border-r border-border-subtle h-screen sticky top-0 p-6 shrink-0 overflow-y-auto">
         <div className="flex items-center gap-3 mb-10 select-none">
           <div className="h-8 w-8 rounded-xl bg-brand-primary flex items-center justify-center font-extrabold text-black">
             S

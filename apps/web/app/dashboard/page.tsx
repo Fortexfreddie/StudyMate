@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
-import { Search, HelpCircle, FileUp, FileText, ChevronRight, Plus } from "lucide-react";
+import { Search, Trophy, FileUp, FileText, ChevronRight, Plus } from "lucide-react";
 import { ProgressRing } from "./components/ProgressRing";
 import { DocumentCard } from "./components/DocumentCard";
 import { IconButton } from "@/components/shared/IconButton";
@@ -16,7 +16,7 @@ import { useApi } from "@/lib/useApi";
 import { getDocumentColor, getDocumentCategory } from "@/lib/format";
 
 // Soft caps used only to turn raw counts into a ring percentage (visual scale).
-const RING_SCALE = { quizzes: 20, documents: 15, summaries: 15 };
+const RING_SCALE = { quizzes: 10, documents: 10, summaries: 30 };
 
 function pct(value: number, scale: number): number {
   return Math.min(100, Math.round((value / scale) * 100));
@@ -90,15 +90,15 @@ export default function DashboardPage() {
         <ProgressRing
           percentage={pct(stats?.quizzes_taken ?? 0, RING_SCALE.quizzes)}
           label="Quizzes"
-          sublabel={`${stats?.quizzes_taken ?? 0} Taken`}
-          strokeColor="#f09e5b"
-          icon={<HelpCircle className="h-4.5 w-4.5 text-brand-primary" />}
+          sublabel={`${stats?.quizzes_taken ?? 0} of ${RING_SCALE.quizzes} goal`}
+          strokeColor="var(--color-brand-primary)"
+          icon={<Trophy className="h-4.5 w-4.5 text-brand-primary" />}
         />
         <div className="hidden sm:block h-12 w-[1px] bg-border-subtle" />
         <ProgressRing
           percentage={pct(stats?.documents_uploaded ?? 0, RING_SCALE.documents)}
           label="Documents"
-          sublabel={`${stats?.documents_uploaded ?? 0} Uploaded`}
+          sublabel={`${stats?.documents_uploaded ?? 0} of ${RING_SCALE.documents} goal`}
           strokeColor="var(--color-brand-primary-dark)"
           icon={<FileUp className="h-4.5 w-4.5 text-brand-primary-dark" />}
         />
@@ -106,8 +106,8 @@ export default function DashboardPage() {
         <ProgressRing
           percentage={pct(stats?.summaries_generated ?? 0, RING_SCALE.summaries)}
           label="Summaries"
-          sublabel={`${stats?.summaries_generated ?? 0} Generated`}
-          strokeColor="#ef6868"
+          sublabel={`${stats?.summaries_generated ?? 0} of ${RING_SCALE.summaries} goal`}
+          strokeColor="var(--color-accent-coral)"
           icon={<FileText className="h-4.5 w-4.5 text-accent-coral" />}
         />
       </section>

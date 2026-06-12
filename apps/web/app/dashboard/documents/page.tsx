@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptySearchIllustration } from "@/components/shared/EmptySearchIllustration";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -101,11 +102,7 @@ export default function DocumentsPage() {
           ) : (
             <EmptyState
               className="mt-12"
-              icon={
-                <span className="h-14 w-14 rounded-2xl bg-card-bg border border-border-subtle flex items-center justify-center text-text-muted">
-                  <Search className="h-7 w-7" />
-                </span>
-              }
+              icon={<EmptySearchIllustration />}
               title="No matching documents"
               description={`Nothing matches “${query.trim()}”. Try a different name.`}
             />

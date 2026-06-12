@@ -12,8 +12,10 @@ import {
   Plus,
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptySearchIllustration } from "@/components/shared/EmptySearchIllustration";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { Button } from "@/components/shared/Button";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 
@@ -139,14 +141,13 @@ export default function HistoryPage() {
   const tabs: TabType[] = ["All", "Quizzes", "Summaries", "Chats"];
 
   return (
-    <div className="flex-1 flex flex-col max-w-[760px] mx-auto w-full p-4 sm:p-6 md:py-8 justify-start gap-5">
+    <div className="flex-1 flex flex-col max-w-3xl mx-auto w-full p-4 sm:p-6 md:p-10 justify-start gap-5">
       <header className="flex items-center justify-between w-full select-none">
         <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Study History</h1>
       </header>
 
-      {/* Search */}
       <section className="w-full">
-        <div className="w-full bg-surface border border-white/5 rounded-2xl p-3 px-4 flex items-center gap-3 shadow shadow-black/10">
+        <div className="w-full bg-card-bg border border-border-subtle rounded-2xl p-3 px-4 flex items-center gap-3 shadow shadow-black/10">
           <Search className="h-4.5 w-4.5 text-text-muted shrink-0" />
           <input
             type="text"
@@ -167,7 +168,7 @@ export default function HistoryPage() {
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer ${
               activeTab === tab
                 ? "border border-accent-gold text-accent-gold bg-transparent"
-                : "bg-surface border border-white/5 text-text-muted hover:text-white"
+                : "bg-card-bg border border-border-subtle text-text-muted hover:text-white"
             }`}
           >
             {tab}
@@ -203,15 +204,15 @@ export default function HistoryPage() {
       ) : (
         <section className="relative w-full flex flex-col gap-4.5">
           {filtered.length > 0 && (
-            <div className="absolute left-[18px] top-6 bottom-6 w-[2px] bg-white/5" />
+            <div className="absolute left-[18px] top-6 bottom-6 w-[2px] bg-border-subtle" />
           )}
 
           {filtered.map((item) => (
             <div key={item.key} className="flex gap-4 w-full relative animate-in fade-in duration-200">
-              <div className={`h-[38px] w-[38px] rounded-full border border-white/5 flex items-center justify-center shrink-0 z-10 shadow ${getBadge(item.type)}`}>
+              <div className={`h-[38px] w-[38px] rounded-full border border-border-subtle flex items-center justify-center shrink-0 z-10 shadow ${getBadge(item.type)}`}>
                 {getIcon(item.type)}
               </div>
-              <div className="flex-1 bg-surface border border-white/5 rounded-2xl p-4.5 flex items-center justify-between gap-3 shadow-md shadow-black/10 hover:border-white/10 transition">
+              <div className="flex-1 bg-card-bg border border-border-subtle rounded-2xl p-4.5 flex items-center justify-between gap-3 shadow-md shadow-black/10 hover:border-white/10 transition">
                 <div className="flex flex-col gap-1 min-w-0">
                   <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">{item.title}</h4>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 mt-1.5 select-none">
@@ -234,7 +235,7 @@ export default function HistoryPage() {
           ))}
 
           {filtered.length === 0 && (
-            <div className="w-full bg-surface border border-white/5 rounded-3xl p-6.5 shadow-md shadow-black/20 mt-2.5">
+            <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-6.5 shadow-md shadow-black/20 mt-2.5">
               <EmptyState
                 title={isFiltering ? "No matching activity" : "No study history yet"}
                 description={
@@ -243,19 +244,23 @@ export default function HistoryPage() {
                     : "Upload documents, take quizzes, generate summaries or chat with AI to see your activity here."
                 }
                 icon={
-                  <span className="h-14 w-14 rounded-2xl bg-card-bg border border-border-subtle flex items-center justify-center text-text-muted">
-                    <FileText className="h-7 w-7" />
-                  </span>
+                  isFiltering ? (
+                    <EmptySearchIllustration />
+                  ) : (
+                    <span className="h-14 w-14 rounded-2xl bg-card-bg border border-border-subtle flex items-center justify-center text-text-muted">
+                      <FileText className="h-7 w-7" />
+                    </span>
+                  )
                 }
                 action={
                   !isFiltering && (
-                    <button
+                    <Button
                       onClick={() => router.push("/dashboard/upload")}
-                      className="py-3 px-5 bg-accent-gold hover:bg-accent-gold-hover text-accent-gold-fg font-bold rounded-full text-xs flex items-center justify-center gap-1.5 transition shadow shadow-accent-gold/10 cursor-pointer select-none focus:outline-none"
+                      className="w-auto px-5"
+                      icon={<Plus className="h-4 w-4 stroke-[3px]" />}
                     >
-                      <Plus className="h-4 w-4 stroke-[3px]" />
                       Upload Your First Document
-                    </button>
+                    </Button>
                   )
                 }
               />

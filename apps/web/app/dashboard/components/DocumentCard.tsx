@@ -14,6 +14,9 @@ interface DocumentCardProps {
     | "law"
     | "engineering-math"
     | "history-humanities"
+    | "chemistry-biochemistry"
+    | "art-music-design"
+    | "earth-space-science"
     | "general";
   onDeleteClick?: (id: string, title: string) => void;
 }
@@ -312,6 +315,98 @@ function HistoryHumanitiesSvg(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function ChemistryBiochemistrySvg(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      {/* Erlenmeyer Flask */}
+      <path d="M72 45 L72 30 L88 30 L88 45 L110 95 C114 103 108 110 100 110 L60 110 C52 110 46 103 50 95 Z" stroke="#8a5883" strokeWidth="1.8" strokeLinejoin="round" />
+      <line x1="68" y1="30" x2="92" y2="30" stroke="#8a5883" strokeWidth="2" strokeLinecap="round" />
+      
+      {/* Liquid line & bubbles */}
+      <path d="M56 90 Q80 87 104 90" stroke="#8a5883" strokeWidth="1" strokeDasharray="3 3" />
+      <circle cx="75" cy="75" r="2.5" fill="#8a5883" opacity="0.6" />
+      <circle cx="85" cy="65" r="1.5" fill="#8a5883" opacity="0.4" />
+      <circle cx="70" cy="60" r="2" fill="#8a5883" opacity="0.5" />
+      <circle cx="90" cy="80" r="3" fill="#8a5883" opacity="0.7" />
+
+      {/* Molecule connections */}
+      <g transform="translate(115, 40)">
+        <circle cx="0" cy="0" r="5" stroke="#8a5883" strokeWidth="1.5" fill="none" />
+        <circle cx="20" cy="-15" r="4" stroke="#8a5883" strokeWidth="1.2" fill="none" />
+        <circle cx="20" cy="15" r="4" stroke="#8a5883" strokeWidth="1.2" fill="none" />
+        <line x1="4" y1="-3" x2="16" y2="-12" stroke="#8a5883" strokeWidth="1.2" />
+        <line x1="4" y1="3" x2="16" y2="12" stroke="#8a5883" strokeWidth="1.2" />
+      </g>
+    </svg>
+  );
+}
+
+function ArtMusicDesignSvg(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      {/* Artist Palette */}
+      <path d="M40 85 C30 70 35 45 65 40 C95 35 125 50 120 80 C115 105 85 115 65 110 C55 107 50 102 48 95 C45 92 42 90 40 85 Z" stroke="#8f4a47" strokeWidth="1.8" strokeLinejoin="round" fill="#8f4a47" fillOpacity="0.05" />
+      
+      {/* Palette Thumb Hole */}
+      <circle cx="60" cy="92" r="6" stroke="#8f4a47" strokeWidth="1.2" fill="#121212" />
+      
+      {/* Color drops */}
+      <circle cx="55" cy="55" r="4" fill="#8f4a47" />
+      <circle cx="75" cy="50" r="4" fill="#8f4a47" opacity="0.75" />
+      <circle cx="95" cy="60" r="4" fill="#8f4a47" opacity="0.5" />
+      <circle cx="102" cy="80" r="4" fill="#8f4a47" opacity="0.3" />
+
+      {/* Paint Brush */}
+      <g transform="translate(45, 30) rotate(-45)">
+        {/* Handle */}
+        <line x1="0" y1="60" x2="0" y2="0" stroke="#8f4a47" strokeWidth="2.5" strokeLinecap="round" />
+        {/* Metal Ferrule */}
+        <rect x="-2" y="-5" width="4" height="6" fill="#8f4a47" />
+        {/* Bristles / Tip */}
+        <path d="M-2 -5 C-3 -15 0 -20 0 -20 C0 -20 3 -15 2 -5 Z" fill="#8f4a47" />
+      </g>
+
+      {/* Floating Musical Note */}
+      <g transform="translate(120, 35)">
+        <path d="M0 15 L0 0 L15 -3 L15 12" stroke="#8f4a47" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="0" cy="15" r="3.5" fill="#8f4a47" />
+        <circle cx="15" cy="12" r="3.5" fill="#8f4a47" />
+      </g>
+    </svg>
+  );
+}
+
+function EarthSpaceScienceSvg(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 160 140" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      {/* Globe structure */}
+      <circle cx="80" cy="70" r="35" stroke="#2b5a75" strokeWidth="1.8" fill="#2b5a75" fillOpacity="0.05" />
+      {/* Latitude lines */}
+      <path d="M46 60 Q80 68 114 60" stroke="#2b5a75" strokeWidth="1" opacity="0.6" />
+      <path d="M46 80 Q80 88 114 80" stroke="#2b5a75" strokeWidth="1" opacity="0.6" />
+      <line x1="45" y1="70" x2="115" y2="70" stroke="#2b5a75" strokeWidth="1.2" />
+      
+      {/* Longitude lines */}
+      <ellipse cx="80" cy="70" rx="20" ry="35" stroke="#2b5a75" strokeWidth="1" opacity="0.6" />
+      <ellipse cx="80" cy="70" rx="8" ry="35" stroke="#2b5a75" strokeWidth="1" opacity="0.8" />
+      <line x1="80" y1="35" x2="80" y2="105" stroke="#2b5a75" strokeWidth="1.2" />
+
+      {/* Orbiting Planet Ring */}
+      <path d="M30 90 C40 50 120 50 130 90" stroke="#2b5a75" strokeWidth="1.5" strokeDasharray="3 3" />
+      
+      {/* Orbiting Rocket or Satellite */}
+      <g transform="translate(120, 68) rotate(30)">
+        <path d="M-4 6 L0 -8 L4 6 L0 3 Z" fill="#2b5a75" stroke="#2b5a75" strokeWidth="1" strokeLinejoin="round" />
+        <path d="M-3 6 L-5 9 L-2 8" stroke="#2b5a75" strokeWidth="1" />
+        <path d="M3 6 L5 9 L2 8" stroke="#2b5a75" strokeWidth="1" />
+      </g>
+
+      {/* Floating Star */}
+      <path d="M35 30 L36.5 33.5 L40 35 L36.5 36.5 L35 40 L33.5 36.5 L30 35 L33.5 33.5 Z" fill="#2b5a75" opacity="0.7" />
+    </svg>
+  );
+}
+
 export function DocumentCard({
   id,
   title,
@@ -365,6 +460,9 @@ export function DocumentCard({
         {type === "law" && <LawSvg className="w-full h-full max-h-[90px]" />}
         {type === "engineering-math" && <EngineeringMathSvg className="w-full h-full max-h-[90px]" />}
         {type === "history-humanities" && <HistoryHumanitiesSvg className="w-full h-full max-h-[90px]" />}
+        {type === "chemistry-biochemistry" && <ChemistryBiochemistrySvg className="w-full h-full max-h-[90px]" />}
+        {type === "art-music-design" && <ArtMusicDesignSvg className="w-full h-full max-h-[90px]" />}
+        {type === "earth-space-science" && <EarthSpaceScienceSvg className="w-full h-full max-h-[90px]" />}
         {type === "general" && <GeneralSvg className="w-full h-full max-h-[90px]" />}
       </div>
 

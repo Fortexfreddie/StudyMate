@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { GeneratingLoader } from "@/components/shared/Icons";
 
 interface GeneratingStateProps {
   title: string;
@@ -27,7 +27,7 @@ export function GeneratingState({
           style={{ clipPath: "polygon(50% 0%, 100% 0%, 100% 100%, 50% 100%)", borderColor: accentColor }}
           className="absolute h-full w-full rounded-full border-4 animate-spin"
         />
-        <Sparkles className={`h-6 w-6 animate-pulse ${accentClass}`} />
+        <GeneratingLoader className={`h-7 w-7 ${accentClass}`} />
       </div>
 
       <div className="flex flex-col gap-1.5 mt-2">

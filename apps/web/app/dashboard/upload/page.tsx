@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Upload, Loader2 } from "lucide-react";
 import { UploadIllustration } from "./components/UploadIllustration";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Button } from "@/components/shared/Button";
 import { api, ApiClientError } from "@/lib/api";
 
 // Mirror the backend MAX_UPLOAD_SIZE_MB constraint for an early client-side check.
@@ -72,7 +73,7 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-[800px] mx-auto w-full">
+    <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-3xl mx-auto w-full">
       <PageHeader
         title="Upload Document"
         onBack={() => router.push("/dashboard")}
@@ -127,27 +128,14 @@ export default function UploadPage() {
           </div>
         )}
 
-        <button
+        <Button
           type="submit"
-          disabled={!selectedFile || isUploading}
-          className={`w-full flex items-center justify-center gap-2 rounded-2xl py-4.5 px-4 font-bold text-sm select-none transition duration-200 cursor-pointer ${
-            selectedFile && !isUploading
-              ? "bg-brand-primary text-accent-gold-fg hover:bg-brand-primary-hover shadow-lg shadow-brand-primary/10"
-              : "bg-card-bg border border-border-subtle text-text-muted cursor-not-allowed opacity-50"
-          }`}
+          disabled={!selectedFile}
+          loading={isUploading}
+          icon={<Upload className="h-4.5 w-4.5" />}
         >
-          {isUploading ? (
-            <>
-              <Loader2 className="h-4.5 w-4.5 animate-spin" />
-              Processing PDF…
-            </>
-          ) : (
-            <>
-              <Upload className="h-4.5 w-4.5" />
-              Upload &amp; Process
-            </>
-          )}
-        </button>
+          Upload &amp; Process
+        </Button>
 
         {isUploading && (
           <p className="text-center text-[11px] text-text-muted -mt-2">
