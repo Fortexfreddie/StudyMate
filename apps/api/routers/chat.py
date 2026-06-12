@@ -3,14 +3,26 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import PERFORMANCE_MODES
 from core.dependencies import get_current_user, get_generator, get_retriever
-from models.database import ChatMessage, User, get_db
-from models.schemas import ChatRequest, ChatResponse, SourceInfo
+from core.errors import StudyMateError
+from core.rate_limit import LLM_LIMIT, limiter
+from models.database import ChatMessage, Document, User, get_db
+from models.schemas import ChatRequest, ChatResponse, GenerationMeta, SourceInfo
+from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
+from services.token_service import (
+    estimate_request_tokens,
+    reconcile_tokens,
+    record_token_usage,
+    release_tokens,
+    reserve_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +35,10 @@ router = APIRouter(tags=["Chat"])
     status_code=status.HTTP_201_CREATED,
     summary="Chat with documents using RAG",
 )
+@limiter.limit(LLM_LIMIT)
 async def chat_with_docs(
-    request: ChatRequest,
+    request: Request,
+    payload: ChatRequest,
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     retriever: Retriever = Depends(get_retriever),  # noqa: B008
@@ -35,43 +49,77 @@ async def chat_with_docs(
     If `doc_id` is supplied, the conversation is grounded strictly within that document.
     If `doc_id` is omitted, the retrieval executes globally across all user documents.
     """
-    # 0. Check for a cached response for the exact same query (case-insensitive and trimmed)
-    # in the context of this specific user and document scope.
-    from sqlalchemy import func, select
-
-    stmt = (
-        select(ChatMessage)
-        .where(
-            ChatMessage.user_id == current_user.id,
-            ChatMessage.doc_id == request.doc_id,
-            func.lower(func.trim(ChatMessage.query)) == request.query.strip().lower(),
-            ChatMessage.context_sufficient,
-            func.jsonb_array_length(ChatMessage.sources) == request.top_k,
-        )
-        .order_by(ChatMessage.created_at.desc())
-        .limit(1)
+    # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
+    effective_top_k = (
+        payload.top_k if payload.top_k is not None else generator.default_top_k
     )
-    result = await db.execute(stmt)
-    cached_msg = result.scalar_one_or_none()
+
+    # 1.5. Verify document ownership / retrieve allowed doc IDs for security
+    user_doc_ids = None
+    if payload.doc_id is not None:
+        stmt_doc = select(Document).where(
+            Document.id == payload.doc_id, Document.user_id == current_user.id
+        )
+        doc_res = await db.execute(stmt_doc)
+        if not doc_res.scalar_one_or_none():
+            raise StudyMateError(
+                "Document not found or access denied.", status_code=404
+            )
+    else:
+        # Global query: fetch all doc IDs owned by user to restrict search
+        stmt_docs = select(Document.id).where(Document.user_id == current_user.id)
+        docs_res = await db.execute(stmt_docs)
+        user_doc_ids = list(docs_res.scalars().all())
+        if not user_doc_ids:
+            raise StudyMateError(
+                "You haven't uploaded any documents yet. Please upload study materials first.",
+                status_code=400,
+            )
+
+    # 2. Check for a cached response.
+    #    Only doc-scoped queries are cacheable: a document's content is immutable
+    #    once uploaded, so an identical (doc_id, query, mode) is safe to reuse.
+    #    Global queries (doc_id is None) span the user's whole — mutable — document
+    #    set, so a cached global answer can go stale the moment a new doc is added.
+    #    We therefore never serve a cached result for global queries.
+    cached_msg = None
+    if payload.doc_id is not None:
+        stmt = (
+            select(ChatMessage)
+            .where(
+                ChatMessage.user_id == current_user.id,
+                ChatMessage.doc_id == payload.doc_id,
+                func.lower(func.trim(ChatMessage.query))
+                == payload.query.strip().lower(),
+                ChatMessage.context_sufficient,
+                ChatMessage.performance_mode == generator.performance_mode,
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        cached_msg = result.scalar_one_or_none()
 
     if cached_msg:
         logger.info(
             "Cache HIT for query '%s' (User: %s, Doc: %s). Reusing cached answer.",
-            request.query,
+            payload.query,
             current_user.id,
-            request.doc_id,
+            payload.doc_id,
         )
 
         # Save a new history entry reflecting this duplicate interaction
         new_msg = ChatMessage(
             user_id=current_user.id,
-            doc_id=request.doc_id,
-            query=request.query,
+            doc_id=payload.doc_id,
+            query=payload.query,
             answer=cached_msg.answer,
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_msg.sources,
+            performance_mode=generator.performance_mode,
         )
         db.add(new_msg)
+        await record_activity(db, current_user.id)
         await db.commit()
         await db.refresh(new_msg)
 
@@ -97,22 +145,60 @@ async def chat_with_docs(
             answer=cached_msg.answer,
             context_sufficient=cached_msg.context_sufficient,
             sources=cached_sources,
+            meta=GenerationMeta(
+                model_used=str(
+                    PERFORMANCE_MODES.get(
+                        cached_msg.performance_mode or "high", {}
+                    ).get("primary", "cached")
+                ),
+                performance_mode=generator.performance_mode,
+                cached=True,
+                retrieval_chunks_used=len(cached_sources),
+            ),
         )
 
-    # 1. Retrieve the most relevant chunks from Qdrant
+    # 3. Retrieve the most relevant chunks from Qdrant
     matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=request.query,
-        doc_id=request.doc_id,
-        top_k=request.top_k,
+        query=payload.query,
+        doc_id=payload.doc_id,
+        doc_ids=user_doc_ids,
+        top_k=effective_top_k,
     )
 
-    # 2. Synthesize the grounded response using Gemini
-    answer, context_sufficient = await generator.generate_answer(
-        query=request.query,
-        context=matched_chunks,
+    # 4. Reserve the estimated token cost atomically BEFORE the LLM call. This
+    #    closes the concurrent-burst race: even 10 parallel requests are serialized
+    #    on the per-user/day counter row and cannot collectively exceed the limit.
+    context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)
+    estimate = estimate_request_tokens(context_text, payload.query, "chat")
+    allowed, _used, limit = await reserve_tokens(
+        current_user.id, current_user.is_pro, estimate
+    )
+    if not allowed:
+        raise StudyMateError(
+            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
+            status_code=403,
+        )
+
+    # 5. Synthesize the grounded response using Gemini. On failure, refund the
+    #    reservation and surface a 503 — never persist a bogus answer or charge it.
+    try:
+        answer, context_sufficient, usage = await generator.generate_answer(
+            query=payload.query,
+            context=matched_chunks,
+        )
+    except Exception:
+        await release_tokens(current_user.id, estimate)
+        raise
+
+    # 6. Reconcile the reservation against actual usage + log the per-request row.
+    await reconcile_tokens(
+        current_user.id, estimate, int(usage.get("total_tokens", 0) or 0)
+    )
+    await record_token_usage(
+        db, current_user.id, usage, "chat", generator.performance_mode
     )
 
-    # 3. Format matched chunks into API response sources
+    # 6. Format matched chunks into API response sources
     sources: list[SourceInfo] = []
     sources_dict: list[dict[str, Any]] = []
 
@@ -122,7 +208,6 @@ async def chat_with_docs(
         score = float(chunk.get("score") or 0.0)
         text = chunk.get("text") or ""
 
-        # Map to Pydantic schema
         sources.append(
             SourceInfo(
                 filename=filename,
@@ -132,7 +217,6 @@ async def chat_with_docs(
             )
         )
 
-        # Build list of raw dictionaries to persist in JSONB
         sources_dict.append(
             {
                 "filename": filename,
@@ -142,16 +226,18 @@ async def chat_with_docs(
             }
         )
 
-    # 4. Save the interaction into the PostgreSQL database history
+    # 7. Save the interaction into the PostgreSQL database history
     db_message = ChatMessage(
         user_id=current_user.id,
-        doc_id=request.doc_id,
-        query=request.query,
+        doc_id=payload.doc_id,
+        query=payload.query,
         answer=answer,
         context_sufficient=context_sufficient,
         sources=sources_dict,
+        performance_mode=generator.performance_mode,
     )
     db.add(db_message)
+    await record_activity(db, current_user.id)
     await db.commit()
     await db.refresh(db_message)
 
@@ -165,4 +251,13 @@ async def chat_with_docs(
         answer=answer,
         context_sufficient=context_sufficient,
         sources=sources,
+        meta=GenerationMeta(
+            model_used=str(usage.get("model_used", "")),
+            performance_mode=generator.performance_mode,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            total_tokens=int(usage.get("total_tokens", 0)),
+            cached=False,
+            retrieval_chunks_used=len(matched_chunks),
+        ),
     )

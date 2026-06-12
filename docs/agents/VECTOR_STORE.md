@@ -19,7 +19,7 @@ A single collection is used for all documents. Multi-document support is handled
 COLLECTION_NAME = "studymate_chunks"
 
 # Collection configuration
-VECTOR_SIZE = 3072          # gemini-embedding-001 default output dimensions
+VECTOR_SIZE = 3072          # gemini-embedding-2 default output dimensions
 DISTANCE_METRIC = "Cosine"  # Cosine similarity for semantic search
 ```
 
@@ -82,7 +82,7 @@ async def search(
     query_vector: list[float],
     top_k: int = 5,
     doc_id: str | None = None,
-    score_threshold: float = 0.60,
+    score_threshold: float = 0.35,
 ) -> list[dict]:
     """
     Search for the top-k most similar chunks.
@@ -165,10 +165,9 @@ The async client is used because all Qdrant operations happen inside FastAPI asy
 - **Single collection for all documents** — simpler than one collection per document. Multi-document isolation is handled via `doc_id` payload filtering, which Qdrant executes efficiently using payload indexes.
 - **Payload index on `doc_id`** — should be created at collection init time for fast filtered searches.
 - **Cosine distance** — matches the similarity metric used in the retrieval agent's threshold logic.
-- **Vector size 3072** — this is the default output dimension of `gemini-embedding-001`. If using a different dimension (e.g., 768 via MRL), update this constant.
+- **Vector size 3072** — this is the default output dimension of `gemini-embedding-2`. If using a different dimension (e.g., 768 via MRL), update this constant.
 - **Async client** — Qdrant provides `AsyncQdrantClient` specifically for frameworks like FastAPI.
 - **Idempotent deletes** — deleting a non-existent doc_id returns 0, not an error. This simplifies cleanup logic.
-
 ---
 
 ## Qdrant Cloud Free Tier Limits

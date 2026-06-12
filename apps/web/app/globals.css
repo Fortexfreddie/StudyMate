@@ -1,0 +1,266 @@
+@import "tailwindcss";
+
+/* Tailwind v4 Token Registration
+   Using inline theme variables so styling updates dynamically at runtime. */
+@theme inline {
+  --color-bg-main: var(--color-bg-main);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-card-bg: var(--color-card-bg);
+  --color-input-bg: var(--color-input-bg);
+  --color-brand-primary: var(--color-brand-primary);
+  --color-brand-primary-hover: var(--color-brand-primary-hover);
+  --color-accent-gold: var(--color-accent-gold);
+  --color-accent-gold-hover: var(--color-accent-gold-hover);
+  --color-accent-gold-fg: var(--color-accent-gold-fg);
+  --color-accent-coral: var(--color-accent-coral);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-faint: var(--color-border-faint);
+  --color-text-muted: var(--color-text-muted);
+  --color-error-text: var(--color-error-text);
+  --color-surface-modal: var(--color-surface-modal);
+  --color-brand-primary-dark: var(--color-brand-primary-dark);
+  --color-brand-primary-fg: var(--color-brand-primary-fg);
+  --color-status-warning: var(--color-status-warning);
+  --color-status-summary: var(--color-status-summary);
+  --color-ring-track: var(--color-ring-track);
+
+  /* Custom shadows */
+  --shadow-avatar-gold: 0 0 20px rgba(243, 196, 148, 0.25);
+  --shadow-card-selected: 0 0 15px rgba(243, 196, 148, 0.1);
+
+  --animate-progress-slide: progress-slide 1.5s infinite linear;
+
+  @keyframes progress-slide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+}
+
+/* Custom Animation Utilities (Tailwind v4 compatibility layer) */
+.animate-in {
+  animation-duration: 300ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in {
+  animation-name: fade-in;
+}
+
+.slide-in-from-bottom-2 {
+  animation-name: slide-in-from-bottom-2;
+}
+
+.slide-in-from-bottom-3 {
+  animation-name: slide-in-from-bottom-3;
+}
+
+.slide-in-from-top-1 {
+  animation-name: slide-in-from-top-1;
+}
+
+.slide-in-from-top-4 {
+  animation-name: slide-in-from-top-4;
+}
+
+/* Animation Durations */
+.duration-200 { animation-duration: 200ms; }
+.duration-250 { animation-duration: 250ms; }
+.duration-300 { animation-duration: 300ms; }
+.duration-500 { animation-duration: 500ms; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-from-bottom-2 {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-in-from-bottom-3 {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-in-from-top-1 {
+  from { transform: translateY(-4px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-in-from-top-4 {
+  from { transform: translateY(-16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 3D Flashcard Helper Classes */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Scroll Customizations */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Base Body Styles */
+body {
+  background-color: var(--color-bg-main);
+  color: #ffffff;
+  font-family: var(--font-sans), sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Theme: Midnight Black (Default) */
+:root, [data-theme="midnight"] {
+  --color-bg-main: #0d0d0d;
+  --color-surface: #131313;
+  --color-surface-raised: #181818;
+  --color-card-bg: #141414;
+  --color-input-bg: #1a1a1a;
+  --color-brand-primary: #f09e5b;
+  --color-brand-primary-hover: #e08e4b;
+  --color-accent-gold: #f3c494;
+  --color-accent-gold-hover: #e0a96d;
+  --color-accent-gold-fg: #3e230d;
+  --color-accent-coral: #ef6868;
+  --color-border-subtle: #262626;
+  --color-border-faint: #1f1f1f;
+  --color-text-muted: #8a8a8a;
+  --color-error-text: #ef4444;
+  --color-surface-modal: #121212;
+  --color-brand-primary-dark: #e58e49;
+  --color-brand-primary-fg: #52331c;
+  --color-status-warning: #ffb03a;
+  --color-status-summary: #d6b2d1;
+  --color-ring-track: #161616;
+}
+
+/* Theme: Deep Obsidian */
+[data-theme="obsidian"] {
+  --color-bg-main: #08090a;
+  --color-surface: #0f1115;
+  --color-surface-raised: #171a21;
+  --color-card-bg: #0f1115;
+  --color-input-bg: #151821;
+  --color-brand-primary: #00f2fe;
+  --color-brand-primary-hover: #00d2de;
+  --color-accent-gold: #4facfe;
+  --color-accent-gold-hover: #3b93e6;
+  --color-accent-gold-fg: #001b3a;
+  --color-accent-coral: #ff5e62;
+  --color-border-subtle: #1f2430;
+  --color-border-faint: #181b24;
+  --color-text-muted: #7a8b9e;
+  --color-error-text: #ff4d4d;
+  --color-surface-modal: #13171e;
+  --color-brand-primary-dark: #00bcd4;
+  --color-brand-primary-fg: #00363a;
+  --color-status-warning: #ffa726;
+  --color-status-summary: #b39ddb;
+  --color-ring-track: #12141a;
+}
+
+/* Theme: Nord Ice */
+[data-theme="nord-ice"] {
+  --color-bg-main: #1e222a;
+  --color-surface: #242933;
+  --color-surface-raised: #2e3440;
+  --color-card-bg: #242933;
+  --color-input-bg: #2b313c;
+  --color-brand-primary: #88c0d0;
+  --color-brand-primary-hover: #81a1c1;
+  --color-accent-gold: #8fbcbb;
+  --color-accent-gold-hover: #7ea8a7;
+  --color-accent-gold-fg: #1e222a;
+  --color-accent-coral: #bf616a;
+  --color-border-subtle: #3b4252;
+  --color-border-faint: #343a48;
+  --color-text-muted: #d8dee9;
+  --color-error-text: #bf616a;
+  --color-surface-modal: #21252f;
+  --color-brand-primary-dark: #5e81ac;
+  --color-brand-primary-fg: #1e222a;
+  --color-status-warning: #ebcb8b;
+  --color-status-summary: #b48ead;
+  --color-ring-track: #21252f;
+}
+
+/* Theme: Forest Night */
+[data-theme="forest"] {
+  --color-bg-main: #0c1912;
+  --color-surface: #112218;
+  --color-surface-raised: #182d20;
+  --color-card-bg: #12241a;
+  --color-input-bg: #1a3225;
+  --color-brand-primary: #5fa879;
+  --color-brand-primary-hover: #4e9267;
+  --color-accent-gold: #a3c9a8;
+  --color-accent-gold-hover: #8bb892;
+  --color-accent-gold-fg: #0a1c12;
+  --color-accent-coral: #ef6868;
+  --color-border-subtle: #1f382a;
+  --color-border-faint: #162a1f;
+  --color-text-muted: #7ea18c;
+  --color-error-text: #ef4444;
+  --color-surface-modal: #102117;
+  --color-brand-primary-dark: #4e9267;
+  --color-brand-primary-fg: #0c2215;
+  --color-status-warning: #ffb03a;
+  --color-status-summary: #d6b2d1;
+  --color-ring-track: #102218;
+}
+
+/* Theme: Deep Ocean */
+[data-theme="oceanic"] {
+  --color-bg-main: #0b132b;
+  --color-surface: #1c2541;
+  --color-surface-raised: #222e50;
+  --color-card-bg: #1c2541;
+  --color-input-bg: #2a3861;
+  --color-brand-primary: #48cae4;
+  --color-brand-primary-hover: #00b4d8;
+  --color-accent-gold: #90e0ef;
+  --color-accent-gold-hover: #0096c7;
+  --color-accent-gold-fg: #0b132b;
+  --color-accent-coral: #ff7096;
+  --color-border-subtle: #3a506b;
+  --color-border-faint: #283a52;
+  --color-text-muted: #a2aebb;
+  --color-error-text: #ff5e62;
+  --color-surface-modal: #141d38;
+  --color-brand-primary-dark: #0077b6;
+  --color-brand-primary-fg: #0b132b;
+  --color-status-warning: #ffb703;
+  --color-status-summary: #c8b6ff;
+  --color-ring-track: #14213d;
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

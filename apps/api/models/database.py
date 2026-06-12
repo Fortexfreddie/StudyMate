@@ -8,9 +8,19 @@ Vector embeddings are stored in Qdrant (not here).
 
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -38,6 +48,14 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Study major / institution — editable via PATCH /auth/me. Nullable: not
+    # collected at signup, so existing accounts have no value until they set one.
+    major: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Pro tier flag — False = free (50k tokens/day), True = pro (500k tokens/day).
+    # Flip manually or wire to a payment system later.
+    is_pro: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -48,6 +66,10 @@ class User(Base):
     documents: Mapped[list["Document"]] = relationship(back_populates="owner")
     chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="user")
     quiz_sessions: Mapped[list["QuizSession"]] = relationship(back_populates="user")
+    activity: Mapped[list["UserActivity"]] = relationship(back_populates="user")
+    token_usage: Mapped[list["TokenUsage"]] = relationship(back_populates="user")
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
+    summaries: Mapped[list["SummaryHistory"]] = relationship(back_populates="user")
 
 
 class Document(Base):
@@ -61,7 +83,7 @@ class Document(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -82,16 +104,19 @@ class ChatMessage(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     doc_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
     )
     query: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     context_sufficient: Mapped[bool] = mapped_column(Boolean, default=True)
     sources: Mapped[list[dict[str, object]] | None] = mapped_column(
         JSONB, nullable=True
+    )
+    performance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="high"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -109,10 +134,10 @@ class QuizSession(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     doc_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
     )
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -135,7 +160,7 @@ class QuizAnswer(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     question_index: Mapped[int] = mapped_column(Integer, nullable=False)
     selected_index: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -146,6 +171,159 @@ class QuizAnswer(Base):
     )
 
     session: Mapped["QuizSession"] = relationship(back_populates="answers")
+
+
+class UserActivity(Base):
+    """One row per user per calendar day on which they performed any study action.
+
+    Used to compute the study streak. A row is written (idempotently) whenever the
+    user uploads a document, chats, generates a summary, or submits a quiz. The
+    unique (user_id, activity_date) constraint guarantees at most one row per day,
+    so repeated actions on the same day collapse to a single record.
+    """
+
+    __tablename__ = "user_activity"
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_date", name="uq_user_activity_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="activity")
+
+
+class TokenUsage(Base):
+    """Per-request token usage log for billing and rate limiting.
+
+    Each LLM call (chat, summary, quiz) writes a row with the input/output
+    token counts returned by Gemini's usage_metadata. The daily aggregate
+    is checked before each request to enforce free/pro tier limits.
+    """
+
+    __tablename__ = "token_usage"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    request_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # "chat" | "summary" | "quiz"
+    performance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="high"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    user: Mapped["User"] = relationship(back_populates="token_usage")
+
+
+class DailyTokenUsage(Base):
+    """Atomic per-user, per-day token counter used to enforce daily quotas.
+
+    Unlike ``token_usage`` (an append-only per-request *log*), this table holds a
+    single mutable running total per ``(user_id, usage_date)``. Quota enforcement
+    increments ``reserved_tokens`` atomically *before* an LLM call (via
+    ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING``) so concurrent requests can
+    never collectively overshoot the limit, and reconciles it to the actual token
+    count *after* the call. See ``services/token_service.py``.
+    """
+
+    __tablename__ = "daily_token_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="uq_daily_token_usage_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Running total of tokens reserved/consumed today. Reservations bump this up
+    # front; reconciliation adjusts it by (actual - estimate); failures release it.
+    reserved_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class RefreshToken(Base):
+    """Stores hashed active refresh tokens to enforce rotation & revoking."""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="refresh_tokens")
+
+
+class SummaryHistory(Base):
+    """Dedicated table for persisted summaries history."""
+
+    __tablename__ = "summary_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    format: Mapped[str] = mapped_column(String(50), nullable=False)
+    structured: Mapped[dict[str, object] | list[object] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    context_sufficient: Mapped[bool] = mapped_column(Boolean, default=True)
+    sources: Mapped[list[dict[str, object]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    performance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="high"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    user: Mapped["User"] = relationship(back_populates="summaries")
 
 
 # Async engine & session

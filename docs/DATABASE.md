@@ -90,15 +90,18 @@ class ChatMessage(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     doc_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
     )
     query: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     context_sufficient: Mapped[bool] = mapped_column(Boolean, default=True)
     sources: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    performance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="high"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -113,10 +116,10 @@ class QuizSession(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     doc_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
     )
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -137,7 +140,7 @@ class QuizAnswer(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("quiz_sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     question_index: Mapped[int] = mapped_column(Integer, nullable=False)
     selected_index: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -148,7 +151,97 @@ class QuizAnswer(Base):
     )
 
     session: Mapped["QuizSession"] = relationship(back_populates="answers")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="refresh_tokens")
+
+
+class SummaryHistory(Base):
+    __tablename__ = "summary_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    format: Mapped[str] = mapped_column(String(50), nullable=False)
+    structured: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
+    context_sufficient: Mapped[bool] = mapped_column(Boolean, default=True)
+    sources: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    performance_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="high"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    user: Mapped["User"] = relationship(back_populates="summaries")
+
+
+class UserActivity(Base):
+    # One row per user per active calendar day (for study streaks).
+    __tablename__ = "user_activity"
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_date", name="uq_user_activity_day"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TokenUsage(Base):
+    # Append-only per-request LLM token log (powers /usage by-type breakdown + stats).
+    __tablename__ = "token_usage"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    request_type: Mapped[str] = mapped_column(String(50), nullable=False)  # chat | summary | quiz
+    performance_mode: Mapped[str] = mapped_column(String(20), nullable=False, server_default="high")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class DailyTokenUsage(Base):
+    # Atomic per-user/per-day quota counter (authoritative balance for enforcement).
+    # Mutated via INSERT ... ON CONFLICT DO UPDATE ... RETURNING (see token_service.py).
+    __tablename__ = "daily_token_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="uq_daily_token_usage_day"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 ```
+
+> Note: `users` also has `major` (nullable) and **`is_pro`** (bool, default false —
+> selects the free vs. pro daily token limit).
 
 ---
 

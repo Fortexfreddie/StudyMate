@@ -1,28 +1,28 @@
-"""JWT token management and password hashing utilities.
-
-Uses PyJWT for token encoding/decoding and passlib for bcrypt password hashing.
-"""
-
+import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import jwt
-from passlib.context import CryptContext
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
 from core.config import settings
 
 # Password hashing
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+ph = PasswordHasher()
 
 
 def hash_password(password: str) -> str:
     """Hash a plaintext password for storage."""
-    return str(pwd_context.hash(password))
+    return ph.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against its hash."""
-    return bool(pwd_context.verify(plain_password, hashed_password))
+    try:
+        return cast(bool, ph.verify(hashed_password, plain_password))
+    except VerifyMismatchError:
+        return False
 
 
 # JWT tokens
@@ -37,13 +37,18 @@ def create_access_token(user_id: str) -> str:
     )
 
 
-def create_refresh_token(user_id: str) -> str:
-    """Create a longer-lived refresh token."""
+def create_refresh_token(user_id: str) -> tuple[str, str]:
+    """Create a longer-lived refresh token.
+
+    Returns (token_string, token_hash) where the token_hash is stored in the DB.
+    """
     expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {"sub": user_id, "exp": expire, "type": "refresh"}
-    return jwt.encode(
+    token_str = jwt.encode(
         payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
     )
+    token_hash = hashlib.sha256(token_str.encode()).hexdigest()
+    return token_str, token_hash
 
 
 def decode_token(token: str) -> dict[str, object]:
@@ -56,4 +61,4 @@ def decode_token(token: str) -> dict[str, object]:
         settings.JWT_SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
     )
-    return dict(payload)
+    return cast(dict[str, object], payload)

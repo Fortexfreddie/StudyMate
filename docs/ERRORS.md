@@ -73,13 +73,14 @@ class DocumentNotFoundError(StudyMateError):
 
 ---
 
-## Global Exception Handler
+## Global Exception Handlers
 
-Registered in `main.py` to catch all `StudyMateError` subclasses and convert them to proper HTTP responses:
+Registered in `main.py` to catch all `StudyMateError` subclasses and third-party exceptions (like slowapi's `RateLimitExceeded`) and convert them to proper HTTP responses:
 
 ```python
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from core.errors import StudyMateError
 
 app = FastAPI()
@@ -90,9 +91,34 @@ async def studymate_error_handler(request: Request, exc: StudyMateError) -> JSON
         status_code=exc.status_code,
         content={"detail": exc.message},
     )
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Catch-all: any unhandled exception (DB error, bug, etc.) is normalized to the
+    # standard {detail} shape with status 500. No stack trace is leaked to the client
+    # (logged server-side). Guarantees the "all errors are {detail}" contract.
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please try again."},
+    )
 ```
 
 This ensures all errors follow the API contract: `{ "detail": "Human-readable error message" }`.
+
+> **Generation failures (chat / summary / quiz):** all three raise
+> `ServiceUnavailableError` (503) on an unrecoverable LLM/parse failure — they no
+> longer return a placeholder "apology" answer with 201. The router releases the token
+> reservation and persists nothing, so a failed generation isn't charged or logged to
+> history/stats.
 
 ---
 
@@ -138,10 +164,15 @@ The PDF processor raises `ValueError` for validation failures. The router catche
 
 | Condition | Exception | HTTP Code |
 |---|---|---|
-| Empty chunks (no context) | Return result with `context_sufficient=False` — **not an error** | 200 |
-| Rate limit after fallback retry | `ServiceUnavailableError("Generation service unavailable. Try again.")` | 503 |
-| Network/5xx error | `ServiceUnavailableError("Generation service unavailable. Try again.")` | 503 |
-| Quiz JSON parse failure after retry | `GenerationError("Failed to generate a valid quiz. Try again.")` | 422 |
+| Empty chunks (no context) | Generates with `context_sufficient=False` — **not an error** | 200/201 |
+| Rate limit (429) | Fast fallback to secondary model; only raises if the fallback also fails | 503 |
+| Transient (503/empty/malformed) | Retry primary up to `MAX_RETRIES`, then fallback; raises if all fail | 503 |
+| Fatal (auth/permission/invalid-argument) | `ServiceUnavailableError(...)` — **fail fast**, no retry/fallback | 503 |
+| Chat/summary parse or generation failure | `ServiceUnavailableError(...)` — nothing persisted, reservation released | 503 |
+| Quiz invalid JSON after stricter reprompt | `ServiceUnavailableError("Failed to generate a valid quiz. ...")` | 503 |
+
+> `GenerationError` (422) is still defined in the hierarchy but is **not** currently
+> raised by the generator — generation failures surface as `503`.
 
 ### Auth Service (`services/auth_service.py`)
 

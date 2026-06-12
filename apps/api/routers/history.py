@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from core.dependencies import get_current_user
 from core.errors import StudyMateError
-from models.database import ChatMessage, QuizSession, User, get_db
+from models.database import ChatMessage, QuizSession, SummaryHistory, User, get_db
 from models.schemas import (
     ChatHistoryItem,
     ChatHistoryResponse,
@@ -18,7 +18,38 @@ from models.schemas import (
     QuizDetailResponse,
     QuizHistoryItem,
     QuizHistoryResponse,
+    SourceInfo,
+    SummaryHistoryItem,
+    SummaryHistoryResponse,
 )
+
+
+def _coerce_sources(raw: object) -> list[SourceInfo]:
+    """Map a stored JSONB sources blob back into SourceInfo models.
+
+    Persisted chat rows hold sources as a list of dicts; this defensively
+    rebuilds the typed shape (tolerating missing/odd values) so history answers
+    can render the same clickable source cards as a live response.
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[SourceInfo] = []
+    for s in raw:
+        if not isinstance(s, dict):
+            continue
+        p_val = s.get("page_number")
+        sc_val = s.get("similarity_score")
+        page = int(p_val) if isinstance(p_val, int | str) else 1
+        score = float(sc_val) if isinstance(sc_val, float | int | str) else 0.0
+        out.append(
+            SourceInfo(
+                filename=str(s.get("filename") or "Unknown Document"),
+                page_number=page,
+                similarity_score=score,
+                text_preview=str(s.get("text_preview") or ""),
+            )
+        )
+    return out
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +110,7 @@ async def get_chat_history(
             query=msg.query,
             answer=msg.answer,
             context_sufficient=msg.context_sufficient,
+            sources=_coerce_sources(msg.sources),
             created_at=msg.created_at,
         )
         for msg in messages
@@ -212,4 +244,72 @@ async def get_quiz_detail(
         score=session.score,
         answers=response_answers,
         created_at=session.created_at,
+    )
+
+
+@router.get(
+    "/summaries",
+    response_model=SummaryHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get paginated summaries history",
+)
+async def get_summaries_history(
+    limit: int = Query(default=10, ge=1, le=100),  # noqa: B008
+    offset: int = Query(default=0, ge=0),  # noqa: B008
+    doc_id: uuid.UUID | None = Query(default=None),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> SummaryHistoryResponse:
+    """Retrieve the logged list of past generated summaries."""
+    logger.info(
+        "User %s requested summaries history (limit: %d, offset: %d, doc_id: %s)",
+        current_user.id,
+        limit,
+        offset,
+        doc_id,
+    )
+
+    # 1. Base query for count
+    count_stmt = select(func.count(SummaryHistory.id)).where(
+        SummaryHistory.user_id == current_user.id
+    )
+    if doc_id is not None:
+        count_stmt = count_stmt.where(SummaryHistory.doc_id == doc_id)
+
+    count_result = await db.execute(count_stmt)
+    total_count = count_result.scalar_one()
+
+    # 2. Query for actual rows
+    stmt = (
+        select(SummaryHistory)
+        .where(SummaryHistory.user_id == current_user.id)
+        .order_by(desc(SummaryHistory.created_at))
+        .limit(limit)
+        .offset(offset)
+    )
+    if doc_id is not None:
+        stmt = stmt.where(SummaryHistory.doc_id == doc_id)
+
+    result = await db.execute(stmt)
+    summaries = result.scalars().all()
+
+    # 3. Map to schemas
+    response_items = [
+        SummaryHistoryItem(
+            id=item.id,
+            doc_id=item.doc_id,
+            topic=item.topic,
+            summary_text=item.summary_text,
+            format=item.format,
+            context_sufficient=item.context_sufficient,
+            created_at=item.created_at,
+        )
+        for item in summaries
+    ]
+
+    return SummaryHistoryResponse(
+        summaries=response_items,
+        total=total_count,
+        limit=limit,
+        offset=offset,
     )

@@ -1,15 +1,16 @@
 """FastAPI dependency injection — shared resources for route handlers."""
 
 import logging
+from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import InvalidTokenError
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
+from core.config import PERFORMANCE_MODES, settings
 from core.errors import AuthenticationError
 from core.security import decode_token
 from models.database import User, get_db
@@ -25,6 +26,13 @@ security = HTTPBearer()
 
 # Shared client singletons
 _qdrant_client: AsyncQdrantClient | None = None
+_embedder: Embedder | None = None
+
+# Valid performance mode keys
+_VALID_MODES = frozenset(PERFORMANCE_MODES.keys())
+
+# Cache for Generator instances
+_generator_cache: dict[str, Generator] = {}
 
 
 async def get_current_user(
@@ -44,13 +52,33 @@ async def get_current_user(
     except InvalidTokenError:
         raise AuthenticationError("Token has expired or is invalid.") from None
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    # A malformed `sub` (not a valid UUID) is a bad token, not a server error —
+    # validate before the DB query so it returns 401 rather than a 500 from asyncpg.
+    try:
+        user_uuid = UUID(str(user_id))
+    except (ValueError, TypeError):
+        raise AuthenticationError("Invalid token.") from None
+
+    result = await db.execute(select(User).where(User.id == user_uuid))
     user = result.scalar_one_or_none()
 
     if user is None:
         raise AuthenticationError("User not found.")
 
     return user
+
+
+def get_performance_mode(
+    x_performance_mode: str | None = Header(default="high", alias="X-Performance-Mode"),
+) -> str:
+    """Extract performance mode from the X-Performance-Mode header.
+
+    Falls back to 'high' if the header is missing or contains an invalid value.
+    Accepts a plain ``str`` (not a ``Literal``) so an unknown value falls back
+    gracefully here rather than being rejected with a 422 before this runs.
+    """
+    mode = (x_performance_mode or "high").lower().strip()
+    return mode if mode in _VALID_MODES else "high"
 
 
 def get_qdrant_client() -> AsyncQdrantClient:
@@ -75,8 +103,15 @@ def get_vector_store(
 
 
 def get_embedder() -> Embedder:
-    """Dependency injector for Embedder."""
-    return Embedder(api_key=settings.GOOGLE_API_KEY)
+    """Dependency injector for Embedder — cached singleton.
+
+    The Embedder is stateless (just wraps an API-keyed client), so constructing a
+    fresh ``GoogleGenerativeAIEmbeddings`` on every request was pure overhead.
+    """
+    global _embedder
+    if _embedder is None:
+        _embedder = Embedder(api_key=settings.GOOGLE_API_KEY)
+    return _embedder
 
 
 def get_pdf_processor() -> PDFProcessor:
@@ -92,6 +127,12 @@ def get_retriever(
     return Retriever(vector_store, embedder)
 
 
-def get_generator() -> Generator:
-    """Dependency injector for Generator."""
-    return Generator(api_key=settings.GOOGLE_API_KEY)
+def get_generator(
+    performance_mode: str = Depends(get_performance_mode),  # noqa: B008
+) -> Generator:
+    """Dependency injector for Generator — uses request's performance mode and caches instances."""
+    if performance_mode not in _generator_cache:
+        _generator_cache[performance_mode] = Generator(
+            api_key=settings.GOOGLE_API_KEY, performance_mode=performance_mode
+        )
+    return _generator_cache[performance_mode]

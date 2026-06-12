@@ -13,9 +13,14 @@ A full-stack web application that lets students upload PDF lecture notes and int
 |---|---|
 | Phase 1 — Scaffolding & Infrastructure | ✅ Complete |
 | Phase 2 — Backend Core (Auth, RAG, Endpoints) | ✅ Complete |
-| Phase 3 — Frontend (Next.js) | 🔲 Not started |
-| Phase 4 — Integration & Polish | 🔲 Not started |
+| Phase 3 — Frontend (Next.js) | ✅ Complete |
+| Phase 4 — Integration (frontend wired to live API, mocks removed) | ✅ Complete |
 | Phase 5 — Deployment | 🔲 Not started |
+
+> **The frontend is now fully wired to the backend.** All mock data and the
+> `NEXT_PUBLIC_USE_MOCKS` toggle have been removed — every screen reads and writes
+> live data through the FastAPI backend. See [apps/web/README.md](apps/web/README.md)
+> and [apps/api/README.md](apps/api/README.md) for component-level docs.
 
 ---
 
@@ -24,14 +29,13 @@ A full-stack web application that lets students upload PDF lecture notes and int
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16 + React + TypeScript + Tailwind v4 |
-| Backend | Python 3.11 + FastAPI |
+| Backend | Python 3.11 + FastAPI + slowapi (rate limiter) |
 | Database | PostgreSQL (Neon) + SQLAlchemy 2.0 + Alembic |
-| Auth | JWT (PyJWT) + bcrypt |
-| LLM | Google Gemini API (`gemini-3-flash-preview`) |
-| Embeddings | `gemini-embedding-001` |
+| Auth | JWT (PyJWT) + Argon2id |
+| LLM | Google Gemini API (`gemini-3.5-flash` primary with `gemini-3.1-flash-lite` fallback) |
+| Embeddings | `gemini-embedding-2` |
 | Vector DB | Qdrant Cloud |
-| RAG | LangChain |
-
+| RAG | LangChain + Dynamic performance-based retrieval |
 ---
 
 ## Project Structure
@@ -60,18 +64,26 @@ StudyMate/
 | GET | `/health` | ❌ | Health check |
 | POST | `/auth/signup` | ❌ | Create a new account |
 | POST | `/auth/login` | ❌ | Authenticate and receive tokens |
-| POST | `/auth/refresh` | ❌ | Get a new access token |
+| POST | `/auth/refresh` | ❌ | Rotate refresh token and get a new access + refresh token pair |
 | GET | `/auth/me` | ✅ | Get current user profile |
+| PATCH | `/auth/me` | ✅ | Update editable profile fields (full_name, major) |
 | POST | `/documents/upload` | ✅ | Upload + process a PDF |
 | GET | `/documents` | ✅ | List all uploaded documents |
+| GET | `/documents/{doc_id}` | ✅ | Get a single document's metadata |
 | DELETE | `/documents/{doc_id}` | ✅ | Remove a document and its chunks |
 | POST | `/chat` | ✅ | Send a query, get a RAG-grounded answer |
-| POST | `/summary/generate` | ✅ | Generate a summary of a topic |
-| POST | `/quiz/generate` | ✅ | Generate N MCQs from a topic/document |
+| POST | `/summary/generate` | ✅ | Generate a summary of a topic (6 formats) |
+| POST | `/quiz/generate` | ✅ | Generate N MCQs (1–30) from a topic/document |
 | POST | `/quiz/{session_id}/submit` | ✅ | Submit answers and calculate score |
 | GET | `/history/chat` | ✅ | Get paginated chat history |
 | GET | `/history/quizzes` | ✅ | Get paginated quiz history |
 | GET | `/history/quizzes/{session_id}` | ✅ | Get detailed quiz session results |
+| GET | `/history/summaries` | ✅ | Get paginated summary history |
+| GET | `/stats` | ✅ | Aggregate study metrics (counts, streak, avg score) |
+| GET | `/usage` | ✅ | Get current daily token usage and account limits |
+
+> Full request/response examples for every endpoint live in
+> [apps/api/README.md](apps/api/README.md) and [docs/API.md](docs/API.md).
 
 ---
 
@@ -79,7 +91,8 @@ StudyMate/
 
 ### Prerequisites
 
-- Python 3.11+
+- Node.js 20+ (frontend)
+- Python 3.11+ (backend)
 - PostgreSQL (local pgAdmin or Neon free tier)
 - Qdrant Cloud account (free tier)
 - Google AI Studio API key
@@ -117,6 +130,39 @@ uvicorn main:app --reload --port 8000
 curl http://localhost:8000/health
 # → {"status": "ok", "version": "1.0.0"}
 ```
+
+### Frontend Setup
+
+The frontend is a Next.js 16 app in `apps/web`. **It talks to the live FastAPI
+backend** — start the backend first (above), then:
+
+```bash
+# Navigate to frontend
+cd apps/web
+
+# Install dependencies
+npm install
+
+# Copy environment variables
+copy .env.example .env.local     # Windows
+# cp .env.example .env.local     # macOS/Linux
+
+# Start the development server
+npm run dev
+```
+
+Open the app at the port set in `.env.local` (default **http://localhost:3000**).
+
+#### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Port the Next.js dev/start server listens on |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Base URL of the FastAPI backend the UI calls |
+
+> The mock layer and `NEXT_PUBLIC_USE_MOCKS` flag have been **removed**. The UI now
+> requires a running backend. See [apps/web/README.md](apps/web/README.md) for the
+> full data-flow and page-by-page wiring.
 
 ---
 
@@ -205,7 +251,25 @@ Without `doc_id` (searches all your documents):
 {
   "topic": "Introduction and Overview",
   "doc_id": "paste-your-doc-id-here",
-  "top_k": 5
+  "top_k": 5,
+  "format": "bullets"
+}
+```
+
+`format` is one of: `bullets`, `key_concepts`, `study_guide`, `flashcards`,
+`cheat_sheet`, `mind_map` (default `bullets`). The response includes a plain-text
+`summary` (always) **and** a `structured` object shaped to the requested format —
+for example, `format: "flashcards"` returns:
+
+```json
+{
+  "summary": "- What is LIFO? — Last In, First Out…",
+  "format": "flashcards",
+  "structured": [
+    { "front": "What is LIFO?", "back": "Last In, First Out — the Stack principle." }
+  ],
+  "context_sufficient": true,
+  "sources": [ { "filename": "notes.pdf", "page_number": 4, "similarity_score": 0.9, "text_preview": "…" } ]
 }
 ```
 
@@ -220,6 +284,10 @@ Without `doc_id` (searches all your documents):
   "top_k": 5
 }
 ```
+
+`num_questions` accepts **1–30** (configurable via `MAX_QUIZ_QUESTIONS`). Larger
+quizzes take longer to generate and may hit the LLM's token/JSON limits, in which
+case the backend retries with a stricter prompt and the fallback model.
 
 Copy the `session_id` from the response to submit answers.
 
@@ -260,12 +328,98 @@ Replace `{session_id}` with a quiz session ID from Step 12.
 **`DELETE /documents/{doc_id}`**  
 Replace `{doc_id}` with the document UUID. This removes the document from PostgreSQL and purges all its vectors from Qdrant.
 
+### Step 15 — View Aggregate Stats
+
+**`GET /stats`**  
+No body needed. Returns real counts plus your study streak:
+```json
+{
+  "documents_uploaded": 3,
+  "quizzes_taken": 5,
+  "summaries_generated": 2,
+  "chats_count": 11,
+  "current_streak": 4,
+  "average_quiz_score": 82.0,
+  "tokens_used_today": 12500,
+  "token_limit": 50000,
+  "is_pro": false
+}
+```
+
+### Step 16 — Update Your Profile
+
+**`PATCH /auth/me`**  (email is immutable; only the supplied fields change)
+```json
+{ "full_name": "Updated Name", "major": "Computer Science & Engineering" }
+```
+
+---
+
+## End-to-End Flow
+
+How a single study session moves through the system:
+
+```
+┌──────────┐  signup/login   ┌────────────────────────────────────────────┐
+│ Browser  │ ───────────────▶│ /auth/*  → JWT access + refresh tokens       │
+│ (Next.js)│◀─────────────── │  (stored in localStorage, sent as Bearer)    │
+└────┬─────┘                 └────────────────────────────────────────────┘
+     │ upload PDF (multipart)
+     ┌────────────────────────────────────────────────────────────────────────┐
+│ /documents/upload                                                       │
+│   pypdf extract → LangChain chunk (500/50) → gemini-embedding-2         │
+│   → Qdrant upsert (vectors) + PostgreSQL row (metadata)                 │
+│   → records a study-activity day (for streaks)                          │
+└────┬───────────────────────────────────────────────────────────────────┘
+     │ ask / summarize / quiz   (each carries doc_id + Bearer token)
+     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ RETRIEVE  embed query → Qdrant cosine search (top-k, ≥0.35) → chunks    │
+│ GENERATE  Gemini, grounded strictly in chunks (primary → fallback)      │
+│           • /chat     → answer + sources + context_sufficient           │
+│           • /summary  → plain text + structured(format) + sources       │
+│           • /quiz     → MCQs (server-graded on submit)                  │
+│ PERSIST   chat_history / quiz_sessions / quiz_answers + activity        │
+└────┬───────────────────────────────────────────────────────────────────┘
+     │ history & stats
+     ▼
+   /history/* (timeline)   /stats (dashboard rings, streak, averages)
+```
+
+Key guarantees:
+- **Grounded only:** the LLM may use *only* retrieved chunks; if the document lacks
+  the answer, it returns `context_sufficient: false` as a quality signal notice and still attempts to provide a helpful grounded answer.
+- **Server-side grading:** quiz scores are computed by `/quiz/{id}/submit`, never in
+  the browser.
+- **Caching:** identical chat/summary requests (same `doc_id` + `top_k`) are served
+  from history instead of re-calling the LLM.
+
 ---
 
 ## Performance & Cost Optimization
 
-To prevent burning LLM tokens and ensure instant load times, StudyMate implements **Query-Level Database Caching** for both AI Chat and Topic Summaries:
+To prevent burning excessive LLM tokens, balance generation quality with execution speed, and ensure high-availability under load, StudyMate implements several performance engineering mechanisms:
 
+### 1. Dynamic Performance-Tier System
+Users can toggle between five performance modes inside their profile (persisted in local storage and attached via the `X-Performance-Mode` header):
+*   **Low Level (Flash Lite):** Uses `gemini-3.1-flash-lite` with thinking turned off. Dynamic RAG settings: `default_top_k=5`, `max_top_k=10`. Optimized for rapid, lightweight operations.
+*   **Medium Level (Flash):** Uses `gemini-3.5-flash` with lightweight thinking, falling back to `gemini-3.1-flash-lite`. Dynamic RAG settings: `default_top_k=8`, `max_top_k=15`.
+*   **High Level (Default):** Uses `gemini-3.5-flash` with medium thinking, falling back to `gemini-3.1-flash-lite`. Dynamic RAG settings: `default_top_k=10`, `max_top_k=20`. Highly recommended for optimal academic reasoning.
+*   **Very High Level (Deep Thinking):** Uses `gemini-3.5-flash` with deep reasoning settings, falling back to `gemini-3.1-flash-lite`. Dynamic RAG settings: `default_top_k=15`, `max_top_k=25`.
+*   **Max Level (Max Thinking):** Uses `gemini-3.5-flash` with maximum reasoning/depth (no downgrade fallback). Dynamic RAG settings: `default_top_k=20`, `max_top_k=30` for extensive data extraction.
+
+### 2. Interactive Context Depth (K) Control
+*   **Real-time Override:** In Chat, Summary, and Quiz screens, the user can manually override the dynamic default `top_k` value using an interactive slider.
+*   **Dynamic Sliders:** The slider's range dynamically adjusts to clamp between a minimum of `5` chunks and the **performance tier's absolute maximum (`max_top_k`)**, ensuring that users are visually guided within the bounds of their active performance capabilities.
+
+### 3. Tiered Daily Token Limits
+To prevent database strain and manage LLM API pricing:
+*   **Free Users:** Capped at **50,000** total daily tokens.
+*   **Pro Users:** Capped at **500,000** total daily tokens.
+*   **Budget Validation:** Verification happens synchronously on all generative requests (`/chat`, `/summary`, `/quiz`). Exceeding the quota issues a premium upgrade prompt modal or toast notice.
+
+### 4. Query-Level Database Caching
+For repetitive questions and summaries:
 - **Unified History Caching:** If a student submits the exact same query or summary request within the same scope (`doc_id`), the backend skips the semantic search and LLM generation phases, serving the response directly from the database history.
 - **Strict Context Checks:** To guarantee complete accuracy, the cache is context-aware. If the `top_k` chunk parameter changes between requests, the backend automatically bypasses the cache to retrieve a fresh, more complete context list.
 - **Ultra-Low Latency:** Reduces duplicate generation time from **3-5 seconds** down to a microscopic **10-20 milliseconds**!

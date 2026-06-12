@@ -34,15 +34,22 @@ class Settings(BaseSettings):
     # --- Google AI ---
     GOOGLE_API_KEY: str  # required — no default
 
-    # --- Gemini Models ---
-    GEMINI_PRIMARY_MODEL: str = "gemini-3-flash-preview"
+    # --- Gemini Models (high tier = primary/fallback; medium/low tiers below) ---
+    GEMINI_PRIMARY_MODEL: str = "gemini-3.5-flash"
     GEMINI_FALLBACK_MODEL: str = "gemini-3.1-flash-lite"
+    GEMINI_MEDIUM_MODEL: str = "gemini-3.5-flash"
+    GEMINI_LOW_MODEL: str = "gemini-3.1-flash-lite"
     GENERATION_TEMPERATURE: float = 0.3
-    MAX_RETRIES: int = 2
+    MAX_RETRIES: int = 1
     RETRY_DELAY_SECONDS: int = 2
+    QUIZ_REPROMPT_SINGLE_ATTEMPT: bool = True
+
+    # --- Token quotas (fixed UTC-day window, per user) ---
+    FREE_DAILY_TOKEN_LIMIT: int = 50_000
+    PRO_DAILY_TOKEN_LIMIT: int = 500_000
 
     # --- Embedding ---
-    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
+    EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     EMBEDDING_BATCH_SIZE: int = 50
 
     # --- Qdrant ---
@@ -60,11 +67,11 @@ class Settings(BaseSettings):
 
     # --- Retrieval ---
     DEFAULT_TOP_K: int = 5
-    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.60
+    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.35
 
     # --- Quiz ---
     DEFAULT_QUIZ_QUESTIONS: int = 5
-    MAX_QUIZ_QUESTIONS: int = 10
+    MAX_QUIZ_QUESTIONS: int = 30  # enforced by a field_validator on QuizGenerateRequest
 
     model_config = {
         "env_file": ".env",
@@ -102,12 +109,17 @@ settings = Settings()
 | `APP_VERSION` | `"1.0.0"` | Version string for health check |
 | `DEBUG` | `false` | Enable debug logging |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins (comma-separated in .env) |
-| `GEMINI_PRIMARY_MODEL` | `"gemini-3-flash-preview"` | Primary LLM model |
-| `GEMINI_FALLBACK_MODEL` | `"gemini-3.1-flash-lite"` | Fallback LLM for rate-limit retries |
+| `GEMINI_PRIMARY_MODEL` | `"gemini-3.5-flash"` | Primary LLM (high/very_high/max tiers) |
+| `GEMINI_FALLBACK_MODEL` | `"gemini-3.1-flash-lite"` | Fallback LLM on rate-limit / failover |
+| `GEMINI_MEDIUM_MODEL` | `"gemini-3.5-flash"` | Primary LLM for the `medium` tier |
+| `GEMINI_LOW_MODEL` | `"gemini-3.1-flash-lite"` | Primary LLM for the `low` tier |
 | `GENERATION_TEMPERATURE` | `0.3` | LLM generation temperature |
-| `MAX_RETRIES` | `2` | Max retry attempts before raising error |
+| `MAX_RETRIES` | `1` | Primary-model transient-error retries before fallback |
 | `RETRY_DELAY_SECONDS` | `2` | Seconds to wait between retries |
-| `EMBEDDING_MODEL` | `"models/gemini-embedding-001"` | Embedding model identifier |
+| `QUIZ_REPROMPT_SINGLE_ATTEMPT` | `true` | Quiz reformat reprompt = single LLM call (caps quiz calls at 4) |
+| `FREE_DAILY_TOKEN_LIMIT` | `50000` | Free-tier daily token quota (fixed UTC-day window) |
+| `PRO_DAILY_TOKEN_LIMIT` | `500000` | Pro-tier daily token quota |
+| `EMBEDDING_MODEL` | `"models/gemini-embedding-2"` | Embedding model identifier |
 | `EMBEDDING_BATCH_SIZE` | `50` | Chunks per embedding API call |
 | `COLLECTION_NAME` | `"studymate_chunks"` | Qdrant collection name |
 | `VECTOR_SIZE` | `3072` | Embedding vector dimensions |
@@ -117,9 +129,9 @@ settings = Settings()
 | `MIN_CHUNK_LENGTH` | `50` | Minimum characters to keep a chunk |
 | `MAX_UPLOAD_SIZE_MB` | `20` | Maximum PDF upload size |
 | `DEFAULT_TOP_K` | `5` | Default chunks to retrieve |
-| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.60` | Minimum similarity score |
+| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.35` | Minimum similarity score |
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | Default MCQs per quiz request |
-| `MAX_QUIZ_QUESTIONS` | `10` | Maximum MCQs per quiz request |
+| `MAX_QUIZ_QUESTIONS` | `30` | Maximum MCQs per quiz request (authoritative — enforced via `field_validator`) |
 
 ---
 
@@ -135,10 +147,11 @@ QDRANT_API_KEY=your-qdrant-api-key
 
 # === OPTIONAL (uncomment to override defaults) ===
 # DEBUG=true
-# CORS_ORIGINS=["http://localhost:3000","https://your-app.vercel.app"]
+# CORS_ORIGINS is a COMMA-SEPARATED string (not a JSON array):
+# CORS_ORIGINS=http://localhost:3000,https://your-app.vercel.app
 # ACCESS_TOKEN_EXPIRE_MINUTES=30
 # REFRESH_TOKEN_EXPIRE_DAYS=7
-# GEMINI_PRIMARY_MODEL=gemini-3-flash-preview
+# GEMINI_PRIMARY_MODEL=gemini-3.5-flash
 # GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite
 # GENERATION_TEMPERATURE=0.3
 # COLLECTION_NAME=studymate_chunks

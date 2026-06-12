@@ -24,25 +24,23 @@ This is a RAG (Retrieval-Augmented Generation) architecture — the LLM never ha
 ---
 
 ## 2. Tech Stack
-
 | Layer | Technology | Version | Why |
 |---|---|---|---|
 | Frontend | Next.js + React + TypeScript | 16.x | SSR, Turbopack, React Compiler, Vercel deploy |
 | Styling | Tailwind CSS | 4.x | Utility-first, CSS-native config |
 | Backend | Python + FastAPI | >=0.136.0 | Best AI/ML ecosystem, async support |
-| Relational DB | PostgreSQL (Neon free tier) | — | User accounts, chat history, quiz history |
-| Auth | JWT (PyJWT, passlib) | — | Stateless token-based authentication |
+| Relational DB | PostgreSQL (Neon free tier) | — | User accounts, chat history, quiz history, summary history |
+| Auth | JWT, Argon2id, slowapi | — | Stateless token-based auth, Argon2id hashing, rate limiting |
 | ORM & Migrations| SQLAlchemy + Alembic | >=2.0.0 | Async ORM, schema version control |
 | RAG Orchestration | LangChain | >=1.3.0 | Pre-built RAG chains, loaders, splitters |
-| LLM (primary) | Google Gemini API (`gemini-3-flash-preview`) | — | Free tier, large context |
-| LLM (fallback) | Google Gemini API (`gemini-3.1-flash-lite`) | — | Free tier, lighter/faster |
-| Embeddings | Google `gemini-embedding-001` | — | Stable, 100+ languages, same provider as LLM |
+| LLM (primary) | Google Gemini API (`gemini-3.5-flash`) | — | Large context, strong instruction-following |
+| LLM (fallback) | Google Gemini API (`gemini-3.1-flash-lite`) | — | Lighter/faster failover |
+| Embeddings | Google `gemini-embedding-2` | — | Stable, 100+ languages, same provider as LLM |
 | Google SDK | `langchain-google-genai` | >=4.2.0 | Wraps `google-genai` SDK, LangChain native |
 | Vector DB | Qdrant (Cloud free tier) | client >=1.18.0 | No monthly R/W limits, payload filtering, open source |
 | PDF Parsing | pypdf | >=6.12.0 | Lightweight, no external dependencies |
 | Config | pydantic-settings | >=2.14.0 | Typed env var management |
 | Deployment | Vercel (frontend) + Railway or Render (backend) | — | Free tiers, HTTPS, auto-deploy |
-
 ---
 
 ## 3. System Architecture (5 Layers)
@@ -78,7 +76,7 @@ This is a RAG (Retrieval-Augmented Generation) architecture — the LLM never ha
              │
              ▼
 ┌─────────────────────────────┐
-│  EMBEDDING & STORAGE LAYER  │  gemini-embedding-001 + Qdrant
+│  EMBEDDING & STORAGE LAYER  │  gemini-embedding-2 + Qdrant
 │  • Embed each chunk         │
 │  • Store vectors + metadata │
 └────────────┬────────────────┘
@@ -205,7 +203,7 @@ StudyMate/
 5. Wire and test upload ingestion (PDF -> text -> chunks -> embeddings -> Qdrant + PG metadata)
 
 #### Phase 2C — Semantic Retrieval & RAG Generation
-1. Implement `Retriever` service with cosine similarity pre-filtering (0.60 threshold)
+1. Implement `Retriever` service with cosine similarity pre-filtering (0.35 threshold)
 2. Implement `Generator` service with prompt templates for chat, summary, and quiz modes
 3. Support two-model fallback retry (primary model to fallback on 429)
 4. Implement defensive JSON output parsing for multiple-choice quiz questions
@@ -254,13 +252,12 @@ StudyMate/
 ---
 
 ## 6. API Contract (Summary)
-
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Health check |
 | POST | `/auth/signup` | Create a new account |
 | POST | `/auth/login` | Authenticate and receive tokens |
-| POST | `/auth/refresh` | Get a new access token |
+| POST | `/auth/refresh` | Rotate the refresh token and get new access + refresh tokens |
 | GET | `/auth/me` | Get current user profile |
 | POST | `/documents/upload` | Upload + process a PDF |
 | GET | `/documents` | List all uploaded documents |
@@ -272,7 +269,7 @@ StudyMate/
 | GET | `/history/chat` | Get paginated chat history |
 | GET | `/history/quizzes` | Get paginated quiz history |
 | GET | `/history/quizzes/{session_id}` | Get detailed quiz session results |
-
+| GET | `/history/summaries` | Get paginated summary history |
 ---
 
 ## 7. Key Configuration Values
@@ -282,10 +279,10 @@ StudyMate/
 | Chunk size | 500 tokens | Evaluated optimal for retrieval quality |
 | Chunk overlap | 50 tokens | Prevents boundary sentence loss |
 | Top-k retrieval | 5 chunks | Balances context richness vs. token budget |
-| Similarity threshold | 0.60 | Filters out low-quality matches |
-| LLM (primary) | `gemini-3-flash-preview` | Free tier, Preview, strong instruction-following |
-| LLM (fallback) | `gemini-3.1-flash-lite` | Free tier, GA, lighter |
-| Embedding model | `gemini-embedding-001` | Same provider = consistent vector space |
+| Similarity threshold | 0.35 | Filters out low-quality matches |
+| LLM (primary) | `gemini-3.5-flash` | Strong instruction-following, large context |
+| LLM (fallback) | `gemini-3.1-flash-lite` | Lighter/faster failover |
+| Embedding model | `gemini-embedding-2` | Same provider = consistent vector space |
 | Generation temperature | 0.3 | Low = more factual, less creative |
 | Max quiz questions | 10 | Upper bound per request |
 | Default quiz questions | 5 | Default per request |

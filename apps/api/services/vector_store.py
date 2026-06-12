@@ -7,6 +7,7 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -103,6 +104,7 @@ class VectorStore:
         query_vector: list[float],
         top_k: int = 5,
         doc_id: str | None = None,
+        doc_ids: list[str] | None = None,
         score_threshold: float = 0.60,
     ) -> list[dict]:  # type: ignore[type-arg]
         """Retrieve most similar points from Qdrant, filtered by threshold."""
@@ -113,6 +115,15 @@ class VectorStore:
                     FieldCondition(
                         key="doc_id",
                         match=MatchValue(value=doc_id),
+                    )
+                ]
+            )
+        elif doc_ids:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="doc_id",
+                        match=MatchAny(any=doc_ids),
                     )
                 ]
             )
@@ -143,6 +154,54 @@ class VectorStore:
             return matched_chunks
         except Exception as e:
             logger.exception("Failed to query vectors from Qdrant.")
+            raise ServiceUnavailableError(
+                "Vector store is unavailable. Try again."
+            ) from e
+
+    async def get_chunks_by_doc_id(self, doc_id: str, limit: int = 30) -> list[dict]:
+        """Retrieve chunks belonging to a specific document ordered by page number (not by vector similarity)."""
+        try:
+            response, _ = await self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="doc_id",
+                            match=MatchValue(value=doc_id),
+                        )
+                    ]
+                ),
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+
+            matched_chunks: list[dict] = []
+            for point in response:
+                payload = point.payload or {}
+                matched_chunks.append(
+                    {
+                        "chunk_id": payload.get("chunk_id"),
+                        "doc_id": payload.get("doc_id"),
+                        "filename": payload.get("filename"),
+                        "page_number": payload.get("page_number"),
+                        "text": payload.get("text"),
+                        "score": 1.0,
+                    }
+                )
+
+            # Sort by page number logically
+            def get_page(c: dict) -> int:
+                p = c.get("page_number")
+                try:
+                    return int(p) if p is not None else 0
+                except (ValueError, TypeError):
+                    return 0
+
+            matched_chunks.sort(key=get_page)
+            return matched_chunks
+        except Exception as e:
+            logger.exception("Failed to scroll points from Qdrant.")
             raise ServiceUnavailableError(
                 "Vector store is unavailable. Try again."
             ) from e

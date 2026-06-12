@@ -1,15 +1,19 @@
+"""Quiz API Router — implements quiz generation and submission endpoints."""
+
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import get_current_user, get_generator, get_retriever
 from core.errors import StudyMateError
-from models.database import QuizAnswer, QuizSession, User, get_db
+from core.rate_limit import LLM_LIMIT, limiter
+from models.database import Document, QuizAnswer, QuizSession, User, get_db
 from models.schemas import (
     AnswerResult,
+    GenerationMeta,
     QuizGenerateRequest,
     QuizGenerateResponse,
     QuizQuestion,
@@ -17,8 +21,16 @@ from models.schemas import (
     QuizSubmitResponse,
     SourceInfo,
 )
+from services.activity_service import record_activity
 from services.generator import Generator
 from services.retriever import Retriever
+from services.token_service import (
+    estimate_request_tokens,
+    reconcile_tokens,
+    record_token_usage,
+    release_tokens,
+    reserve_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +43,10 @@ router = APIRouter(tags=["Quiz"])
     status_code=status.HTTP_201_CREATED,
     summary="Generate a multiple-choice academic quiz",
 )
+@limiter.limit(LLM_LIMIT)
 async def generate_quiz(
-    request: QuizGenerateRequest,
+    request: Request,
+    payload: QuizGenerateRequest,
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
     retriever: Retriever = Depends(get_retriever),  # noqa: B008
@@ -44,42 +58,100 @@ async def generate_quiz(
     A quiz session is created in the database to track submission and grading.
     """
     logger.info(
-        "User %s initiated quiz generation on topic: '%s' (doc_id: %s, count: %d)",
+        "User %s initiated quiz generation on topic: '%s' (doc_id: %s, count: %d, mode: %s)",
         current_user.id,
-        request.topic,
-        request.doc_id,
-        request.num_questions,
+        payload.topic,
+        payload.doc_id,
+        payload.num_questions,
+        generator.performance_mode,
     )
 
-    # 1. Retrieve highly relevant grounding context chunks
+    # 1. Compute effective top_k — user's explicit value wins, otherwise use mode default
+    effective_top_k = (
+        payload.top_k if payload.top_k is not None else generator.default_top_k
+    )
+
+    # 1.5. Verify document ownership / retrieve allowed doc IDs for security
+    user_doc_ids = None
+    if payload.doc_id is not None:
+        stmt_doc = select(Document).where(
+            Document.id == payload.doc_id, Document.user_id == current_user.id
+        )
+        doc_res = await db.execute(stmt_doc)
+        if not doc_res.scalar_one_or_none():
+            raise StudyMateError(
+                "Document not found or access denied.", status_code=404
+            )
+    else:
+        # Global query: fetch all doc IDs owned by user to restrict search
+        stmt_docs = select(Document.id).where(Document.user_id == current_user.id)
+        docs_res = await db.execute(stmt_docs)
+        user_doc_ids = list(docs_res.scalars().all())
+        if not user_doc_ids:
+            raise StudyMateError(
+                "You haven't uploaded any documents yet. Please upload study materials first.",
+                status_code=400,
+            )
+
+    # 2. Retrieve highly relevant grounding context chunks
     matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=request.topic,
-        doc_id=request.doc_id,
-        top_k=request.top_k,
+        query=payload.topic,
+        doc_id=payload.doc_id,
+        doc_ids=user_doc_ids,
+        top_k=effective_top_k,
     )
 
-    # 2. Command Gemini to generate structured multiple-choice questions
-    generated_questions = await generator.generate_quiz(
-        topic=request.topic,
-        context=matched_chunks,
-        num_questions=request.num_questions,
+    # 3. Reserve the estimated token cost atomically BEFORE the LLM call. Quiz can
+    #    issue multiple LLM attempts; the single reservation covers them and is
+    #    reconciled against the *accumulated* usage afterwards.
+    context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)
+    estimate = estimate_request_tokens(context_text, payload.topic, "quiz")
+    allowed, _used, limit = await reserve_tokens(
+        current_user.id, current_user.is_pro, estimate
+    )
+    if not allowed:
+        raise StudyMateError(
+            f"Daily token limit reached ({limit:,} tokens). Upgrade to Pro for more.",
+            status_code=403,
+        )
+
+    # 4. Command Gemini to generate structured multiple-choice questions. On
+    #    failure, refund the reservation and let the 503 propagate.
+    try:
+        generated_questions, usage = await generator.generate_quiz(
+            topic=payload.topic,
+            context=matched_chunks,
+            num_questions=payload.num_questions,
+        )
+    except Exception:
+        await release_tokens(current_user.id, estimate)
+        raise
+
+    # 5. Reconcile against actual accumulated usage + log the per-request row.
+    await reconcile_tokens(
+        current_user.id, estimate, int(usage.get("total_tokens", 0) or 0)
+    )
+    await record_token_usage(
+        db, current_user.id, usage, "quiz", generator.performance_mode
     )
 
-    # 3. Store the full session in the database
-    # Persist the exact generated questions (including correct_index and explanation) inside JSONB
+    # 6. Store the full session in the database
     db_session = QuizSession(
         user_id=current_user.id,
-        doc_id=request.doc_id,
-        topic=request.topic,
+        doc_id=payload.doc_id,
+        topic=payload.topic,
         total_questions=len(generated_questions),
         questions=generated_questions,
         score=0,
     )
     db.add(db_session)
+    # Generating a quiz is a study action — record it for the streak, consistent
+    # with chat and summary (best-effort; never breaks the request).
+    await record_activity(db, current_user.id)
     await db.commit()
     await db.refresh(db_session)
 
-    # 4. Map sources to API schema
+    # 6. Map sources to API schema
     sources: list[SourceInfo] = []
     for chunk in matched_chunks:
         filename = chunk.get("filename") or "Unknown Document"
@@ -96,7 +168,7 @@ async def generate_quiz(
             )
         )
 
-    # 5. Format the Pydantic quiz questions list for the response
+    # 7. Format the Pydantic quiz questions list for the response
     response_questions = [
         QuizQuestion(
             question=item["question"],
@@ -118,6 +190,15 @@ async def generate_quiz(
         topic=db_session.topic,
         questions=response_questions,
         sources=sources,
+        meta=GenerationMeta(
+            model_used=str(usage.get("model_used", "")),
+            performance_mode=generator.performance_mode,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
+            total_tokens=int(usage.get("total_tokens", 0)),
+            cached=False,
+            retrieval_chunks_used=len(matched_chunks),
+        ),
     )
 
 
@@ -135,8 +216,10 @@ async def submit_quiz(
 ) -> QuizSubmitResponse:
     """Submit answers for an active quiz session to be graded.
 
-    Grades each selection, logs individual answers to the database, and updates
-    the session score.
+    Grades each selection using the stored correct_index from the generation,
+    logs individual answers to the database, and updates the session score.
+    The grading is done server-side — the client never sees correct answers
+    until after submission.
     """
     logger.info(
         "User %s submitted answers for quiz session %s",
@@ -155,39 +238,60 @@ async def submit_quiz(
     if not session:
         raise StudyMateError("Quiz session not found.", status_code=404)
 
+    # Check if quiz has already been submitted
+    answers_exist_stmt = select(func.count(QuizAnswer.id)).where(
+        QuizAnswer.session_id == session_id
+    )
+    answers_exist_result = await db.execute(answers_exist_stmt)
+    if answers_exist_result.scalar_one() > 0:
+        raise StudyMateError(
+            "Quiz session has already been submitted.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
     # 2. Map submissions by question index for quick lookup
     submission_map = {ans.question_index: ans.selected_index for ans in request.answers}
 
-    # 3. Grade each question
+    # 3. Grade each question — using the stored correct_index from generation
     results: list[AnswerResult] = []
     correct_count = 0
 
     for idx, question in enumerate(session.questions):
         selected_idx = submission_map.get(idx)
+        # -1 is the canonical "skipped" sentinel, stored and returned as-is so a
+        # skip stays distinguishable from a genuine choice of option A (index 0).
         if selected_idx is None:
-            # Default to 0 if the student skipped the question
-            selected_idx = 0
+            selected_idx = -1
 
         correct_val = question.get("correct_index", 0)
         correct_idx = int(correct_val) if isinstance(correct_val, int | str) else 0
-        is_correct = selected_idx == correct_idx
+
+        # A stored correct_index outside 0..3 means the generation was corrupt for
+        # this question. Don't clamp it into range (that could let a skip-to-0 or a
+        # genuine answer falsely match) — treat it as ungradeable: nothing matches.
+        correct_in_range = 0 <= correct_idx <= 3
+
+        # Skipped (-1) is always wrong; otherwise compare against the correct index
+        # only when that index is itself valid.
+        is_correct = (
+            selected_idx >= 0 and correct_in_range and selected_idx == correct_idx
+        )
         explanation = str(question.get("explanation") or "")
 
         if is_correct:
             correct_count += 1
 
-        # Store answer result object
         results.append(
             AnswerResult(
                 question_index=idx,
-                selected_index=selected_idx,
+                selected_index=selected_idx,  # -1 preserved for "skipped"
                 correct_index=correct_idx,
                 is_correct=is_correct,
                 explanation=explanation,
             )
         )
 
-        # Persist separate answer row
+        # Persist separate answer row (selected_index = -1 means skipped)
         db_answer = QuizAnswer(
             session_id=session.id,
             question_index=idx,
@@ -199,6 +303,7 @@ async def submit_quiz(
 
     # 4. Update and commit quiz session score
     session.score = correct_count
+    await record_activity(db, current_user.id)
     await db.commit()
 
     logger.info(

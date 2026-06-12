@@ -1,10 +1,15 @@
 """Authentication service — business logic for signup, login, and refresh."""
 
+import hashlib
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
 from fastapi import HTTPException, status
 from jwt.exceptions import InvalidTokenError
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.errors import AuthenticationError
 from core.security import (
     create_access_token,
@@ -13,7 +18,7 @@ from core.security import (
     hash_password,
     verify_password,
 )
-from models.database import User
+from models.database import RefreshToken, User
 
 
 class AuthService:
@@ -55,9 +60,21 @@ class AuthService:
         # Generate access and refresh tokens
         user_id_str = str(user.id)
         access_token = create_access_token(user_id_str)
-        refresh_token = create_refresh_token(user_id_str)
+        refresh_str, refresh_hash = create_refresh_token(user_id_str)
 
-        return user, access_token, refresh_token
+        # Save refresh token hash to DB
+        expires_at = datetime.now(UTC) + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        db_token = RefreshToken(
+            user_id=user.id,
+            token_hash=refresh_hash,
+            expires_at=expires_at,
+        )
+        self._db.add(db_token)
+        await self._db.commit()
+
+        return user, access_token, refresh_str
 
     async def login(self, email: str, password: str) -> tuple[str, str]:
         """Verify user credentials and return (access_token, refresh_token).
@@ -73,13 +90,30 @@ class AuthService:
 
         user_id_str = str(user.id)
         access_token = create_access_token(user_id_str)
-        refresh_token = create_refresh_token(user_id_str)
+        refresh_str, refresh_hash = create_refresh_token(user_id_str)
 
-        return access_token, refresh_token
+        # Save refresh token hash to DB
+        expires_at = datetime.now(UTC) + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        db_token = RefreshToken(
+            user_id=user.id,
+            token_hash=refresh_hash,
+            expires_at=expires_at,
+        )
+        self._db.add(db_token)
 
-    async def refresh(self, refresh_token: str) -> str:
-        """Validate a refresh token and generate a new access token.
+        # Opportunistically prune this user's expired tokens to bound table growth.
+        await self._prune_expired_tokens(user.id)
 
+        await self._db.commit()
+
+        return access_token, refresh_str
+
+    async def refresh(self, refresh_token: str) -> tuple[str, str]:
+        """Validate a refresh token and generate a new access/refresh token pair.
+
+        Enforces token rotation and reuse detection.
         Raises:
             AuthenticationError: On expired/invalid token or missing user.
         """
@@ -94,6 +128,28 @@ class AuthService:
         except InvalidTokenError:
             raise AuthenticationError("Token has expired or is invalid.") from None
 
+        # Hash current token to lookup in DB
+        current_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        result = await self._db.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == current_hash)
+        )
+        db_token = result.scalar_one_or_none()
+
+        # Token reuse detection
+        if db_token is not None and db_token.is_revoked:
+            # Revoke all tokens for this user immediately (indicates compromise)
+            await self._db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.user_id == db_token.user_id)
+                .values(is_revoked=True)
+            )
+            await self._db.commit()
+            raise AuthenticationError("Token has been revoked.")
+
+        now = datetime.now(UTC)
+        if db_token is None or db_token.expires_at < now:
+            raise AuthenticationError("Token has expired or is invalid.")
+
         # Verify user still exists in DB
         result = await self._db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
@@ -101,5 +157,66 @@ class AuthService:
         if user is None:
             raise AuthenticationError("User not found.")
 
-        # Return a fresh access token
-        return create_access_token(str(user.id))
+        # Revoke the used refresh token
+        db_token.is_revoked = True
+
+        # Generate a fresh access/refresh token pair
+        user_id_str = str(user.id)
+        access_token = create_access_token(user_id_str)
+        refresh_str, refresh_hash = create_refresh_token(user_id_str)
+
+        # Save new refresh token
+        expires_at = datetime.now(UTC) + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        new_db_token = RefreshToken(
+            user_id=user.id,
+            token_hash=refresh_hash,
+            expires_at=expires_at,
+        )
+        self._db.add(new_db_token)
+
+        # Opportunistically prune this user's dead tokens to bound table growth.
+        await self._prune_expired_tokens(user.id)
+
+        await self._db.commit()
+
+        return access_token, refresh_str
+
+    async def logout(self, refresh_token: str) -> None:
+        """Revoke a refresh token on explicit logout (idempotent, never raises).
+
+        Decoding is intentionally lenient: a malformed/expired token simply has no
+        active DB row to revoke, so logout is a no-op rather than an error. This
+        kills the long-lived refresh credential; the short-lived access token
+        expires on its own (ACCESS_TOKEN_EXPIRE_MINUTES).
+        """
+        try:
+            token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+            await self._db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.token_hash == token_hash)
+                .values(is_revoked=True)
+            )
+            await self._db.commit()
+        except Exception:
+            await self._db.rollback()
+            # Logout must always succeed from the client's perspective.
+
+    async def _prune_expired_tokens(self, user_id: UUID) -> None:
+        """Delete a user's **expired** refresh-token rows (best-effort).
+
+        Staged on the caller's transaction (no commit here). Bounds the unbounded
+        growth of ``refresh_tokens`` from every login/refresh issuing a new row.
+
+        Only *expired* rows are removed. Revoked-but-unexpired rows are deliberately
+        kept so token-reuse detection in ``refresh`` can still catch a replay of a
+        rotated token until it expires naturally.
+        """
+        now = datetime.now(UTC)
+        await self._db.execute(
+            delete(RefreshToken).where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.expires_at < now,
+            )
+        )

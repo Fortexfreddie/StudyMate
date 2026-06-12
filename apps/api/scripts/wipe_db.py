@@ -39,6 +39,7 @@ async def wipe_postgres() -> None:
         await conn.run_sync(Base.metadata.drop_all)
         # Drop the alembic_version table so Alembic will re-run migrations from scratch
         from sqlalchemy import text
+
         await conn.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE;"))
         print("  [OK] All tables dropped (including alembic_version).")
 
