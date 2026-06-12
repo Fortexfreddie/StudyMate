@@ -60,3 +60,26 @@ class Retriever:
 
         logger.info("Retrieved %d matching chunks from Qdrant.", len(matched_chunks))
         return matched_chunks
+
+    async def retrieve_document_sequential(
+        self,
+        doc_id: uuid.UUID,
+        top_k: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve chunks from a specific document ordered by page number, bypass similarity threshold."""
+        target_top_k = top_k if top_k is not None else settings.DEFAULT_TOP_K
+        doc_id_str = str(doc_id)
+
+        logger.info(
+            "Performing sequential document retrieval for doc_id: %s (limit: %d)",
+            doc_id_str,
+            target_top_k,
+        )
+
+        matched_chunks = await self.vector_store.get_chunks_by_doc_id(
+            doc_id=doc_id_str,
+            limit=target_top_k,
+        )
+
+        logger.info("Retrieved %d sequential chunks from Qdrant.", len(matched_chunks))
+        return matched_chunks

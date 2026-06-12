@@ -196,8 +196,8 @@ Errors: `400` not a PDF/empty/image-only · `413` > 20MB · `500` indexing failu
 
 **`POST /summary/generate`** → 201
 ```json
-// request  (format optional, default "bullets"; top_k optional — omit to use mode default)
-{ "topic": "Vector databases", "doc_id": "uuid", "format": "flashcards" }
+// request  (format optional, default "bullets"; top_k optional — omit to use mode default; full_document optional — default false)
+{ "topic": "Vector databases", "doc_id": "uuid", "format": "flashcards", "full_document": false }
 // response
 { "summary": "- …plain text fallback…",
   "format": "flashcards",
@@ -281,15 +281,14 @@ Implemented across `retriever.py` + `generator.py`, called by chat/summary/quiz:
 1. **Embed query** — the user's query/topic is embedded with `gemini-embedding-2`.
 2. **Retrieve** — Qdrant cosine search returns the top-k chunks for the user
    (filtered by `doc_id` when supplied), dropping anything below the
-   `RETRIEVAL_SIMILARITY_THRESHOLD` (0.60).
+   `RETRIEVAL_SIMILARITY_THRESHOLD` (0.35). If `full_document` is true for a summary, similarity search is bypassed entirely in favor of page-sequential document chunks.
 3. **Generate** — `generator.py` builds a prompt with a strict grounding
-   `SYSTEM_PROMPT` (no outside knowledge, admit gaps, no fabrication) plus the
+   `SYSTEM_PROMPT` (no outside knowledge, admit gaps transparently without refusing, no fabrication) plus the
    retrieved context, and calls Gemini with **JSON mode** enforced.
 4. **Retry/fallback** — failures are classified: **rate-limit/quota (429)** triggers a fast fallback to the secondary model immediately; **transient errors** (503, empty/malformed) retry the primary model (governed by `MAX_RETRIES`, default `1`) after `RETRY_DELAY_SECONDS` before falling back; **fatal errors** (auth/permission/invalid-argument — e.g. bad API key) fail fast with no retry or fallback. If generation ultimately fails, a `503` is raised (the token reservation is released and nothing is persisted).
-5. **Persist** — on success the interaction is saved to `chat_history` / `summary_history` / `quiz_sessions`, token usage is reconciled and logged, and a study-activity day is recorded.
+5. **Persist** — on success the interaction is saved to `chat_history` / `summary_history` / `quiz_sessions`, token usage is reconciled and logged, and a study-activity day is recorded. (Full-document summaries bypass the history cache lookup).
 
-`context_sufficient: false` is returned (not an error) when the retrieved context
-doesn't cover the question — the frontend renders this as a clear notice.
+`context_sufficient: false` is returned (not as a refusal, but as a quality signal) when the retrieved context is missing direct answers — the generator still synthesizes the best answer using related context and the UI displays a quality notice.
 
 ---
 
@@ -467,7 +466,7 @@ ones touched by this integration:
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | default `num_questions` |
 | `MAX_UPLOAD_SIZE_MB` | `20` | Upload size cap; enforced via bounded chunked reads (oversized files rejected without full buffering) |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | accepts a comma-separated string in `.env` (add the Vercel URL for prod) |
-| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.60` | min cosine score to keep a chunk |
+| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.35` | min cosine score to keep a chunk |
 
 ---
 

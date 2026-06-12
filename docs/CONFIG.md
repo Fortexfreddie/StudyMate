@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     # --- Retrieval ---
     DEFAULT_TOP_K: int = 5
-    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.60
+    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.35
 
     # --- Quiz ---
     DEFAULT_QUIZ_QUESTIONS: int = 5
@@ -129,7 +129,7 @@ settings = Settings()
 | `MIN_CHUNK_LENGTH` | `50` | Minimum characters to keep a chunk |
 | `MAX_UPLOAD_SIZE_MB` | `20` | Maximum PDF upload size |
 | `DEFAULT_TOP_K` | `5` | Default chunks to retrieve |
-| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.60` | Minimum similarity score |
+| `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.35` | Minimum similarity score |
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | Default MCQs per quiz request |
 | `MAX_QUIZ_QUESTIONS` | `30` | Maximum MCQs per quiz request (authoritative — enforced via `field_validator`) |
 

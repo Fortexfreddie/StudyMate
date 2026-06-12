@@ -53,6 +53,9 @@ export function linkifySources(
     }
     if (isValidElement(child)) {
       const el = child as React.ReactElement<{ children?: ReactNode }>;
+      if (el.type === "button" || el.type === "a" || el.type === "code") {
+        return child;
+      }
       if (el.props?.children) {
         return {
           ...el,

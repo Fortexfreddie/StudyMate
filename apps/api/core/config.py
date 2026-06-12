@@ -98,7 +98,7 @@ class Settings(BaseSettings):
 
     # Retrieval
     DEFAULT_TOP_K: int = 5
-    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.60
+    RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.35
 
     # Quiz
     DEFAULT_QUIZ_QUESTIONS: int = 5

@@ -116,6 +116,7 @@ export interface SummaryRequest {
   doc_id?: string;
   top_k?: number;
   format?: SummaryFormat;
+  full_document?: boolean;
 }
 
 // Structured sub-shapes — one per SummaryFormat. Mirror the backend schemas.

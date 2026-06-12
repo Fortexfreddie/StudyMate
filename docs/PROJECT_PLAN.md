@@ -203,7 +203,7 @@ StudyMate/
 5. Wire and test upload ingestion (PDF -> text -> chunks -> embeddings -> Qdrant + PG metadata)
 
 #### Phase 2C — Semantic Retrieval & RAG Generation
-1. Implement `Retriever` service with cosine similarity pre-filtering (0.60 threshold)
+1. Implement `Retriever` service with cosine similarity pre-filtering (0.35 threshold)
 2. Implement `Generator` service with prompt templates for chat, summary, and quiz modes
 3. Support two-model fallback retry (primary model to fallback on 429)
 4. Implement defensive JSON output parsing for multiple-choice quiz questions
@@ -279,7 +279,7 @@ StudyMate/
 | Chunk size | 500 tokens | Evaluated optimal for retrieval quality |
 | Chunk overlap | 50 tokens | Prevents boundary sentence loss |
 | Top-k retrieval | 5 chunks | Balances context richness vs. token budget |
-| Similarity threshold | 0.60 | Filters out low-quality matches |
+| Similarity threshold | 0.35 | Filters out low-quality matches |
 | LLM (primary) | `gemini-3.5-flash` | Strong instruction-following, large context |
 | LLM (fallback) | `gemini-3.1-flash-lite` | Lighter/faster failover |
 | Embedding model | `gemini-embedding-2` | Same provider = consistent vector space |

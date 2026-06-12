@@ -374,7 +374,7 @@ How a single study session moves through the system:
      │ ask / summarize / quiz   (each carries doc_id + Bearer token)
      ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ RETRIEVE  embed query → Qdrant cosine search (top-k, ≥0.60) → chunks    │
+│ RETRIEVE  embed query → Qdrant cosine search (top-k, ≥0.35) → chunks    │
 │ GENERATE  Gemini, grounded strictly in chunks (primary → fallback)      │
 │           • /chat     → answer + sources + context_sufficient           │
 │           • /summary  → plain text + structured(format) + sources       │
@@ -388,7 +388,7 @@ How a single study session moves through the system:
 
 Key guarantees:
 - **Grounded only:** the LLM may use *only* retrieved chunks; if the document lacks
-  the answer it returns `context_sufficient: false` and the UI shows a clear notice.
+  the answer, it returns `context_sufficient: false` as a quality signal notice and still attempts to provide a helpful grounded answer.
 - **Server-side grading:** quiz scores are computed by `/quiz/{id}/submit`, never in
   the browser.
 - **Caching:** identical chat/summary requests (same `doc_id` + `top_k`) are served

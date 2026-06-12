@@ -178,10 +178,8 @@ def format_chunks(chunks: list[RetrievedChunk]) -> str:
 
 If `chunks` is an empty list (retrieval found nothing above threshold):
 
-- For **chat/summary**: Return `GenerationResult` with `context_sufficient=False` and a fixed message — do NOT call Gemini.
+- For **chat/summary**: Call the LLM with `"No document context available."`. The system prompt instructs the model to respond gracefully without a flat refusal, guiding the user back to the document topic and setting `context_sufficient=False` as a quality signal badge.
 - For **quiz**: Raise `ValueError("Insufficient context to generate quiz questions on this topic.")` — do NOT call Gemini.
-
-Never call the LLM with an empty context.
 
 ---
 

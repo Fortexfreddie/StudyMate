@@ -213,6 +213,7 @@ class SummaryRequest(BaseModel):
         ),
     )
     format: SummaryFormat = "bullets"
+    full_document: bool = False
 
 
 # Structured sub-shapes — one per format. The frontend renders these directly.

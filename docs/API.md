@@ -158,7 +158,8 @@ Generate a structured summary of a topic from a document. Response is saved to s
   "topic": "Vector Databases and Embeddings",
   "doc_id": "uuid",
   "top_k": 5,
-  "format": "bullets"
+  "format": "bullets",
+  "full_document": false
 }
 ```
 
@@ -166,6 +167,7 @@ Generate a structured summary of a topic from a document. Response is saved to s
 - `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc.
 - `format` — optional. Default: `bullets`. One of: `bullets`, `key_concepts`,
   `study_guide`, `flashcards`, `cheat_sheet`, `mind_map`.
+- `full_document` — optional. Default: `false`. If `true`, the similarity threshold is bypassed and the entire document is read page-sequentially to build the summary.
 
 **Response 201:**
 ```json

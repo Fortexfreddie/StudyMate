@@ -82,7 +82,7 @@ async def generate_summary(
     #    mutable — document set and can go stale when a new doc is added, so they
     #    are never served from cache.
     cached_msg = None
-    if payload.doc_id is not None:
+    if payload.doc_id is not None and not payload.full_document:
         stmt = (
             select(SummaryHistory)
             .where(
@@ -159,13 +159,25 @@ async def generate_summary(
             ),
         )
 
+    if payload.full_document and payload.doc_id is None:
+        raise StudyMateError(
+            "A specific document must be selected to generate a full document summary.",
+            status_code=400,
+        )
+
     # 3. Retrieve matching chunks from Qdrant for context
-    matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=payload.topic,
-        doc_id=payload.doc_id,
-        doc_ids=user_doc_ids,
-        top_k=effective_top_k,
-    )
+    if payload.full_document and payload.doc_id is not None:
+        matched_chunks = await retriever.retrieve_document_sequential(
+            doc_id=payload.doc_id,
+            top_k=effective_top_k,
+        )
+    else:
+        matched_chunks = await retriever.retrieve_relevant_chunks(
+            query=payload.topic,
+            doc_id=payload.doc_id,
+            doc_ids=user_doc_ids,
+            top_k=effective_top_k,
+        )
 
     # 4. Reserve the estimated token cost atomically BEFORE the LLM call.
     context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)

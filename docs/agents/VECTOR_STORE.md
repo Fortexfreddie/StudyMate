@@ -82,7 +82,7 @@ async def search(
     query_vector: list[float],
     top_k: int = 5,
     doc_id: str | None = None,
-    score_threshold: float = 0.60,
+    score_threshold: float = 0.35,
 ) -> list[dict]:
     """
     Search for the top-k most similar chunks.

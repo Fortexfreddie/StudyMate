@@ -174,7 +174,7 @@ local `isLoading`/`error` state in the component.
 | **Document detail** | `documents.get` | `documents.remove` | actions to quiz/summary/chat; confirm-to-delete danger zone |
 | **Chat** | `documents.get`, `history.chatHistory` | `chat.send` | renders `sources` + a "limited context" notice on `context_sufficient:false`; inline `Source #N` citations in the answer are clickable and scroll to / highlight the matching source card |
 | **Quiz** | — | `quiz.generate` → `quiz.submit` | presets 5/10/15/20/30 (cap 30) with a "larger quizzes take longer" hint; **server-graded**; per-question review with explanations |
-| **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text; renders `sources` cards with clickable inline `Source #N` citations |
+| **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text; supports full-document sequential overview summaries (bypassing similarity search); renders `sources` cards with clickable inline `Source #N` citations |
 | **History** | `history.chatHistory`, `history.quizHistory` | — | merges chat/summary/quiz into one sortable, filterable, searchable timeline |
 | **Profile** | `auth` (context), `stats.get`, `usage.get` | `auth.updateProfile` | name + major persist server-side; stats + streak real; daily token usage telemetry card; theme + performance saved to `localStorage` |
 
@@ -194,7 +194,7 @@ results → server returns score + results[]; show trophy, stats, and a
 
 ```
 setup  → pick a format (bullets | key_concepts | study_guide | flashcards | cheat_sheet | mind_map)
-       → api.summary.generate({ topic, doc_id, format })
+       → api.summary.generate({ topic, doc_id, format, full_document })
 completed → StructuredSummary switches on res.format and renders res.structured
             (Flashcards flip, Mind Map branches, Cheat Sheet tables, …);
             if structured is null it shows res.summary (plain text).

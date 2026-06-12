@@ -54,22 +54,25 @@ class RetrievedChunk:
    - Retrieve top_k results
     │
     ▼
-4. Filter out results below similarity threshold (0.60)
+4. Filter out results below similarity threshold (0.35)
     │
     ▼
 5. Map Qdrant results → List[RetrievedChunk]
     │
     ▼
 6. Return chunks (ordered by similarity_score DESC)
+
+*Note: For sequential full-document retrieval (used in full-document summaries), the similarity search and thresholding steps are bypassed. Instead, the agent scrolls through all chunks for the document ordered by page number.*
 ```
 
 ---
 
 ## Similarity Threshold
 
-- Chunks with a similarity score below **0.60** are discarded, even if they are in the top-k.
+- Chunks with a similarity score below **0.35** are discarded, even if they are in the top-k.
 - If all top-k results fall below the threshold, return an empty list and let the generation layer handle the "no relevant context found" case gracefully.
 - This threshold is configurable via `RETRIEVAL_SIMILARITY_THRESHOLD` in `core/config.py`.
+- **Bypass for Full Document:** When `full_document=True` is requested during summary generation, this thresholding filter is entirely bypassed, and chunks are retrieved page-sequentially to synthesize a complete overview.
 
 ---
 
@@ -90,7 +93,7 @@ class RetrievedChunk:
 ```python
 # apps/api/core/config.py
 DEFAULT_TOP_K = 5
-RETRIEVAL_SIMILARITY_THRESHOLD = 0.60
+RETRIEVAL_SIMILARITY_THRESHOLD = 0.35
 ```
 
 ---
@@ -98,7 +101,7 @@ RETRIEVAL_SIMILARITY_THRESHOLD = 0.60
 
 - **Same embedding model for queries and chunks** (`gemini-embedding-2`) — this is critical. If chunks were embedded with one model and queries with another, similarity scores would be meaningless.
 - **doc_id filtering** allows the student to constrain search to a single uploaded document, which is the primary use case. Searching all documents is the fallback for future multi-document sessions.
-- **Similarity threshold** prevents low-quality matches from polluting the generation context. A chunk that scores 0.30 is essentially unrelated and should never reach Gemini.
+- **Similarity threshold** prevents low-quality matches from polluting the generation context. A chunk that scores 0.20 is essentially unrelated and should never reach Gemini.
 - **Ordered by similarity score** so the most relevant chunk is always first — the generation layer uses this ordering when assembling the prompt.
 
 ---
