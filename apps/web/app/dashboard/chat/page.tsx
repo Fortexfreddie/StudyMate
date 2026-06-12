@@ -329,7 +329,7 @@ function ChatContent() {
           <div className="flex items-center gap-1.5">
             <span>Context Depth (K):</span>
             <span className="font-extrabold text-brand-primary">{topK} / {maxK} Chunks</span>
-            <span className="text-[8px] text-text-muted">({perfMode.toUpperCase()} limit)</span>
+            <span className="text-[8px] text-text-muted hidden sm:inline">({perfMode.toUpperCase()} limit)</span>
             <InfoTooltip label="What is Context Depth?">
               <strong className="text-white">Context Depth (K)</strong> is how many excerpts
               (&ldquo;chunks&rdquo;) from your document the AI reads before answering. Higher = more

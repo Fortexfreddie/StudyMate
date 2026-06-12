@@ -214,7 +214,7 @@ export default function HistoryPage() {
               </div>
               <div className="flex-1 bg-card-bg border border-border-subtle rounded-2xl p-4.5 flex items-center justify-between gap-3 shadow-md shadow-black/10 hover:border-white/10 transition">
                 <div className="flex flex-col gap-1 min-w-0">
-                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">{item.title}</h4>
+                  <h4 className="text-xs sm:text-sm font-extrabold text-white line-clamp-2 break-words">{item.title}</h4>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 mt-1.5 select-none">
                     <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider leading-none w-fit ${item.statusColor}`}>
                       {item.status}

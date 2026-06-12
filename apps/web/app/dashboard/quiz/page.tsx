@@ -248,7 +248,7 @@ function QuizContent() {
             {/* Count */}
             <div className="flex flex-col gap-3">
               <span className="text-xs font-bold text-text-muted">Number of Questions</span>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {QUESTION_PRESETS.map((count) => (
                   <button
                     key={count}

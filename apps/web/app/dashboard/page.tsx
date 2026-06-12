@@ -86,7 +86,7 @@ export default function DashboardPage() {
       </header>
 
       {/* Progress rings — real counts */}
-      <section className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 sm:p-6 mb-8 flex flex-row flex-wrap items-center justify-around gap-6 shadow-lg shadow-black/20">
+      <section className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 sm:p-6 mb-8 flex flex-row flex-wrap items-center justify-center sm:justify-around gap-4 sm:gap-6 shadow-lg shadow-black/20">
         <ProgressRing
           percentage={pct(stats?.quizzes_taken ?? 0, RING_SCALE.quizzes)}
           label="Quizzes"

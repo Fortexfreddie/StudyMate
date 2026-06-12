@@ -227,7 +227,7 @@ function SummaryContent() {
             {/* Format */}
             <div className="flex flex-col gap-3">
               <span className="text-xs font-bold text-text-muted">Summary Format</span>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {FORMAT_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
@@ -500,7 +500,7 @@ function Flashcards({
             <div
               key={idx}
               onClick={() => setFlipped({ ...flipped, [idx]: !isFlipped })}
-              className="relative w-full h-32 cursor-pointer select-none group perspective-1000"
+              className="relative w-full h-40 sm:h-32 cursor-pointer select-none group perspective-1000"
             >
               <div
                 className={`w-full h-full rounded-2xl relative border transform-style-3d transition-all duration-500 ease-out hover:scale-[1.01] active:scale-[0.99] ${
@@ -559,9 +559,9 @@ function CheatSheetView({ data, link }: { data: CheatSheet; link: LinkFn }) {
           <div className="flex flex-col gap-3 mt-3">
             {data.formulas.map((f, idx) => (
               <div key={idx}>
-                <div className="flex justify-between items-center gap-3 text-xs">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1 sm:gap-3 text-xs">
                   <span className="font-bold text-white">{f.label}</span>
-                  <span className="font-mono text-accent-gold text-right">{link(f.value)}</span>
+                  <span className="font-mono text-accent-gold text-left sm:text-right">{link(f.value)}</span>
                 </div>
                 {idx < data.formulas.length - 1 && (
                   <div className="h-[1px] w-full bg-border-subtle/50 mt-3" />
@@ -600,7 +600,7 @@ function MindMapView({ data, link }: { data: MindMap; link: LinkFn }) {
         {data.root}
       </div>
       <div className="w-[2px] bg-brand-primary/30 h-6" />
-      <div className="grid grid-cols-2 gap-4 w-full mt-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full mt-1">
         {data.branches.map((branch, idx) => (
           <div key={idx} className="flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${(idx + 1) * 75}ms` }}>
             <div className="px-3 py-2 rounded-xl bg-card-bg border border-border-subtle text-white font-extrabold text-[10px] text-center select-none shadow transition duration-200 hover:border-brand-primary/30 hover:scale-103 cursor-default">

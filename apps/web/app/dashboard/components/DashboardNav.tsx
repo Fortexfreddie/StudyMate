@@ -57,9 +57,6 @@ export function DashboardNav() {
               >
                 <Icon className={`h-5 w-5 transition-transform duration-300 ${active ? "scale-110" : ""}`} />
                 <span className="text-[10px] font-semibold leading-none">{item.label}</span>
-                {active && (
-                  <span className="absolute bottom-0 h-1 w-1 rounded-full bg-brand-primary animate-in fade-in duration-200" />
-                )}
               </Link>
             );
           })}
