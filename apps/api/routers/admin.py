@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Float, cast, func, or_, select
+from sqlalchemy import Float, cast, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -87,8 +87,13 @@ def _utc_date(col):
     is not guaranteed to be UTC. The token quota window and ``_today()`` are pinned
     to UTC, so the dashboard time-series must bucket in UTC too — otherwise events
     near midnight UTC land in the wrong day and drift from the quota counters.
+
+    The ``'UTC'`` argument is rendered as an inline SQL literal (not a bound
+    parameter) so the SELECT and GROUP BY expressions are byte-identical — Postgres
+    matches GROUP BY targets by expression text, and a bound param ($1 vs $3) would
+    make them look distinct and raise "must appear in the GROUP BY clause".
     """
-    return func.date(func.timezone("UTC", col))
+    return func.date(func.timezone(literal_column("'UTC'"), col))
 
 
 def _is_protected_super_admin(user: User) -> bool:
