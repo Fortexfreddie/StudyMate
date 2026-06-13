@@ -165,6 +165,11 @@ async def main() -> None:
     print("|   StudyMate - Database Wipe & Rebuild    |")
     print("+------------------------------------------+")
 
+    password = input("\nEnter script password: ")
+    if password != "elena":
+        print("\nIncorrect password. Aborted.")
+        sys.exit(1)
+
     confirm = input(
         "\nWARNING: This will DELETE ALL DATA in both PostgreSQL and Qdrant.\n"
         "   Type 'yes' to confirm: "

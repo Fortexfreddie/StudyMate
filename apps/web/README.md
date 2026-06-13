@@ -237,7 +237,7 @@ context" notice — it's a valid state, not an error.
 | XP badges (dashboard "+15 XP", profile) | no XP concept in the data model |
 | Notification toggles **save** + Help ticket **submit** | no settings/mailer backend (FAQs kept as static content) |
 
-Theme selection persists to **localStorage** (a pure client preference — no backend
+Theme selection (including custom aesthetic themes like "Forest Night" and "Rosé Pine") persists to **localStorage** (a pure client preference — no backend
 needed).
 
 ---
