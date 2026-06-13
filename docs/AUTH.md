@@ -375,7 +375,7 @@ REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
 ## Frontend Token Storage
 
-The frontend (`apps/web`) should store tokens in `httpOnly` cookies (not `localStorage`) to prevent XSS attacks. The API client in `lib/api.ts` attaches the access token to every request:
+The frontend (`apps/web`) stores tokens in `localStorage` for simplicity. The API client in `lib/api.ts` reads from `localStorage` and attaches the access token to every request:
 
 ```typescript
 // lib/api.ts
