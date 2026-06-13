@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Upload, History, User } from "lucide-react";
+import { Home, Upload, History, User, Shield } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { getFirstName, getInitials } from "@/lib/user";
 
@@ -14,12 +14,22 @@ interface NavItem {
 
 export function DashboardNav() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
 
+  // Only decide admin-ness once auth has hydrated, so the Admin link doesn't pop
+  // in/out during the initial load for an admin user.
+  const isAdmin =
+    !isLoading && (user?.role === "admin" || user?.role === "super_admin");
+
+  // Admin link sits between History and Profile, and only for admin roles. Built
+  // once here so the mobile bar and desktop sidebar stay in sync.
   const items: NavItem[] = [
     { label: "Home", icon: Home, href: "/dashboard" },
     { label: "Upload", icon: Upload, href: "/dashboard/upload" },
     { label: "History", icon: History, href: "/dashboard/history" },
+    ...(isAdmin
+      ? [{ label: "Admin", icon: Shield, href: "/dashboard/admin" }]
+      : []),
     { label: "Profile", icon: User, href: "/dashboard/profile" },
   ];
 

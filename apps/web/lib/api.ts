@@ -1,4 +1,11 @@
 import type {
+  AdminDocumentListParams,
+  AdminDocumentListResponse,
+  AdminOverview,
+  AdminUserDeleteResponse,
+  AdminUserListParams,
+  AdminUserListResponse,
+  AdminUserUpdateRequest,
   AuthTokens,
   ChatHistoryResponse,
   ChatRequest,
@@ -301,6 +308,64 @@ export const api = {
       return request<SummaryHistoryResponse>(
         `/history/summaries${query ? `?${query}` : ""}`
       );
+    },
+  },
+
+  admin: {
+    overview(): Promise<AdminOverview> {
+      return request<AdminOverview>("/admin/stats/overview");
+    },
+
+    listUsers(params?: AdminUserListParams): Promise<AdminUserListResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.search) searchParams.set("search", params.search);
+      if (params?.role) searchParams.set("role", params.role);
+      if (params?.major) searchParams.set("major", params.major);
+      if (params?.is_pro !== undefined)
+        searchParams.set("is_pro", String(params.is_pro));
+      if (params?.sort_by) searchParams.set("sort_by", params.sort_by);
+      if (params?.limit) searchParams.set("limit", String(params.limit));
+      if (params?.offset) searchParams.set("offset", String(params.offset));
+      const query = searchParams.toString();
+      return request<AdminUserListResponse>(
+        `/admin/users${query ? `?${query}` : ""}`
+      );
+    },
+
+    updateUser(
+      userId: string,
+      data: AdminUserUpdateRequest
+    ): Promise<User> {
+      return request<User>(`/admin/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+
+    deleteUser(userId: string): Promise<AdminUserDeleteResponse> {
+      return request<AdminUserDeleteResponse>(`/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+    },
+
+    listDocuments(
+      params?: AdminDocumentListParams
+    ): Promise<AdminDocumentListResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.search) searchParams.set("search", params.search);
+      if (params?.sort_by) searchParams.set("sort_by", params.sort_by);
+      if (params?.limit) searchParams.set("limit", String(params.limit));
+      if (params?.offset) searchParams.set("offset", String(params.offset));
+      const query = searchParams.toString();
+      return request<AdminDocumentListResponse>(
+        `/admin/documents${query ? `?${query}` : ""}`
+      );
+    },
+
+    deleteDocument(docId: string): Promise<DeleteResponse> {
+      return request<DeleteResponse>(`/admin/documents/${docId}`, {
+        method: "DELETE",
+      });
     },
   },
 };

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import PERFORMANCE_MODES, settings
-from core.errors import AuthenticationError
+from core.errors import AuthenticationError, ForbiddenError
 from core.security import decode_token
 from models.database import User, get_db
 from services.embedder import Embedder
@@ -65,6 +65,24 @@ async def get_current_user(
     if user is None:
         raise AuthenticationError("User not found.")
 
+    return user
+
+
+async def get_current_admin(
+    user: User = Depends(get_current_user),  # noqa: B008
+) -> User:
+    """Require an admin or super_admin. Reuses the user already loaded above."""
+    if not user.is_admin_or_super:
+        raise ForbiddenError("Admin access required.")
+    return user
+
+
+async def get_current_super_admin(
+    user: User = Depends(get_current_user),  # noqa: B008
+) -> User:
+    """Require the super_admin — for role changes and user deletion."""
+    if user.role != "super_admin":
+        raise ForbiddenError("Super admin access required.")
     return user
 
 

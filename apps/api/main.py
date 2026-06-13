@@ -25,7 +25,17 @@ from core.middleware import SecurityHeadersMiddleware
 from core.rate_limit import limiter, rate_limit_exceeded_handler
 from models.database import async_session, engine
 from models.schemas import HealthResponse
-from routers import auth, chat, documents, history, quiz, stats, summary, usage
+from routers import (
+    admin,
+    auth,
+    chat,
+    documents,
+    history,
+    quiz,
+    stats,
+    summary,
+    usage,
+)
 from services.vector_store import VectorStore
 
 # Logging
@@ -165,3 +175,4 @@ app.include_router(quiz.router, prefix="/quiz", tags=["Quiz"])
 app.include_router(history.router, prefix="/history", tags=["History"])
 app.include_router(stats.router, prefix="/stats", tags=["Stats"])
 app.include_router(usage.router, prefix="/usage", tags=["Usage"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])

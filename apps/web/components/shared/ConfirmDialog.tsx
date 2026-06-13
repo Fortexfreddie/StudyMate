@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, type LucideIcon } from "lucide-react";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -11,6 +11,10 @@ interface ConfirmDialogProps {
   loading?: boolean;
   loadingLabel?: string;
   error?: string | null;
+  // "danger" (default) is destructive red; "neutral" is a gold non-destructive
+  // confirmation (role changes, tier toggles). `icon` overrides the header glyph.
+  tone?: "danger" | "neutral";
+  icon?: LucideIcon;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -24,10 +28,21 @@ export function ConfirmDialog({
   loading = false,
   loadingLabel = "Deleting...",
   error = null,
+  tone = "danger",
+  icon,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   if (!open) return null;
+
+  const Icon = icon ?? AlertTriangle;
+  const isDanger = tone === "danger";
+  const iconWrap = isDanger
+    ? "bg-red-500/10 border-red-500/20 text-red-400"
+    : "bg-accent-gold/10 border-accent-gold/20 text-accent-gold";
+  const confirmBtn = isDanger
+    ? "bg-red-500 hover:bg-red-600 text-white"
+    : "bg-accent-gold hover:brightness-110 text-black";
 
   return (
     <div
@@ -41,8 +56,8 @@ export function ConfirmDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
-            <AlertTriangle className="h-5 w-5" />
+          <div className={`h-10 w-10 rounded-2xl border flex items-center justify-center shrink-0 ${iconWrap}`}>
+            <Icon className="h-5 w-5" />
           </div>
           <h3 className="text-base font-extrabold text-white">{title}</h3>
         </div>
@@ -66,7 +81,7 @@ export function ConfirmDialog({
           <button
             disabled={loading}
             onClick={onConfirm}
-            className="flex-1 py-2.5 rounded-full bg-red-500 hover:bg-red-600 text-xs font-bold text-white transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+            className={`flex-1 py-2.5 rounded-full text-xs font-bold transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 ${confirmBtn}`}
           >
             {loading ? loadingLabel : confirmLabel}
           </button>

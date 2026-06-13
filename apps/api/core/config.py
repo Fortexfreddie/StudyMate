@@ -49,6 +49,11 @@ class Settings(BaseSettings):
                 return v.replace("postgres://", "postgresql+asyncpg://", 1)
         return v
 
+    # Admin
+    # The single super-admin account. On signup/login the user whose email matches
+    # this is auto-assigned role "super_admin" and pro tier. Empty disables it.
+    SUPER_ADMIN_EMAIL: str = ""
+
     # JWT
     JWT_SECRET_KEY: str  # required — long random string
     JWT_ALGORITHM: str = "HS256"

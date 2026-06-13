@@ -54,6 +54,7 @@ class UserResponse(BaseModel):
     full_name: str
     major: str | None = None
     is_pro: bool = False
+    role: str = "user"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -520,3 +521,148 @@ class UsageResponse(BaseModel):
     is_pro: bool
     usage_by_type: dict[str, int]
     reset_time: str
+
+
+# Admin — building blocks for the overview dashboard
+
+
+class MajorBreakdown(BaseModel):
+    """One row of the users-by-major aggregate."""
+
+    major: str
+    count: int
+
+
+class DailyCount(BaseModel):
+    """A single (date, count) point in a 30-day time series (signups, docs, DAU)."""
+
+    date: str  # ISO date (YYYY-MM-DD)
+    count: int
+
+
+class DailyTokenTrend(BaseModel):
+    """A single day of token consumption split by request type."""
+
+    date: str  # ISO date (YYYY-MM-DD)
+    chat: int = 0
+    summary: int = 0
+    quiz: int = 0
+
+
+class TopUploader(BaseModel):
+    """A user ranked by document count, for the top-uploaders list."""
+
+    user_id: UUID
+    full_name: str
+    email: str
+    document_count: int
+
+
+class AdminOverviewResponse(BaseModel):
+    """GET /admin/stats/overview — every aggregate stat for the dashboard.
+
+    Note: ``tokens_today_counter`` (the authoritative reserved quota counter) and
+    ``tokens_today_logged`` (summed from the per-request log) measure different
+    things and will not always match — the counter can read slightly higher due to
+    reservation/reconciliation drift. Both are surfaced intentionally.
+    """
+
+    # User counts
+    total_users: int
+    total_admins: int
+    total_pro_users: int
+    users_by_role: dict[str, int]
+    users_by_major: list[MajorBreakdown]
+    # Activity
+    active_users_today: int
+    active_users_7d: int
+    active_users_30d: int
+    # Content counts
+    total_documents: int
+    total_chunks: int
+    total_chats: int
+    total_summaries: int
+    total_quizzes: int
+    average_quiz_score: float  # 0–100
+    # Tokens
+    lifetime_tokens: int
+    tokens_today_logged: int
+    tokens_today_counter: int
+    tokens_by_type: dict[str, int]
+    tokens_by_model: dict[str, int]
+    # 30-day time series
+    daily_signups: list[DailyCount]
+    daily_documents: list[DailyCount]
+    daily_active_users: list[DailyCount]
+    daily_tokens: list[DailyTokenTrend]
+    # Leaderboard
+    top_uploaders: list[TopUploader]
+
+
+# Admin — user management
+
+
+class AdminUserListItem(BaseModel):
+    """A user row in the admin user list (never exposes the password hash)."""
+
+    id: UUID
+    email: str
+    full_name: str
+    major: str | None = None
+    is_pro: bool
+    role: str
+    document_count: int
+    created_at: datetime
+
+
+class AdminUserListResponse(BaseModel):
+    """GET /admin/users — paginated."""
+
+    users: list[AdminUserListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """PATCH /admin/users/{user_id} — partial update of tier and/or role.
+
+    Both optional; only supplied fields change. ``role`` may only be "user" or
+    "admin" (the router rejects "super_admin"). ``is_pro`` requires admin; ``role``
+    requires super_admin.
+    """
+
+    is_pro: bool | None = None
+    role: str | None = None
+
+
+# Admin — document management
+
+
+class AdminDocumentListItem(BaseModel):
+    """A document row in the admin document list, with owner info."""
+
+    doc_id: UUID
+    filename: str
+    page_count: int
+    chunk_count: int
+    uploaded_at: datetime
+    owner_id: UUID
+    owner_name: str
+    owner_email: str
+
+
+class AdminDocumentListResponse(BaseModel):
+    """GET /admin/documents — paginated."""
+
+    documents: list[AdminDocumentListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUserDeleteResponse(BaseModel):
+    """DELETE /admin/users/{user_id} response."""
+
+    user_id: UUID
+    deleted: bool = True

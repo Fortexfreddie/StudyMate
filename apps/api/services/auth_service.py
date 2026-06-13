@@ -49,9 +49,17 @@ class AuthService:
                 detail="Email already registered.",
             )
 
-        # Hash credentials and create user record
+        # Hash credentials and create user record. The configured super-admin email
+        # is auto-promoted to super_admin + pro the moment it registers.
         pw_hash = hash_password(password)
-        user = User(email=email, password_hash=pw_hash, full_name=full_name)
+        is_super = bool(settings.SUPER_ADMIN_EMAIL) and email == settings.SUPER_ADMIN_EMAIL
+        user = User(
+            email=email,
+            password_hash=pw_hash,
+            full_name=full_name,
+            role="super_admin" if is_super else "user",
+            is_pro=True if is_super else False,
+        )
 
         self._db.add(user)
         await self._db.commit()
@@ -87,6 +95,23 @@ class AuthService:
 
         if user is None or not verify_password(password, user.password_hash):
             raise AuthenticationError("Invalid email or password.")
+
+        # Keep the super-admin role in sync with SUPER_ADMIN_EMAIL as the single
+        # source of truth. Staged on the transaction committed below.
+        #   * The configured account is healed UP to super_admin (covers accounts
+        #     created before the email was set, or demoted by mistake).
+        #   * Any account stored as super_admin whose email no longer matches the
+        #     configured one is demoted back to "user" — so changing the env var
+        #     transfers the title instead of leaving a second "ghost" super admin.
+        is_configured_super = bool(settings.SUPER_ADMIN_EMAIL) and (
+            email == settings.SUPER_ADMIN_EMAIL
+        )
+        if is_configured_super and user.role != "super_admin":
+            user.role = "super_admin"
+            user.is_pro = True
+        elif not is_configured_super and user.role == "super_admin":
+            # This account used to be the super admin but the env email changed.
+            user.role = "user"
 
         user_id_str = str(user.id)
         access_token = create_access_token(user_id_str)

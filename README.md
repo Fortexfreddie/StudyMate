@@ -81,8 +81,15 @@ StudyMate/
 | GET | `/history/summaries` | ✅ | Get paginated summary history |
 | GET | `/stats` | ✅ | Aggregate study metrics (counts, streak, avg score) |
 | GET | `/usage` | ✅ | Get current daily token usage and account limits |
+| GET | `/admin/stats/overview` | 🛡️ | System-wide aggregate metrics + 30-day time series |
+| GET | `/admin/users` | 🛡️ | Paginated user list (search/filter/sort) |
+| PATCH | `/admin/users/{user_id}` | 🛡️ | Update a user's tier (admin) / role (super admin) |
+| DELETE | `/admin/users/{user_id}` | 🛡️👑 | Delete a user and purge their vectors (super admin) |
+| GET | `/admin/documents` | 🛡️ | Paginated document list with owner info |
+| DELETE | `/admin/documents/{doc_id}` | 🛡️ | Delete any document and purge its vectors |
 
-> Full request/response examples for every endpoint live in
+> 🛡️ = admin only, 👑 = super admin only. Full admin spec (roles, guards, UI) is in
+> [docs/ADMIN.md](docs/ADMIN.md). Full request/response examples for every endpoint live in
 > [apps/api/README.md](apps/api/README.md) and [docs/API.md](docs/API.md).
 
 ---
@@ -116,6 +123,7 @@ copy .env.example .env     # Windows
 # cp .env.example .env     # macOS/Linux
 
 # Edit .env with your actual credentials
+# (set SUPER_ADMIN_EMAIL to the account that should become the super admin)
 # Then run database migrations
 alembic upgrade head
 
@@ -480,5 +488,6 @@ See the `docs/` directory for detailed specifications:
 - [CONFIG.md](docs/CONFIG.md) — Environment variables reference
 - [DATABASE.md](docs/DATABASE.md) — Database schema and ORM
 - [AUTH.md](docs/AUTH.md) — Authentication and JWT specs
+- [ADMIN.md](docs/ADMIN.md) — Admin panel: roles, super admin, endpoints, and UI
 - [ERRORS.md](docs/ERRORS.md) — Error handling hierarchy
 - [CONVENTIONS.md](docs/CONVENTIONS.md) — Code style and conventions
