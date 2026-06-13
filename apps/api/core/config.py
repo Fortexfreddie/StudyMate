@@ -4,10 +4,10 @@ All configuration is centralised here via pydantic-settings.
 Import ``settings`` — never use ``os.getenv()`` directly.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 
 
 class Settings(BaseSettings):
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     # Comma-separated list in the env (e.g. CORS_ORIGINS=http://localhost:3000,https://app.vercel.app)
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
