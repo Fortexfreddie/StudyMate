@@ -70,8 +70,8 @@ async def get_stats(
 
     current_streak = await compute_streak(db, user_id)
 
-    # Token usage for today
-    usage = await get_usage_summary(db, user_id, current_user.is_pro)
+    # Token usage for today (admins get pro limits via effective_is_pro)
+    usage = await get_usage_summary(db, user_id, current_user.effective_is_pro)
 
     logger.info(
         "Stats for user %s: docs=%s quizzes=%s summaries=%s chats=%s streak=%s tokens=%s/%s",
@@ -94,5 +94,5 @@ async def get_stats(
         average_quiz_score=average_quiz_score,
         tokens_used_today=usage.tokens_used_today,
         token_limit=usage.token_limit,
-        is_pro=current_user.is_pro,
+        is_pro=current_user.effective_is_pro,
     )

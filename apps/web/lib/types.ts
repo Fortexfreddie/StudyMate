@@ -4,6 +4,7 @@ export interface User {
   full_name: string;
   major?: string | null;
   is_pro?: boolean;
+  role?: string;
   created_at: string;
 }
 
@@ -306,6 +307,126 @@ export interface StatsResponse {
 
 export interface ApiError {
   detail: string;
+}
+
+// Admin — dashboard overview
+
+export interface MajorBreakdown {
+  major: string;
+  count: number;
+}
+
+export interface DailyCount {
+  date: string;
+  count: number;
+}
+
+export interface DailyTokenTrend {
+  date: string;
+  chat: number;
+  summary: number;
+  quiz: number;
+}
+
+export interface TopUploader {
+  user_id: string;
+  full_name: string;
+  email: string;
+  document_count: number;
+}
+
+export interface AdminOverview {
+  total_users: number;
+  total_admins: number;
+  total_pro_users: number;
+  users_by_role: Record<string, number>;
+  users_by_major: MajorBreakdown[];
+  active_users_today: number;
+  active_users_7d: number;
+  active_users_30d: number;
+  total_documents: number;
+  total_chunks: number;
+  total_chats: number;
+  total_summaries: number;
+  total_quizzes: number;
+  average_quiz_score: number;
+  lifetime_tokens: number;
+  tokens_today_logged: number;
+  tokens_today_counter: number;
+  tokens_by_type: Record<string, number>;
+  tokens_by_model: Record<string, number>;
+  daily_signups: DailyCount[];
+  daily_documents: DailyCount[];
+  daily_active_users: DailyCount[];
+  daily_tokens: DailyTokenTrend[];
+  top_uploaders: TopUploader[];
+}
+
+// Admin — user management
+
+export interface AdminUserListItem {
+  id: string;
+  email: string;
+  full_name: string;
+  major?: string | null;
+  is_pro: boolean;
+  role: string;
+  document_count: number;
+  created_at: string;
+}
+
+export interface AdminUserListResponse {
+  users: AdminUserListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserUpdateRequest {
+  is_pro?: boolean;
+  role?: string;
+}
+
+export interface AdminUserDeleteResponse {
+  user_id: string;
+  deleted: boolean;
+}
+
+export interface AdminUserListParams {
+  search?: string;
+  role?: string;
+  major?: string;
+  is_pro?: boolean;
+  sort_by?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// Admin — document management
+
+export interface AdminDocumentListItem {
+  doc_id: string;
+  filename: string;
+  page_count: number;
+  chunk_count: number;
+  uploaded_at: string;
+  owner_id: string;
+  owner_name: string;
+  owner_email: string;
+}
+
+export interface AdminDocumentListResponse {
+  documents: AdminDocumentListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminDocumentListParams {
+  search?: string;
+  sort_by?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface UsageResponse {

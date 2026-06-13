@@ -26,13 +26,13 @@ async def get_usage(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ) -> UsageResponse:
     """Return how many tokens the user has consumed today and their tier limit."""
-    summary = await get_usage_summary(db, current_user.id, current_user.is_pro)
+    summary = await get_usage_summary(db, current_user.id, current_user.effective_is_pro)
 
     return UsageResponse(
         tokens_used_today=summary.tokens_used_today,
         token_limit=summary.token_limit,
         tokens_remaining=max(0, summary.token_limit - summary.tokens_used_today),
-        is_pro=current_user.is_pro,
+        is_pro=current_user.effective_is_pro,
         usage_by_type=summary.by_type,
         reset_time=summary.reset_time.isoformat(),
     )

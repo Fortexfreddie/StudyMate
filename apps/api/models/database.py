@@ -56,6 +56,11 @@ class User(Base):
     is_pro: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, server_default="false"
     )
+    # Access role — "user" (default), "admin", or "super_admin". Drives the admin
+    # panel gates. There is at most one super_admin (the SUPER_ADMIN_EMAIL account).
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="user"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -70,6 +75,16 @@ class User(Base):
     token_usage: Mapped[list["TokenUsage"]] = relationship(back_populates="user")
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
     summaries: Mapped[list["SummaryHistory"]] = relationship(back_populates="user")
+
+    @property
+    def is_admin_or_super(self) -> bool:
+        """True for any account that can access the admin panel."""
+        return self.role in ("admin", "super_admin")
+
+    @property
+    def effective_is_pro(self) -> bool:
+        """Tier used for token quotas — admins always get pro limits."""
+        return self.is_pro or self.is_admin_or_super
 
 
 class Document(Base):

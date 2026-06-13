@@ -51,6 +51,20 @@ class AuthenticationError(StudyMateError):
         super().__init__(message=message, status_code=401)
 
 
+class ForbiddenError(StudyMateError):
+    """Raised when an authenticated user lacks permission for an action."""
+
+    def __init__(self, message: str = "You do not have permission for this action.") -> None:
+        super().__init__(message=message, status_code=403)
+
+
+class ConflictError(StudyMateError):
+    """Raised when an action conflicts with a protected resource (e.g. the super admin)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, status_code=409)
+
+
 class DocumentNotFoundError(StudyMateError):
     """Raised when a requested document does not exist."""
 

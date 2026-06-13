@@ -66,12 +66,19 @@ apps/web/
 │       ├── summary/               # summary.generate (6 formats) + structured render
 │       ├── history/               # merged chat + quiz history timeline
 │       ├── profile/               # /auth/me, PATCH /auth/me, /stats, theme(localStorage)
+│       ├── admin/                 # admin-only (AdminGuard): overview, users, documents
+│       │   ├── layout.tsx         # wraps children in AdminGuard
+│       │   ├── page.tsx           # overview: stat grid + Recharts (area/bar/pie)
+│       │   ├── users/             # admin.listUsers + updateUser/deleteUser (modals)
+│       │   ├── documents/         # admin.listDocuments + deleteDocument (modal)
+│       │   └── components/        # AdminTabs, Badges, adminHelpers (chart palette)
 │       └── components/            # DocumentCard, ProgressRing, …
 ├── components/
 │   ├── providers/AuthProvider.tsx # Auth context (login/signup/logout/updateUser)
 │   ├── layout/ProtectedRoute.tsx  # Redirects to /login when unauthenticated
+│   ├── layout/AdminGuard.tsx      # Redirects non-admins out of /dashboard/admin
 │   ├── dashboard/                 # PageHeader, GeneratingState
-│   └── shared/                    # Button, Input, LoadingState, EmptyState, ErrorState, …
+│   └── shared/                    # Button, Input, LoadingState, ConfirmDialog, AdminToast, …
 └── lib/
     ├── api.ts                     # Typed API client + token mgmt (the ONLY fetch layer)
     ├── types.ts                   # Shared types — mirror backend schemas exactly
@@ -118,7 +125,9 @@ api.auth.login(data)             api.documents.list()           api.quiz.submit(
 api.auth.refresh(token)          api.documents.get(docId)       api.history.chatHistory(p)
 api.auth.me()                    api.documents.remove(docId)    api.history.quizHistory(p)
 api.auth.updateProfile(data)     api.chat.send(data)            api.history.quizDetail(id)
-api.stats.get()                  api.summary.generate(data)
+api.stats.get()                  api.summary.generate(data)     api.admin.overview()
+api.usage.get()                  api.admin.listUsers(p)         api.admin.updateUser(id, d)
+api.admin.deleteUser(id)         api.admin.listDocuments(p)     api.admin.deleteDocument(id)
 ```
 
 Example:
@@ -177,6 +186,9 @@ local `isLoading`/`error` state in the component.
 | **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text; supports full-document sequential overview summaries (bypassing similarity search); renders `sources` cards with clickable inline `Source #N` citations |
 | **History** | `history.chatHistory`, `history.quizHistory` | — | merges chat/summary/quiz into one sortable, filterable, searchable timeline |
 | **Profile** | `auth` (context), `stats.get`, `usage.get` | `auth.updateProfile` | name + major persist server-side; stats + streak real; daily token usage telemetry card; theme + performance saved to `localStorage` |
+| **Admin · Overview** | `admin.overview` | — | admin-only; stat grid + Recharts (signups/DAU area, tokens-by-type bar, tier pie); colors read from CSS theme vars |
+| **Admin · Users** | `admin.listUsers` | `admin.updateUser`, `admin.deleteUser` | search + role/tier filters; mobile cards / desktop table; tier/role/delete via `ConfirmDialog` + `AdminToast`; super-admin row protected; role + delete are super-admin only |
+| **Admin · Documents** | `admin.listDocuments` | `admin.deleteDocument` | search by filename/owner; cards / table; delete via confirm modal |
 
 ### Example flow — Quiz (the most involved)
 

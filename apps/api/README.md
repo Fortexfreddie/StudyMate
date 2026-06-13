@@ -54,7 +54,8 @@ apps/api/
 │   ├── quiz.py                # generate + submit/grade
 │   ├── history.py             # paginated chat / quiz / summary history
 │   ├── stats.py               # aggregate metrics + streak
-│   └── usage.py               # daily token consumption
+│   ├── usage.py               # daily token consumption
+│   └── admin.py               # admin: overview stats, user + document management
 ├── services/                  # ALL business logic lives here
 │   ├── auth_service.py        # credentials, token issuance, rotation, pruning
 │   ├── pdf_processor.py       # pypdf extraction + LangChain chunking
@@ -65,7 +66,9 @@ apps/api/
 │   ├── token_service.py       # atomic quota reserve/reconcile + usage logging
 │   └── activity_service.py    # record_activity + compute_streak (study streaks)
 ├── migrations/                # Alembic migrations
-└── scripts/wipe_db.py         # Full reset of Postgres + Qdrant
+└── scripts/
+    ├── wipe_db.py             # Full reset of Postgres + Qdrant
+    └── promote_admin.py       # Promote/demote a user's admin role
 ```
 
 **Layering rule (enforced):** routers are thin and call `services/`; business logic
@@ -271,6 +274,34 @@ and graded as incorrect — distinct from a deliberate choice of option A (`0`).
   "reset_time": "2026-06-01T00:00:00Z"
 }
 ```
+
+### Admin
+
+All `/admin/*` routes require an admin (`get_current_admin`); role changes and
+user deletion additionally require the super admin (`get_current_super_admin`).
+The `SUPER_ADMIN_EMAIL` account is auto-assigned `super_admin` + pro on
+signup/login and can never be modified or deleted via the API.
+
+| Method | Endpoint | Gate | Description |
+|---|---|---|---|
+| GET | `/admin/stats/overview` | Admin | System-wide aggregate metrics + 30-day series |
+| GET | `/admin/users` | Admin | Paginated users (`search`, `role`, `major`, `is_pro`, `sort_by`, `limit`≤100, `offset`) |
+| PATCH | `/admin/users/{user_id}` | Admin (`is_pro`) / Super (`role`) | Update tier and/or role |
+| DELETE | `/admin/users/{user_id}` | Super | Delete user + purge their vectors |
+| GET | `/admin/documents` | Admin | Paginated documents with owner info |
+| DELETE | `/admin/documents/{doc_id}` | Admin | Delete any document + purge its vectors |
+
+**`PATCH /admin/users/{user_id}`** body (both fields optional) → 200 `UserResponse`
+```json
+{ "is_pro": true, "role": "admin" }
+```
+
+Guards: target super admin → `409`; `role` change by a non-super-admin → `403`;
+`role` not in `("user", "admin")` → `403`. Admins automatically receive the Pro
+token limit via `User.effective_is_pro` (no `is_pro` flag needed).
+
+Full roles/super-admin/UI spec: [docs/ADMIN.md](../../docs/ADMIN.md). Promote
+admins from the CLI with `python scripts/promote_admin.py <email> [--demote]`.
 
 ---
 

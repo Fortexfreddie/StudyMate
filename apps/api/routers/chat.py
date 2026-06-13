@@ -171,7 +171,7 @@ async def chat_with_docs(
     context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)
     estimate = estimate_request_tokens(context_text, payload.query, "chat")
     allowed, _used, limit = await reserve_tokens(
-        current_user.id, current_user.is_pro, estimate
+        current_user.id, current_user.effective_is_pro, estimate
     )
     if not allowed:
         raise StudyMateError(
