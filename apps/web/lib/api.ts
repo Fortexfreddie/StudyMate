@@ -2,10 +2,14 @@ import type {
   AdminDocumentListParams,
   AdminDocumentListResponse,
   AdminOverview,
+  AdminUserActivityParams,
+  AdminUserActivityResponse,
   AdminUserDeleteResponse,
   AdminUserListParams,
   AdminUserListResponse,
   AdminUserUpdateRequest,
+  AdminUserUsageParams,
+  AdminUserUsageResponse,
   AuthTokens,
   ChatHistoryResponse,
   ChatRequest,
@@ -24,6 +28,7 @@ import type {
   SignupRequest,
   SignupResponse,
   StatsResponse,
+  SummaryDetailResponse,
   SummaryHistoryResponse,
   SummaryRequest,
   SummaryResponse,
@@ -309,6 +314,10 @@ export const api = {
         `/history/summaries${query ? `?${query}` : ""}`
       );
     },
+
+    summaryDetail(summaryId: string): Promise<SummaryDetailResponse> {
+      return request<SummaryDetailResponse>(`/history/summaries/${summaryId}`);
+    },
   },
 
   admin: {
@@ -329,6 +338,36 @@ export const api = {
       const query = searchParams.toString();
       return request<AdminUserListResponse>(
         `/admin/users${query ? `?${query}` : ""}`
+      );
+    },
+
+    userUsage(
+      userId: string,
+      params?: AdminUserUsageParams
+    ): Promise<AdminUserUsageResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.start) searchParams.set("start", params.start);
+      if (params?.end) searchParams.set("end", params.end);
+      if (params?.request_type)
+        searchParams.set("request_type", params.request_type);
+      const query = searchParams.toString();
+      return request<AdminUserUsageResponse>(
+        `/admin/users/${userId}/usage${query ? `?${query}` : ""}`
+      );
+    },
+
+    userActivity(
+      userId: string,
+      params?: AdminUserActivityParams
+    ): Promise<AdminUserActivityResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.action_type)
+        searchParams.set("action_type", params.action_type);
+      if (params?.limit) searchParams.set("limit", String(params.limit));
+      if (params?.offset) searchParams.set("offset", String(params.offset));
+      const query = searchParams.toString();
+      return request<AdminUserActivityResponse>(
+        `/admin/users/${userId}/activity${query ? `?${query}` : ""}`
       );
     },
 

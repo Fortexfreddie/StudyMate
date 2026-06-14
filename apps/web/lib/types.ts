@@ -110,7 +110,8 @@ export type SummaryFormat =
   | "study_guide"
   | "flashcards"
   | "cheat_sheet"
-  | "mind_map";
+  | "mind_map"
+  | "tabular";
 
 export interface SummaryRequest {
   topic: string;
@@ -277,6 +278,19 @@ export interface SummaryHistoryResponse {
   offset: number;
 }
 
+// A single saved summary, fully renderable (mirrors SummaryResponse shape).
+export interface SummaryDetailResponse {
+  id: string;
+  doc_id: string | null;
+  topic: string;
+  summary: string;
+  format: SummaryFormat;
+  structured: SummaryStructured;
+  context_sufficient: boolean;
+  sources: Source[];
+  created_at: string;
+}
+
 export interface QuizDetailAnswer {
   question_index: number;
   selected_index: number;
@@ -398,6 +412,61 @@ export interface AdminUserListParams {
   major?: string;
   is_pro?: boolean;
   sort_by?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// Admin — per-user token usage
+
+export interface AdminUserUsageResponse {
+  user_id: string;
+  email: string;
+  full_name: string;
+  is_pro: boolean;
+  role: string;
+  start_date: string;
+  end_date: string;
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  request_count: number;
+  tokens_by_type: Record<string, number>;
+  tokens_by_model: Record<string, number>;
+  daily_tokens: DailyTokenTrend[];
+}
+
+export interface AdminUserUsageParams {
+  start?: string; // ISO date (YYYY-MM-DD)
+  end?: string; // ISO date (YYYY-MM-DD)
+  request_type?: "chat" | "summary" | "quiz";
+}
+
+// Admin — per-user audit trail (metadata only)
+
+export interface AdminActivityItem {
+  id: string;
+  action_type: "chat" | "summary" | "quiz";
+  created_at: string;
+  doc_id: string | null;
+  doc_filename: string | null;
+  performance_mode: string | null;
+  preview: string;
+  score: number | null;
+  total_questions: number | null;
+}
+
+export interface AdminUserActivityResponse {
+  user_id: string;
+  email: string;
+  full_name: string;
+  items: AdminActivityItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserActivityParams {
+  action_type?: "chat" | "summary" | "quiz";
   limit?: number;
   offset?: number;
 }

@@ -120,6 +120,32 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
     },
 }
 
+# The "tabular" format is special: instead of a rigid JSON shape, it returns a rich
+# free-form **markdown** document (GitHub-flavored — headings, tables, bold, nested
+# lists). This is the richest format, matching the quality of an open chat answer
+# that asks for a tabular breakdown. It carries no `structured` payload; the whole
+# value lives in `plain_text` and is rendered with the same markdown renderer the
+# chat page uses. Generated via a dedicated non-JSON path (see generate_summary).
+_TABULAR_INSTRUCTIONS = (
+    "Produce a COMPREHENSIVE, well-structured study summary in GitHub-Flavored "
+    "Markdown. This is the premium, most detailed format — be thorough.\n\n"
+    "STRUCTURE REQUIREMENTS:\n"
+    "• Open with a short '###' heading and 1–2 sentence orientation of what the "
+    "material covers.\n"
+    "• Organize the content into clearly titled sections using '###' headings.\n"
+    "• Use **markdown tables** generously wherever the content compares, lists, or "
+    "categorizes things (steps, types, tools, properties, operations, formulas, "
+    "examples). Tables are the centerpiece of this format.\n"
+    "• Keep table cells concise; use <br> inside a cell for short sub-points rather "
+    "than overly wide cells.\n"
+    "• Use **bold** for key terms and bullet/numbered lists for sequential or "
+    "non-tabular detail.\n"
+    "• Cite sources inline as 'Source #N' where appropriate.\n"
+    "• Cover the FULL breadth of the provided context — every major topic, not just "
+    "the first few chunks.\n"
+    "• Do NOT wrap the whole answer in a code fence. Output the markdown directly."
+)
+
 
 # Upper bound on input handed to the ast.literal_eval fallback. The fallback can
 # recurse/allocate on adversarial nested input, and a legitimate generation is far
@@ -370,6 +396,10 @@ class Generator:
 
         Returns ``(plain_text, structured, context_sufficient, usage)``.
         """
+        # The tabular format takes a dedicated rich-markdown path (no JSON shape).
+        if summary_format == "tabular":
+            return await self._generate_tabular_summary(topic, context)
+
         context_text = self._format_context(context)
         spec = SUMMARY_FORMAT_SPECS.get(summary_format, SUMMARY_FORMAT_SPECS["bullets"])
 
@@ -413,6 +443,56 @@ class Generator:
             raise ServiceUnavailableError(
                 "Failed to generate a summary from your document. Please try again."
             ) from e
+
+    async def _generate_tabular_summary(
+        self, topic: str, context: list[dict[str, Any]]
+    ) -> tuple[str, Any, bool, dict[str, int | str]]:
+        """Generate a rich free-form markdown summary (the 'tabular' format).
+
+        Unlike the structured formats, this returns a full GitHub-Flavored Markdown
+        document (headings, tables, nested lists) as ``plain_text`` with ``structured``
+        always None — the frontend renders it with the same markdown renderer the chat
+        page uses. Uses a JSON envelope solely to carry the ``context_sufficient`` flag.
+
+        Returns ``(plain_text, None, context_sufficient, usage)``.
+        """
+        context_text = self._format_context(context)
+
+        system_instruction = (
+            SYSTEM_PROMPT + "\n═══ OUTPUT FORMAT ═══\n"
+            "Respond with a single JSON object with exactly these keys:\n"
+            "{\n"
+            '  "markdown": "The full GitHub-Flavored Markdown summary (this is the '
+            'main content).",\n'
+            '  "context_sufficient": true\n'
+            "}\n\n"
+            f"MARKDOWN CONTENT INSTRUCTIONS:\n{_TABULAR_INSTRUCTIONS}\n\n"
+            "═══ RESPONSE INSTRUCTIONS ═══\n"
+            "1. ALWAYS GENERATE: Always produce a thorough markdown summary from "
+            "whatever context is available. Never refuse.\n"
+            "2. LIMITED CONTEXT: If the requested topic isn't directly covered, "
+            "summarize the closest related document content and set "
+            "context_sufficient to false — but still return a full markdown summary.\n"
+            "3. NO HALLUCINATION: Respect the absolute grounding rules. Invent "
+            "nothing that is not in the context.\n\n"
+            f"--- CONTEXT ---\n{context_text}"
+        )
+
+        response_text, usage = await self._call_llm_with_retry(
+            system_instruction,
+            f"Topic to Summarize: {topic}",
+            require_json=True,
+        )
+        parsed = robust_json_loads(response_text)
+        markdown = str(parsed.get("markdown", "")).strip()
+        context_sufficient = bool(parsed.get("context_sufficient", False))
+        if not markdown:
+            # Defensive: never return an empty summary. Surface as a retryable 503
+            # so the router refunds the token reservation.
+            raise ServiceUnavailableError(
+                "Failed to generate a summary from your document. Please try again."
+            )
+        return markdown, None, context_sufficient, usage
 
     async def generate_quiz(
         self, topic: str, context: list[dict[str, Any]], num_questions: int = 5

@@ -4,10 +4,8 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FileText, Send, MessageSquare, AlertTriangle } from "lucide-react";
 import { AIAssistantIcon, SleekLightningIcon } from "@/components/shared/Icons";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { CollapsibleSources, linkifySources } from "@/components/shared/SourceReferences";
+import { CollapsibleSources, RichMarkdown } from "@/components/shared/SourceReferences";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
 import { getActivePerfConfig } from "@/lib/performance";
@@ -199,7 +197,7 @@ function ChatContent() {
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 min-w-0">
                 {/* Context-insufficient banner */}
                 {isAI && msg.contextSufficient === false && (
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-accent-coral">
@@ -209,67 +207,18 @@ function ChatContent() {
                 )}
 
                 <div
-                  className={`p-3.5 px-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
+                  className={`p-3.5 px-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm min-w-0 ${
                     isAI
                       ? "bg-surface-raised border border-border-subtle text-white rounded-tl-sm"
                       : "bg-brand-primary text-accent-gold-fg font-bold rounded-tr-sm whitespace-pre-wrap"
                   }`}
                 >
                   {isAI ? (
-                    <div className="markdown-body flex flex-col gap-2">
-                      {(() => {
-                        const n = msg.sources?.length ?? 0;
-                        const link = (children: React.ReactNode) =>
-                          linkifySources(children, n, (i) => cite(`${msg.id}:${i}`));
-                        return (
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              table: ({ children }) => (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-[11px] border-collapse">{children}</table>
-                                </div>
-                              ),
-                              th: ({ children }) => (
-                                <th className="border border-border-subtle bg-white/5 px-2 py-1 text-left font-extrabold text-white">
-                                  {children}
-                                </th>
-                              ),
-                              td: ({ children }) => (
-                                <td className="border border-border-subtle px-2 py-1 align-top">{link(children)}</td>
-                              ),
-                              p: ({ children }) => <p>{link(children)}</p>,
-                              li: ({ children }) => <li>{link(children)}</li>,
-                              ul: ({ children }) => (
-                                <ul className="list-disc pl-4 flex flex-col gap-1">{children}</ul>
-                              ),
-                              ol: ({ children }) => (
-                                <ol className="list-decimal pl-4 flex flex-col gap-1">{children}</ol>
-                              ),
-                              strong: ({ children }) => (
-                                <strong className="font-extrabold text-white">{children}</strong>
-                              ),
-                              code: ({ children }) => (
-                                <code className="bg-black/30 rounded px-1 py-0.5 font-mono text-[11px] text-brand-primary">
-                                  {children}
-                                </code>
-                              ),
-                              h1: ({ children }) => (
-                                <h3 className="font-extrabold text-white text-sm">{children}</h3>
-                              ),
-                              h2: ({ children }) => (
-                                <h3 className="font-extrabold text-white text-sm">{children}</h3>
-                              ),
-                              h3: ({ children }) => (
-                                <h4 className="font-bold text-white">{children}</h4>
-                              ),
-                            }}
-                          >
-                            {msg.text}
-                          </ReactMarkdown>
-                        );
-                      })()}
-                    </div>
+                    <RichMarkdown
+                      text={msg.text}
+                      sourceCount={msg.sources?.length ?? 0}
+                      onCite={(i) => cite(`${msg.id}:${i}`)}
+                    />
                   ) : (
                     msg.text
                   )}

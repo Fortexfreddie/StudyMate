@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Search,
   ShieldCheck,
@@ -9,6 +10,8 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -159,8 +162,8 @@ export default function AdminUsersPage() {
       <AdminTabs />
 
       {/* Search + filters */}
-      <div className="flex flex-col gap-3 mb-6">
-        <div className="relative">
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-text-muted" />
           <input
             value={searchInput}
@@ -169,30 +172,29 @@ export default function AdminUsersPage() {
             className="w-full bg-surface border border-white/5 rounded-2xl pl-11 pr-4 py-3.5 text-xs sm:text-sm text-white placeholder:text-text-muted focus:outline-none focus:border-brand-primary/40 focus:ring-1 focus:ring-brand-primary/10 transition shadow shadow-black/10"
           />
         </div>
-        <div className="flex flex-wrap gap-2">
-          {ROLE_FILTERS.map((r) => (
-            <FilterChip
-              key={r}
-              active={roleFilter === r}
-              onClick={() => {
-                setRoleFilter(r);
-                setPage(0);
-              }}
-              label={r === "all" ? "All roles" : r === "super_admin" ? "Super" : r}
-            />
-          ))}
-          <span className="w-px bg-border-subtle mx-1" />
-          {TIER_FILTERS.map((t) => (
-            <FilterChip
-              key={t}
-              active={tierFilter === t}
-              onClick={() => {
-                setTierFilter(t);
-                setPage(0);
-              }}
-              label={t === "all" ? "All tiers" : t}
-            />
-          ))}
+        <div className="flex gap-2 sm:shrink-0 w-full sm:w-auto">
+          <FilterDropdown
+            value={roleFilter}
+            onChange={(r) => {
+              setRoleFilter(r);
+              setPage(0);
+            }}
+            options={ROLE_FILTERS}
+            labelMap={ROLE_LABELS}
+            labelPrefix="Role"
+            icon={UserCog}
+          />
+          <FilterDropdown
+            value={tierFilter}
+            onChange={(t) => {
+              setTierFilter(t);
+              setPage(0);
+            }}
+            options={TIER_FILTERS}
+            labelMap={TIER_LABELS}
+            labelPrefix="Tier"
+            icon={TrendingUp}
+          />
         </div>
       </div>
 
@@ -371,7 +373,12 @@ function UserCard({
     <div className="bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/10">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col min-w-0">
-          <span className="text-sm font-extrabold text-white truncate">{user.full_name}</span>
+          <Link
+            href={`/dashboard/admin/users/${user.id}`}
+            className="text-sm font-extrabold text-white truncate hover:text-brand-primary transition-colors"
+          >
+            {user.full_name}
+          </Link>
           <span className="text-[11px] text-text-muted truncate mt-0.5">{user.email}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -403,7 +410,12 @@ function UserRow({
     <tr className="border-b border-border-subtle last:border-0 hover:bg-white/[0.015] transition-colors duration-150">
       <td className="px-6 py-4">
         <div className="flex flex-col min-w-0">
-          <span className="font-extrabold text-white text-sm truncate">{user.full_name}</span>
+          <Link
+            href={`/dashboard/admin/users/${user.id}`}
+            className="font-extrabold text-white text-sm truncate hover:text-brand-primary transition-colors w-fit"
+          >
+            {user.full_name}
+          </Link>
           <span className="text-[11px] text-text-muted truncate mt-0.5">{user.email}</span>
         </div>
       </td>
@@ -424,26 +436,96 @@ function UserRow({
   );
 }
 
-function FilterChip({
-  active,
-  label,
-  onClick,
+const ROLE_LABELS: Record<(typeof ROLE_FILTERS)[number], string> = {
+  all: "All Roles",
+  user: "User",
+  admin: "Admin",
+  super_admin: "Super Admin",
+};
+
+const TIER_LABELS: Record<(typeof TIER_FILTERS)[number], string> = {
+  all: "All Tiers",
+  pro: "Pro",
+  free: "Free",
+};
+
+function FilterDropdown<T extends string>({
+  value,
+  onChange,
+  options,
+  labelMap,
+  icon: Icon,
+  labelPrefix,
 }: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
+  value: T;
+  onChange: (val: T) => void;
+  options: readonly T[];
+  labelMap: Record<T, string>;
+  icon?: React.ComponentType<{ className?: string }>;
+  labelPrefix: string;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
-    <button
-      onClick={onClick}
-      className={`px-3.5 py-1.5 rounded-xl text-[11px] font-extrabold capitalize transition-all duration-200 border cursor-pointer ${
-        active
-          ? "bg-brand-primary text-brand-primary-fg border-brand-primary/20 shadow-md shadow-brand-primary/5 scale-[1.02]"
-          : "bg-card-bg text-text-muted border-border-subtle hover:text-white hover:border-white/10"
-      }`}
-    >
-      {label}
-    </button>
+    <div ref={containerRef} className="relative flex-1 sm:flex-initial">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full sm:w-48 bg-card-bg border border-border-subtle hover:border-white/10 rounded-2xl px-4 py-3.5 text-xs sm:text-sm text-white flex items-center justify-between gap-2 transition cursor-pointer shadow shadow-black/10 select-none"
+      >
+        <div className="flex items-center gap-2 truncate">
+          {Icon && <Icon className="h-4 w-4 text-text-muted shrink-0" />}
+          <span className="truncate">
+            <span className="text-text-muted mr-1.5 font-medium">{labelPrefix}:</span>
+            <span className="font-extrabold">{labelMap[value]}</span>
+          </span>
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 text-text-muted shrink-0 transition-transform duration-200 ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 left-0 sm:left-auto sm:w-48 mt-1.5 bg-surface-raised border border-border-subtle rounded-2xl py-1.5 shadow-xl shadow-black/55 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => {
+                onChange(opt);
+                setIsOpen(false);
+              }}
+              className="w-full text-left px-4 py-2.5 text-xs sm:text-sm text-text-muted hover:text-white hover:bg-white/5 transition-colors duration-150 flex items-center justify-between cursor-pointer"
+            >
+              <span
+                className={`capitalize ${
+                  value === opt ? "font-extrabold text-brand-primary" : "font-medium"
+                }`}
+              >
+                {labelMap[opt]}
+              </span>
+              {value === opt && <Check className="h-4 w-4 text-brand-primary shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

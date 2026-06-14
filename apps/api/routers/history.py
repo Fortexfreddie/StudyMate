@@ -19,6 +19,7 @@ from models.schemas import (
     QuizHistoryItem,
     QuizHistoryResponse,
     SourceInfo,
+    SummaryDetailResponse,
     SummaryHistoryItem,
     SummaryHistoryResponse,
 )
@@ -312,4 +313,44 @@ async def get_summaries_history(
         total=total_count,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/summaries/{summary_id}",
+    response_model=SummaryDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get a single saved summary",
+)
+async def get_summary_detail(
+    summary_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+) -> SummaryDetailResponse:
+    """Retrieve one saved summary in full so it can be re-rendered from history.
+
+    Returns the ``structured`` payload and ``sources`` (not just the list-item
+    metadata) so the summary page can restore the exact completed view without
+    regenerating — fixing history links that previously only reopened the form.
+    """
+    stmt = select(SummaryHistory).where(
+        SummaryHistory.id == summary_id,
+        SummaryHistory.user_id == current_user.id,
+    )
+    result = await db.execute(stmt)
+    item = result.scalar_one_or_none()
+
+    if not item:
+        raise StudyMateError("Summary not found.", status_code=404)
+
+    return SummaryDetailResponse(
+        id=item.id,
+        doc_id=item.doc_id,
+        topic=item.topic,
+        summary=item.summary_text,
+        format=item.format,  # type: ignore[arg-type]
+        structured=item.structured,  # type: ignore[arg-type]
+        context_sufficient=item.context_sufficient,
+        sources=_coerce_sources(item.sources),
+        created_at=item.created_at,
     )

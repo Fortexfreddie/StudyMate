@@ -16,7 +16,8 @@
 - `apps/web/components/layout/AdminGuard.tsx` — role gate
 - `apps/web/components/shared/AdminToast.tsx` — success/error toast
 - `apps/web/components/shared/ConfirmDialog.tsx` — confirmation modal (now tone-aware)
-- `apps/web/app/dashboard/admin/` — overview, users, and documents pages
+- `apps/web/app/dashboard/admin/` — overview, users, user-detail, and documents pages
+- `apps/web/app/dashboard/admin/users/[id]/page.tsx` — per-user usage + audit trail
 - `apps/web/app/dashboard/components/DashboardNav.tsx` — conditional Admin nav link
 
 **Role:** Give admins a system overview dashboard and tools to manage users and documents, gated by role on both the server and the UI.
@@ -62,6 +63,16 @@ def effective_is_pro(self) -> bool:
 `chat.py`, `summary.py`, `quiz.py`, `stats.py`, and `usage.py` all pass
 `current_user.effective_is_pro` into `reserve_tokens` / `get_usage_summary`.
 
+### Role → tier sync
+
+So the stored `is_pro` column never disagrees with the displayed tier, the
+PATCH endpoint **syncs tier to role**: promoting a user to `admin` also sets
+`is_pro = True`. Demoting back to `user` leaves `is_pro` untouched (a user who
+paid for Pro keeps it). For admins promoted *before* this sync existed (whose
+`is_pro` is still stale `False`), the overview's **Pro user count** is computed
+as `is_pro OR role in (admin, super_admin)`, so the "Tier breakdown" pie and the
+per-user list always agree without a data migration.
+
 ---
 
 ## Dependencies (route gates)
@@ -91,6 +102,8 @@ an admin; the gate column notes where super admin is required.
 |---|---|---|---|
 | GET | `/admin/stats/overview` | Admin | All aggregate metrics + 30-day time series |
 | GET | `/admin/users` | Admin | Paginated users (search/filter/sort) |
+| GET | `/admin/users/{user_id}/usage` | Admin | One user's token usage over a date window |
+| GET | `/admin/users/{user_id}/activity` | Admin | One user's audit trail (metadata only) |
 | PATCH | `/admin/users/{user_id}` | Admin (tier) / Super (role) | Update `is_pro` and/or `role` |
 | DELETE | `/admin/users/{user_id}` | Super | Delete a user + purge their vectors |
 | GET | `/admin/documents` | Admin | Paginated documents with owner info |
@@ -103,6 +116,36 @@ an admin; the gate column notes where super admin is required.
   default 20), `offset`.
 - **`/admin/documents`:** `search` (filename/owner name/owner email),
   `sort_by` (`uploaded_at` | `filename` | `chunk_count`), `limit`, `offset`.
+- **`/admin/users/{user_id}/usage`:** `start`, `end` (inclusive ISO calendar
+  days, UTC-bucketed; default = last 30 days), `request_type`
+  (`chat` | `summary` | `quiz`).
+- **`/admin/users/{user_id}/activity`:** `action_type`
+  (`chat` | `summary` | `quiz`), `limit` (1–100, default 20), `offset`.
+
+### Per-user usage (`GET /admin/users/{user_id}/usage`)
+
+Returns `AdminUserUsageResponse`: window totals (total / input / output tokens,
+request count), `tokens_by_type`, `tokens_by_model`, and a per-day `daily_tokens`
+trend split by type (sparse — the frontend zero-fills gaps). All figures are
+summed from the append-only `token_usage` log (not the live quota counter), so
+historical numbers are stable. The window is bucketed in UTC to match
+`/admin/stats/overview`.
+
+### Per-user audit trail (`GET /admin/users/{user_id}/activity`)
+
+Returns `AdminUserActivityResponse`: a paginated, time-ordered feed merging the
+user's chat, summary, and quiz rows (unioned in SQL, paginated as one timeline).
+Each `AdminActivityItem` carries **metadata only** — action type, timestamp,
+document id/filename, performance mode, quiz score, and an **80-character
+truncated preview** of the query (chat) or topic (summary/quiz).
+
+> **Privacy by design.** This endpoint deliberately **never** returns full
+> question text or model answer bodies. An admin can audit *what kind* of
+> activity a user performed and its token cost — for abuse/cost monitoring —
+> without reading a student's private study content. If full-content access is
+> ever needed, it should be gated behind super admin, logged with a reason, and
+> disclosed in the privacy policy (see `docs/`/the privacy page). The truncated
+> preview is the maximum content exposure currently permitted.
 
 ### Status codes
 
@@ -119,7 +162,10 @@ an admin; the gate column notes where super admin is required.
 - The target's role is checked first — a `super_admin` target → `409`.
 - A `role` change requires the caller to be super admin → else `403`.
 - `role` must be `"user"` or `"admin"` → else `403`.
-- `is_pro` requires only admin.
+- Promoting to `"admin"` also sets `is_pro = True` (tier follows role); demoting
+  to `"user"` leaves `is_pro` as-is.
+- `is_pro` requires only admin. An explicit `is_pro` in the same request is
+  applied last, so it overrides the role-driven default if both are supplied.
 
 ### Deletion & vector purge
 
@@ -178,7 +224,11 @@ Refuses to touch the `SUPER_ADMIN_EMAIL` account and never assigns
   type), tier pie chart, users-by-major list, and the top-uploaders leaderboard.
 - **`/dashboard/admin/users`** — search + role/tier filter chips; stacked cards on
   mobile, table on desktop; pagination with a result range. Actions run through
-  confirmation modals.
+  confirmation modals. Each user's name links to their detail page.
+- **`/dashboard/admin/users/[id]`** — per-user detail: token-usage stat tiles, a
+  7d/30d/90d window selector, a stacked daily token chart, a tokens-by-model
+  breakdown, and the metadata-only audit timeline (filterable by action type,
+  paginated). No full query/answer content is shown.
 - **`/dashboard/admin/documents`** — filename/owner search; cards on mobile, table
   on desktop; delete via confirmation modal; pagination.
 

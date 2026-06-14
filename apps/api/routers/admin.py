@@ -9,11 +9,21 @@ registration in ``main.py`` (matching every other router in this app).
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Float, cast, func, literal_column, or_, select
+from sqlalchemy import (
+    Float,
+    Integer,
+    String,
+    cast,
+    func,
+    literal_column,
+    null,
+    or_,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -40,13 +50,16 @@ from models.database import (
     get_db,
 )
 from models.schemas import (
+    AdminActivityItem,
     AdminDocumentListItem,
     AdminDocumentListResponse,
     AdminOverviewResponse,
+    AdminUserActivityResponse,
     AdminUserDeleteResponse,
     AdminUserListItem,
     AdminUserListResponse,
     AdminUserUpdateRequest,
+    AdminUserUsageResponse,
     DailyCount,
     DailyTokenTrend,
     DeleteResponse,
@@ -131,9 +144,20 @@ async def overview(
         )
         or 0
     )
+    # Effective Pro = stored is_pro OR an admin/super_admin role (admins always get
+    # Pro limits via User.effective_is_pro). Counting role-based Pro here keeps the
+    # "Tier breakdown" pie consistent with the per-user list, including admins who
+    # were promoted before role→tier sync existed (so their is_pro column is stale).
     total_pro_users = (
         await db.scalar(
-            select(func.count()).select_from(User).where(User.is_pro.is_(True))
+            select(func.count())
+            .select_from(User)
+            .where(
+                or_(
+                    User.is_pro.is_(True),
+                    User.role.in_(("admin", "super_admin")),
+                )
+            )
         )
         or 0
     )
@@ -143,14 +167,24 @@ async def overview(
     )
     users_by_role = {role: int(count) for role, count in role_rows}
 
+    # Group majors case-insensitively so "Computer Science" and "Computer science"
+    # collapse into one bucket. We key on lower(trim(major)) and surface a single
+    # representative label per bucket (max() of the original spellings — stable and
+    # avoids a second query). Blank/whitespace-only majors are excluded.
+    major_key = func.lower(func.trim(User.major))
     major_rows = await db.execute(
-        select(User.major, func.count())
-        .where(User.major.isnot(None))
-        .group_by(User.major)
+        select(
+            major_key.label("major_key"),
+            func.max(User.major).label("display"),
+            func.count().label("cnt"),
+        )
+        .where(User.major.isnot(None), func.trim(User.major) != "")
+        .group_by(major_key)
         .order_by(func.count().desc())
     )
     users_by_major = [
-        MajorBreakdown(major=major, count=int(count)) for major, count in major_rows
+        MajorBreakdown(major=display, count=int(cnt))
+        for _key, display, cnt in major_rows
     ]
 
     # Active-user windows (distinct users with any activity in the period)
@@ -388,6 +422,239 @@ async def list_users(
     return AdminUserListResponse(users=users, total=total, limit=limit, offset=offset)
 
 
+@router.get("/users/{user_id}/usage", response_model=AdminUserUsageResponse)
+async def user_usage(
+    user_id: UUID,
+    _admin: User = Depends(get_current_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    start: date | None = Query(default=None),  # noqa: B008
+    end: date | None = Query(default=None),  # noqa: B008
+    request_type: str | None = Query(default=None),  # noqa: B008
+) -> AdminUserUsageResponse:
+    """One user's token consumption over a date window, from the append-only log.
+
+    Aggregates the ``token_usage`` rows (not the live quota counter) so historical
+    figures are stable. ``start``/``end`` are inclusive calendar days bucketed in
+    UTC to match the rest of the dashboard; ``request_type`` optionally narrows to a
+    single generation type.
+    """
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if target is None:
+        raise StudyMateError("User not found.", status_code=404)
+
+    today = _today()
+    end_date = end or today
+    start_date = start or (today - timedelta(days=_TREND_DAYS - 1))
+    if start_date > end_date:
+        raise StudyMateError("start must be on or before end.", status_code=400)
+
+    # Inclusive window: [start 00:00 UTC, (end + 1 day) 00:00 UTC).
+    window_start = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
+    window_end = datetime.combine(
+        end_date + timedelta(days=1), datetime.min.time(), tzinfo=UTC
+    )
+
+    base_filters = [
+        TokenUsage.user_id == user_id,
+        TokenUsage.created_at >= window_start,
+        TokenUsage.created_at < window_end,
+    ]
+    if request_type:
+        if request_type not in ("chat", "summary", "quiz"):
+            raise StudyMateError(
+                'request_type must be "chat", "summary", or "quiz".', status_code=400
+            )
+        base_filters.append(TokenUsage.request_type == request_type)
+
+    # Window totals
+    totals_row = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(TokenUsage.total_tokens), 0),
+                func.coalesce(func.sum(TokenUsage.input_tokens), 0),
+                func.coalesce(func.sum(TokenUsage.output_tokens), 0),
+                func.count(),
+            ).where(*base_filters)
+        )
+    ).one()
+    total_tokens, total_input, total_output, request_count = (int(v) for v in totals_row)
+
+    type_rows = await db.execute(
+        select(TokenUsage.request_type, func.coalesce(func.sum(TokenUsage.total_tokens), 0))
+        .where(*base_filters)
+        .group_by(TokenUsage.request_type)
+    )
+    tokens_by_type = {rtype: int(total) for rtype, total in type_rows}
+
+    model_rows = await db.execute(
+        select(TokenUsage.model_used, func.coalesce(func.sum(TokenUsage.total_tokens), 0))
+        .where(*base_filters)
+        .group_by(TokenUsage.model_used)
+    )
+    tokens_by_model = {model: int(total) for model, total in model_rows}
+
+    # Per-day split by type, UTC-bucketed (sparse; frontend zero-fills gaps).
+    trend_rows = await db.execute(
+        select(
+            _utc_date(TokenUsage.created_at),
+            TokenUsage.request_type,
+            func.coalesce(func.sum(TokenUsage.total_tokens), 0),
+        )
+        .where(*base_filters)
+        .group_by(_utc_date(TokenUsage.created_at), TokenUsage.request_type)
+    )
+    trend_by_date: dict[str, dict[str, int]] = {}
+    for d, rtype, total in trend_rows:
+        trend_by_date.setdefault(str(d), {})[rtype] = int(total)
+    daily_tokens = [
+        DailyTokenTrend(
+            date=d,
+            chat=by_type.get("chat", 0),
+            summary=by_type.get("summary", 0),
+            quiz=by_type.get("quiz", 0),
+        )
+        for d, by_type in sorted(trend_by_date.items())
+    ]
+
+    return AdminUserUsageResponse(
+        user_id=target.id,
+        email=target.email,
+        full_name=target.full_name,
+        is_pro=target.effective_is_pro,
+        role=target.role,
+        start_date=str(start_date),
+        end_date=str(end_date),
+        total_tokens=total_tokens,
+        total_input_tokens=total_input,
+        total_output_tokens=total_output,
+        request_count=request_count,
+        tokens_by_type=tokens_by_type,
+        tokens_by_model=tokens_by_model,
+        daily_tokens=daily_tokens,
+    )
+
+
+# Length of the truncated query/topic preview surfaced in the audit trail. Kept
+# short on purpose: enough to recognise the activity, not enough to expose the
+# student's full private question to an admin.
+_PREVIEW_LEN = 80
+
+
+def _preview(text: str | None) -> str:
+    """Truncate a query/topic to a fixed-length, ellipsised preview for the audit log."""
+    if not text:
+        return ""
+    text = text.strip()
+    return text if len(text) <= _PREVIEW_LEN else text[: _PREVIEW_LEN - 1].rstrip() + "…"
+
+
+@router.get("/users/{user_id}/activity", response_model=AdminUserActivityResponse)
+async def user_activity(
+    user_id: UUID,
+    _admin: User = Depends(get_current_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    action_type: str | None = Query(default=None),  # noqa: B008
+    limit: int = Query(default=20, ge=1, le=_MAX_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> AdminUserActivityResponse:
+    """A user's audit timeline as **metadata only** (privacy-conscious).
+
+    Merges chat, summary, and quiz rows into a single time-ordered feed of metadata
+    records — action type, timestamp, document, performance mode, quiz score, and an
+    80-char truncated preview of the query/topic. It deliberately never returns full
+    question text or answer bodies, so an admin can audit activity and cost without
+    reading a student's private study content.
+
+    The three sources are unioned in SQL and paginated together so the feed is a true
+    interleaved timeline (not three separate paginated lists).
+    """
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if target is None:
+        raise StudyMateError("User not found.", status_code=404)
+
+    if action_type and action_type not in ("chat", "summary", "quiz"):
+        raise StudyMateError(
+            'action_type must be "chat", "summary", or "quiz".', status_code=400
+        )
+
+    # One SELECT per source, projected to a common shape, then UNION ALL. Every
+    # branch must have matching column count AND types, so missing columns are typed
+    # NULLs: quiz-only score/total_questions are NULL for chat/summary, and quiz has
+    # no performance_mode. Column names come from the first branch (chat).
+    chat_q = select(
+        ChatMessage.id.label("id"),
+        literal_column("'chat'").label("kind"),
+        ChatMessage.created_at.label("created_at"),
+        ChatMessage.doc_id.label("doc_id"),
+        ChatMessage.query.label("text"),
+        ChatMessage.performance_mode.label("performance_mode"),
+        cast(null(), Integer).label("score"),
+        cast(null(), Integer).label("total_questions"),
+    ).where(ChatMessage.user_id == user_id)
+
+    summary_q = select(
+        SummaryHistory.id,
+        literal_column("'summary'"),
+        SummaryHistory.created_at,
+        SummaryHistory.doc_id,
+        SummaryHistory.topic,
+        SummaryHistory.performance_mode,
+        cast(null(), Integer),
+        cast(null(), Integer),
+    ).where(SummaryHistory.user_id == user_id)
+
+    quiz_q = select(
+        QuizSession.id,
+        literal_column("'quiz'"),
+        QuizSession.created_at,
+        QuizSession.doc_id,
+        QuizSession.topic,
+        cast(null(), String),
+        QuizSession.score,
+        QuizSession.total_questions,
+    ).where(QuizSession.user_id == user_id)
+
+    parts = {"chat": chat_q, "summary": summary_q, "quiz": quiz_q}
+    selected = [parts[action_type]] if action_type else list(parts.values())
+    unioned = selected[0] if len(selected) == 1 else selected[0].union_all(*selected[1:])
+    feed = unioned.subquery("feed")
+
+    total = await db.scalar(select(func.count()).select_from(feed)) or 0
+
+    rows = await db.execute(
+        select(feed, Document.filename.label("doc_filename"))
+        .outerjoin(Document, Document.id == feed.c.doc_id)
+        .order_by(feed.c.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    items = [
+        AdminActivityItem(
+            id=row["id"],
+            action_type=row["kind"],
+            created_at=row["created_at"],
+            doc_id=row["doc_id"],
+            doc_filename=row["doc_filename"],
+            performance_mode=row["performance_mode"],
+            preview=_preview(row["text"]),
+            score=row["score"],
+            total_questions=row["total_questions"],
+        )
+        for row in rows.mappings()
+    ]
+
+    return AdminUserActivityResponse(
+        user_id=target.id,
+        email=target.email,
+        full_name=target.full_name,
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @router.patch("/users/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: UUID,
@@ -414,6 +681,13 @@ async def update_user(
         if payload.role not in ("user", "admin"):
             raise ForbiddenError('Role must be "user" or "admin".')
         target.role = payload.role
+        # Keep the stored tier in sync with the role so the user list and the
+        # "Tier breakdown" pie agree. Promoting to admin grants Pro outright;
+        # demoting to plain user leaves the existing tier untouched (a user who
+        # paid for Pro keeps it). This collapses the effective_is_pro override
+        # into the stored column instead of recomputing it everywhere.
+        if payload.role == "admin":
+            target.is_pro = True
 
     if payload.is_pro is not None:
         target.is_pro = payload.is_pro

@@ -110,9 +110,13 @@ async def update_me(
         return UserResponse.model_validate(current_user)
 
     if payload.full_name is not None:
-        current_user.full_name = payload.full_name
+        current_user.full_name = payload.full_name.strip()
     if payload.major is not None:
-        current_user.major = payload.major
+        # Trim surrounding whitespace; a whitespace-only value clears the field to
+        # NULL. Casing is preserved (the admin breakdown groups case-insensitively),
+        # so stored majors stay clean without rewriting what the user typed.
+        major = payload.major.strip()
+        current_user.major = major or None
 
     await db.commit()
     await db.refresh(current_user)
