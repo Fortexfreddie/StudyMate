@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # --- Google AI ---
     GOOGLE_API_KEY: str  # required — no default
+    GOOGLE_API_KEY_2: str = ""  # optional fallback when key 1's daily quota is exhausted
+    GOOGLE_API_KEY_3: str = ""  # optional fallback when key 2's daily quota is exhausted
 
     # --- Gemini Models (high tier = primary/fallback; medium/low tiers below) ---
     GEMINI_PRIMARY_MODEL: str = "gemini-3.5-flash"
@@ -109,6 +111,8 @@ settings = Settings()
 | `APP_VERSION` | `"1.0.0"` | Version string for health check |
 | `DEBUG` | `false` | Enable debug logging |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins (comma-separated in .env) |
+| `GOOGLE_API_KEY_2` | `""` | Optional fallback API key — used when key 1's daily embedding quota is exhausted |
+| `GOOGLE_API_KEY_3` | `""` | Optional fallback API key — used when key 2's daily embedding quota is exhausted |
 | `GEMINI_PRIMARY_MODEL` | `"gemini-3.5-flash"` | Primary LLM (high/very_high/max tiers) |
 | `GEMINI_FALLBACK_MODEL` | `"gemini-3.1-flash-lite"` | Fallback LLM on rate-limit / failover |
 | `GEMINI_MEDIUM_MODEL` | `"gemini-3.5-flash"` | Primary LLM for the `medium` tier |

@@ -58,6 +58,7 @@ from models.schemas import (
     AdminUserDeleteResponse,
     AdminUserListItem,
     AdminUserListResponse,
+    AdminUserProfileResponse,
     AdminUserUpdateRequest,
     AdminUserUsageResponse,
     DailyCount,
@@ -361,10 +362,18 @@ async def list_users(
     limit: int = Query(default=20, ge=1, le=_MAX_PAGE),
     offset: int = Query(default=0, ge=0),
 ) -> AdminUserListResponse:
-    """Paginated user list with search, filtering, and a per-user document count."""
+    """Paginated user list with search, filtering, per-user doc count and last-active."""
     doc_count = (
         select(Document.user_id, func.count(Document.id).label("doc_count"))
         .group_by(Document.user_id)
+        .subquery()
+    )
+    last_active = (
+        select(
+            UserActivity.user_id,
+            func.max(UserActivity.activity_date).label("last_active"),
+        )
+        .group_by(UserActivity.user_id)
         .subquery()
     )
 
@@ -398,8 +407,13 @@ async def list_users(
     order_col = sort_columns.get(sort_by, User.created_at)
 
     rows = await db.execute(
-        select(User, func.coalesce(doc_count.c.doc_count, 0))
+        select(
+            User,
+            func.coalesce(doc_count.c.doc_count, 0),
+            last_active.c.last_active,
+        )
         .outerjoin(doc_count, doc_count.c.user_id == User.id)
+        .outerjoin(last_active, last_active.c.user_id == User.id)
         .where(*filters)
         .order_by(order_col.desc() if sort_by == "created_at" else order_col.asc())
         .limit(limit)
@@ -416,10 +430,158 @@ async def list_users(
             role=u.role,
             document_count=int(dc),
             created_at=u.created_at,
+            last_active=la,
         )
-        for u, dc in rows
+        for u, dc, la in rows
     ]
     return AdminUserListResponse(users=users, total=total, limit=limit, offset=offset)
+
+
+@router.get("/users/{user_id}/profile", response_model=AdminUserProfileResponse)
+async def user_profile(
+    user_id: UUID,
+    _admin: User = Depends(get_current_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> AdminUserProfileResponse:
+    """Robust per-user detail: lifecycle dates, lifetime counts, and metadata-only
+    breakdowns (summary formats, performance modes, models). No private content.
+    """
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if target is None:
+        raise StudyMateError("User not found.", status_code=404)
+
+    # Lifetime content counts (scalar subqueries, one round-trip each).
+    total_documents = (
+        await db.scalar(
+            select(func.count()).select_from(Document).where(Document.user_id == user_id)
+        )
+        or 0
+    )
+    total_chunks = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Document.chunk_count), 0)).where(
+                Document.user_id == user_id
+            )
+        )
+        or 0
+    )
+    total_chats = (
+        await db.scalar(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(ChatMessage.user_id == user_id)
+        )
+        or 0
+    )
+    total_summaries = (
+        await db.scalar(
+            select(func.count())
+            .select_from(SummaryHistory)
+            .where(SummaryHistory.user_id == user_id)
+        )
+        or 0
+    )
+    total_quizzes = (
+        await db.scalar(
+            select(func.count())
+            .select_from(QuizSession)
+            .where(QuizSession.user_id == user_id)
+        )
+        or 0
+    )
+
+    # Average quiz score (0–100) — same float-cast + NULLIF guard as the overview.
+    avg_ratio = await db.scalar(
+        select(
+            func.avg(
+                cast(QuizSession.score, Float)
+                / func.nullif(QuizSession.total_questions, 0)
+            )
+        ).where(QuizSession.user_id == user_id)
+    )
+    average_quiz_score = round(float(avg_ratio) * 100, 1) if avg_ratio else 0.0
+
+    # Breakdowns (metadata only).
+    fmt_rows = await db.execute(
+        select(SummaryHistory.format, func.count())
+        .where(SummaryHistory.user_id == user_id)
+        .group_by(SummaryHistory.format)
+    )
+    summary_formats = {fmt: int(c) for fmt, c in fmt_rows}
+
+    mode_rows = await db.execute(
+        select(TokenUsage.performance_mode, func.count())
+        .where(TokenUsage.user_id == user_id)
+        .group_by(TokenUsage.performance_mode)
+    )
+    performance_modes = {mode: int(c) for mode, c in mode_rows}
+
+    model_rows = await db.execute(
+        select(TokenUsage.model_used, func.coalesce(func.sum(TokenUsage.total_tokens), 0))
+        .where(TokenUsage.user_id == user_id)
+        .group_by(TokenUsage.model_used)
+    )
+    tokens_by_model = {model: int(total) for model, total in model_rows}
+    lifetime_tokens = sum(tokens_by_model.values())
+
+    # Performance metadata (Phase 4): per-type averages of the instrumented columns.
+    # AVG ignores NULLs, so legacy/cached rows that never recorded these don't skew it.
+    perf_rows = await db.execute(
+        select(
+            TokenUsage.request_type,
+            func.avg(TokenUsage.generation_ms),
+            func.avg(TokenUsage.chunks_used),
+        )
+        .where(TokenUsage.user_id == user_id)
+        .group_by(TokenUsage.request_type)
+    )
+    avg_generation_ms: dict[str, int] = {}
+    avg_chunks_used: dict[str, float] = {}
+    for rtype, avg_ms, avg_chunks in perf_rows:
+        if avg_ms is not None:
+            avg_generation_ms[rtype] = int(round(float(avg_ms)))
+        if avg_chunks is not None:
+            avg_chunks_used[rtype] = round(float(avg_chunks), 1)
+
+    cached_tokens_total = int(
+        await db.scalar(
+            select(func.coalesce(func.sum(TokenUsage.cached_tokens), 0)).where(
+                TokenUsage.user_id == user_id
+            )
+        )
+        or 0
+    )
+
+    last_active = await db.scalar(
+        select(func.max(UserActivity.activity_date)).where(
+            UserActivity.user_id == user_id
+        )
+    )
+
+    return AdminUserProfileResponse(
+        user_id=target.id,
+        email=target.email,
+        full_name=target.full_name,
+        major=target.major,
+        is_pro=target.effective_is_pro,
+        role=target.role,
+        created_at=target.created_at,
+        last_active=last_active,
+        last_login_at=target.last_login_at,
+        total_documents=int(total_documents),
+        total_chunks=int(total_chunks),
+        total_chats=int(total_chats),
+        total_summaries=int(total_summaries),
+        total_quizzes=int(total_quizzes),
+        average_quiz_score=average_quiz_score,
+        summary_formats=summary_formats,
+        performance_modes=performance_modes,
+        tokens_by_model=tokens_by_model,
+        lifetime_tokens=lifetime_tokens,
+        avg_generation_ms=avg_generation_ms,
+        avg_chunks_used=avg_chunks_used,
+        cached_tokens_total=cached_tokens_total,
+    )
 
 
 @router.get("/users/{user_id}/usage", response_model=AdminUserUsageResponse)
@@ -579,8 +741,9 @@ async def user_activity(
 
     # One SELECT per source, projected to a common shape, then UNION ALL. Every
     # branch must have matching column count AND types, so missing columns are typed
-    # NULLs: quiz-only score/total_questions are NULL for chat/summary, and quiz has
-    # no performance_mode. Column names come from the first branch (chat).
+    # NULLs: quiz-only score/total_questions are NULL for chat/summary, quiz has no
+    # performance_mode, and summary_format is set only on the summary branch. Column
+    # names come from the first branch (chat).
     chat_q = select(
         ChatMessage.id.label("id"),
         literal_column("'chat'").label("kind"),
@@ -588,6 +751,7 @@ async def user_activity(
         ChatMessage.doc_id.label("doc_id"),
         ChatMessage.query.label("text"),
         ChatMessage.performance_mode.label("performance_mode"),
+        cast(null(), String).label("summary_format"),
         cast(null(), Integer).label("score"),
         cast(null(), Integer).label("total_questions"),
     ).where(ChatMessage.user_id == user_id)
@@ -599,6 +763,7 @@ async def user_activity(
         SummaryHistory.doc_id,
         SummaryHistory.topic,
         SummaryHistory.performance_mode,
+        SummaryHistory.format,
         cast(null(), Integer),
         cast(null(), Integer),
     ).where(SummaryHistory.user_id == user_id)
@@ -609,6 +774,7 @@ async def user_activity(
         QuizSession.created_at,
         QuizSession.doc_id,
         QuizSession.topic,
+        cast(null(), String),
         cast(null(), String),
         QuizSession.score,
         QuizSession.total_questions,
@@ -638,6 +804,7 @@ async def user_activity(
             doc_filename=row["doc_filename"],
             performance_mode=row["performance_mode"],
             preview=_preview(row["text"]),
+            summary_format=row["summary_format"],
             score=row["score"],
             total_questions=row["total_questions"],
         )

@@ -26,12 +26,14 @@ import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
 import type {
   AdminUserActivityResponse,
+  AdminUserProfileResponse,
   AdminUserUsageResponse,
 } from "@/lib/types";
 import { AdminTabs } from "../../components/AdminTabs";
 import { RoleBadge, TierBadge } from "../../components/Badges";
 import {
   formatCompact,
+  formatJoined,
   formatNumber,
   formatShortDate,
   useChartPalette,
@@ -93,6 +95,10 @@ export default function AdminUserDetailPage() {
 
   const [rangeDays, setRangeDays] = useState<number>(30);
 
+  // Profile panel (lifetime metadata)
+  const [profile, setProfile] = useState<AdminUserProfileResponse | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   // Usage panel
   const [usage, setUsage] = useState<AdminUserUsageResponse | null>(null);
   const [usageLoading, setUsageLoading] = useState(true);
@@ -145,6 +151,21 @@ export default function AdminUserDetailPage() {
     }
   }, [userId, typeFilter, page]);
 
+  const loadProfile = useCallback(async () => {
+    setProfileError(null);
+    try {
+      setProfile(await api.admin.userProfile(userId));
+    } catch (err) {
+      setProfileError(
+        err instanceof ApiClientError ? err.detail : "Failed to load profile."
+      );
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
   useEffect(() => {
     loadUsage();
   }, [loadUsage]);
@@ -167,22 +188,117 @@ export default function AdminUserDetailPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Back to users
         </button>
         <h2 className="text-xl sm:text-2xl text-white font-extrabold leading-tight">
-          {usage?.full_name ?? activity?.full_name ?? "User detail"}
+          {profile?.full_name ?? usage?.full_name ?? activity?.full_name ?? "User detail"}
         </h2>
         <div className="flex items-center gap-2 mt-1.5">
           <p className="text-xs text-text-muted">
-            {usage?.email ?? activity?.email ?? ""}
+            {profile?.email ?? usage?.email ?? activity?.email ?? ""}
           </p>
-          {usage && (
+          {(profile ?? usage) && (
             <span className="flex items-center gap-1.5">
-              <RoleBadge role={usage.role} />
-              <TierBadge isPro={usage.is_pro} />
+              <RoleBadge role={(profile ?? usage)!.role} />
+              <TierBadge isPro={(profile ?? usage)!.is_pro} />
             </span>
           )}
         </div>
       </header>
 
       <AdminTabs />
+
+      {profileError && (
+        <ErrorState
+          className="py-8"
+          title="Couldn't load profile"
+          message={profileError}
+          onRetry={loadProfile}
+        />
+      )}
+
+      {profile && (
+        <div className="flex flex-col gap-4 mb-8">
+          {/* Lifetime count tiles */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <UsageTile icon={FileStack} label="Documents" value={formatNumber(profile.total_documents)} />
+            <UsageTile icon={MessageSquare} label="Chats" value={formatNumber(profile.total_chats)} />
+            <UsageTile icon={FileText} label="Summaries" value={formatNumber(profile.total_summaries)} />
+            <UsageTile icon={GraduationCap} label="Quizzes" value={formatNumber(profile.total_quizzes)} />
+          </div>
+
+          {/* Account meta + breakdowns */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-card-bg border border-border-subtle rounded-3xl p-6 shadow-lg shadow-black/20 flex flex-col gap-2.5">
+              <h4 className="text-[10px] font-black text-white uppercase tracking-wider mb-1">
+                Account
+              </h4>
+              <MetaRow label="Signed up" value={formatJoined(profile.created_at)} />
+              <MetaRow
+                label="Last active"
+                value={profile.last_active ? formatShortDate(profile.last_active) : "Never"}
+              />
+              <MetaRow
+                label="Last login"
+                value={
+                  profile.last_login_at
+                    ? new Date(profile.last_login_at).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : "Not tracked yet"
+                }
+              />
+              <MetaRow label="Major" value={profile.major || "—"} />
+              <MetaRow
+                label="Avg quiz score"
+                value={profile.total_quizzes > 0 ? `${profile.average_quiz_score}%` : "—"}
+              />
+              <MetaRow label="Lifetime tokens" value={formatNumber(profile.lifetime_tokens)} />
+            </div>
+
+            <div className="bg-card-bg border border-border-subtle rounded-3xl p-6 shadow-lg shadow-black/20 flex flex-col gap-4">
+              <BreakdownBlock title="Summary formats" data={profile.summary_formats} />
+              <BreakdownBlock title="Performance modes" data={profile.performance_modes} />
+            </div>
+          </div>
+
+          {/* Generation performance */}
+          {(Object.keys(profile.avg_generation_ms).length > 0 ||
+            profile.cached_tokens_total > 0) && (
+            <div className="bg-card-bg border border-border-subtle rounded-3xl p-6 shadow-lg shadow-black/20 flex flex-col gap-3">
+              <h4 className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                Generation performance
+                <InfoTooltip label="About generation performance">
+                  Average time the model took to generate each type of response and
+                  the average number of document chunks fed as context. Cached tokens
+                  are input tokens Gemini billed at the cheaper cached rate.
+                </InfoTooltip>
+              </h4>
+              {(["chat", "summary", "quiz"] as const).map((t) => {
+                const ms = profile.avg_generation_ms[t];
+                const chunks = profile.avg_chunks_used[t];
+                if (ms === undefined && chunks === undefined) return null;
+                return (
+                  <MetaRow
+                    key={t}
+                    label={`Avg ${t} generation`}
+                    value={[
+                      ms !== undefined ? `${(ms / 1000).toFixed(1)}s` : null,
+                      chunks !== undefined ? `${chunks} chunks` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  />
+                );
+              })}
+              <MetaRow
+                label="Cached tokens (lifetime)"
+                value={formatNumber(profile.cached_tokens_total)}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Usage window presets */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
@@ -443,6 +559,49 @@ function UsageTile({
   );
 }
 
+function MetaRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between text-xs py-1 border-b border-white/[0.02] last:border-0">
+      <span className="text-text-muted font-medium">{label}</span>
+      <span className="text-white font-bold text-right">{value}</span>
+    </div>
+  );
+}
+
+// A labelled "key → count" list (summary formats, performance modes). Renders a
+// muted placeholder when the user has none yet.
+function BreakdownBlock({
+  title,
+  data,
+}: {
+  title: string;
+  data: Record<string, number>;
+}) {
+  const entries = Object.entries(data).sort(([, a], [, b]) => b - a);
+  return (
+    <div className="flex flex-col gap-2">
+      <h4 className="text-[10px] font-black text-white uppercase tracking-wider">
+        {title}
+      </h4>
+      {entries.length === 0 ? (
+        <p className="text-[11px] text-text-muted/60">None yet.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {entries.map(([key, count]) => (
+            <span
+              key={key}
+              className="inline-flex items-center gap-1 text-[10px] font-bold text-text-muted bg-white/5 border border-border-subtle px-2 py-1 rounded-lg capitalize"
+            >
+              {key.replace(/_/g, " ")}
+              <span className="text-brand-primary font-black">{count}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ActivityRow({
   item,
 }: {
@@ -473,6 +632,11 @@ function ActivityRow({
                 {item.score}/{item.total_questions}
               </span>
             )}
+          {item.summary_format && (
+            <span className="text-[9px] font-black text-accent-gold uppercase tracking-wider bg-accent-gold/5 border border-accent-gold/10 px-1.5 py-0.5 rounded-md">
+              {item.summary_format.replace(/_/g, " ")}
+            </span>
+          )}
           {item.performance_mode && (
             <span className="text-[9px] font-black text-text-muted uppercase tracking-wider bg-white/5 border border-border-subtle px-1.5 py-0.5 rounded-md">
               {item.performance_mode.replace("_", " ")}

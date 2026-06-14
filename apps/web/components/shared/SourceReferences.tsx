@@ -9,6 +9,17 @@ import type { Source } from "@/lib/types";
 // that calls `onCite(N - 1)` so the page can scroll to / highlight that card.
 const SOURCE_REF = /(Source #\d+)/g;
 
+// Older LLM output (and the occasional stray model response) puts literal <br>
+// tags inside table cells to separate sub-points. We render markdown WITHOUT
+// rehype-raw (so raw HTML is never parsed — avoids an XSS surface from model
+// output), which means a literal <br> would otherwise show as text. Normalize
+// any <br> / <br/> / <br /> into a "• " separator so cells stay on one readable
+// line with clear sub-points instead of a leaked tag.
+const BR_TAG = /<br\s*\/?>/gi;
+function stripBrTags(text: string): string {
+  return text.replace(BR_TAG, " • ");
+}
+
 /** Replace "Source #N" substrings inside a plain string with clickable chips. */
 function linkifyString(
   text: string,
@@ -133,7 +144,7 @@ export function InlineMarkdown({
         li: ({ children }) => <li>{link(children)}</li>,
       }}
     >
-      {text}
+      {stripBrTags(text)}
     </ReactMarkdown>
   );
 }
@@ -241,7 +252,7 @@ export function RichMarkdown({
         remarkPlugins={[remarkGfm]}
         components={buildMarkdownComponents(link)}
       >
-        {text}
+        {stripBrTags(text)}
       </ReactMarkdown>
     </div>
   );

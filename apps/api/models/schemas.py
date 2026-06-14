@@ -4,7 +4,7 @@ All route handlers must return typed Pydantic models — never raw dicts.
 Grouped by feature area matching the API contract in docs/API.md.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -636,6 +636,7 @@ class AdminUserListItem(BaseModel):
     role: str
     document_count: int
     created_at: datetime
+    last_active: date | None = None  # most recent UserActivity date, or None
 
 
 class AdminUserListResponse(BaseModel):
@@ -722,6 +723,46 @@ class AdminUserUsageResponse(BaseModel):
     daily_tokens: list[DailyTokenTrend]
 
 
+# Admin — per-user profile detail
+
+
+class AdminUserProfileResponse(BaseModel):
+    """GET /admin/users/{user_id}/profile — robust per-user detail (metadata only).
+
+    Counts, dates, types, and tiers — never the student's actual question/answer/
+    summary content. Complements ``/usage`` (token figures) and ``/activity``
+    (timeline). All counts are lifetime totals derived live from the DB.
+    """
+
+    user_id: UUID
+    email: str
+    full_name: str
+    major: str | None = None
+    is_pro: bool
+    role: str
+    # Lifecycle dates
+    created_at: datetime  # signup date
+    last_active: date | None = None  # most recent activity day
+    last_login_at: datetime | None = None  # Phase 4: populated once login tracking lands
+    # Lifetime content counts
+    total_documents: int
+    total_chunks: int
+    total_chats: int
+    total_summaries: int
+    total_quizzes: int
+    average_quiz_score: float  # 0–100 across this user's graded sessions
+    # Breakdowns (metadata only)
+    summary_formats: dict[str, int]  # SummaryHistory.format -> count
+    performance_modes: dict[str, int]  # TokenUsage.performance_mode -> request count
+    tokens_by_model: dict[str, int]  # lifetime tokens per model
+    lifetime_tokens: int
+    # Performance metadata. Averages over rows that recorded the value;
+    # None when this user has no instrumented requests yet.
+    avg_generation_ms: dict[str, int]  # request_type -> avg generation time (ms)
+    avg_chunks_used: dict[str, float]  # request_type -> avg retrieval chunks
+    cached_tokens_total: int  # lifetime input tokens billed at the cached rate
+
+
 # Admin — per-user audit trail
 
 
@@ -741,6 +782,8 @@ class AdminActivityItem(BaseModel):
     doc_filename: str | None = None
     performance_mode: str | None = None
     preview: str  # truncated query (chat) / topic (summary, quiz)
+    # Summary-only metadata (the summary format, e.g. "cheat_sheet"); None otherwise.
+    summary_format: str | None = None
     # Quiz-only metadata; None for chat/summary.
     score: int | None = None
     total_questions: int | None = None

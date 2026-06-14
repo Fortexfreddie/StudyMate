@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -43,8 +44,16 @@ SYSTEM_PROMPT = (
     "synthesize information from ALL relevant chunks — not just the first one. "
     "Your answer should reflect the full breadth of what the document covers.\n\n"
     "7. DEPTH OVER BREVITY: Provide thorough, detailed explanations. University "
-    "students need depth — not surface-level bullet points. Include examples, "
-    "relationships between concepts, and nuances from the source material.\n\n"
+    "students need depth — not surface-level bullet points. Include "
+    "relationships between concepts and nuances from the source material.\n\n"
+    "8. TEACH WITH EXAMPLES (JUDICIOUSLY): You are a tutor, so help the student "
+    "build intuition. When a concept is abstract, procedural, formula-based, or "
+    "commonly confused, add a brief concrete example or analogy to make it click. "
+    "Use examples sparingly and only where they genuinely aid understanding — do NOT "
+    "force one onto every point or onto simple, self-evident facts. Prefer examples "
+    "the source material already gives; if the document offers no basis for an "
+    "example, explain the idea plainly rather than inventing one (the ZERO "
+    "FABRICATION rule still holds — never invent facts, even inside an example).\n\n"
     "═══ TONE & FORMATTING ═══\n"
     "• Write at a level appropriate for a university undergraduate student.\n"
     "• Use clear, concise academic English — authoritative but approachable.\n"
@@ -136,8 +145,8 @@ _TABULAR_INSTRUCTIONS = (
     "• Use **markdown tables** generously wherever the content compares, lists, or "
     "categorizes things (steps, types, tools, properties, operations, formulas, "
     "examples). Tables are the centerpiece of this format.\n"
-    "• Keep table cells concise; use <br> inside a cell for short sub-points rather "
-    "than overly wide cells.\n"
+    "• Keep table cells concise. For a cell with multiple short sub-points, separate "
+    "them with '; ' or split the row into more rows — do NOT use HTML tags like <br>.\n"
     "• Use **bold** for key terms and bullet/numbered lists for sequential or "
     "non-tabular detail.\n"
     "• Cite sources inline as 'Source #N' where appropriate.\n"
@@ -243,94 +252,125 @@ class Generator:
     and default retrieval top_k. See ``core.config.PERFORMANCE_MODES``.
     """
 
-    def __init__(self, api_key: str, performance_mode: str = "high") -> None:
-        if not api_key:
-            raise ConfigurationError("Google API key is invalid or missing.")
+    # How long a key stays marked exhausted before it's retried again. Google's
+    # free-tier daily quota refills on a 24h cycle, so we wait one full window.
+    # Mirrors Embedder._QUOTA_RESET_SECONDS.
+    _QUOTA_RESET_SECONDS: float = 24 * 60 * 60
+
+    def __init__(self, api_keys: list[str], performance_mode: str = "high") -> None:
+        # Filter out empty/blank keys (unset fallbacks are harmless).
+        valid_keys = [k for k in api_keys if k and k.strip()]
+        if not valid_keys:
+            raise ConfigurationError("At least one Google API key is required.")
 
         config = PERFORMANCE_MODES.get(performance_mode, PERFORMANCE_MODES["high"])
         self.performance_mode = performance_mode
         self.default_top_k: int = int(config["default_top_k"])
         self.max_top_k: int = int(config["max_top_k"])
 
-        primary_model = str(config["primary"])
-        fallback_model = str(config["fallback"])
+        self._primary_model_name = str(config["primary"])
+        self._fallback_model_name = str(config["fallback"])
         thinking = str(config["thinking"])
 
-        self._primary_model_name = primary_model
-        self._fallback_model_name = fallback_model
+        primary_kwargs = self._thinking_kwargs(self._primary_model_name, thinking)
+        fallback_kwargs = self._thinking_kwargs(self._fallback_model_name, thinking)
 
+        # Build a full client set (primary/fallback × plain/json) per API key, in
+        # priority order. The generation loop walks these sets, failing over to the
+        # next key when the current one's daily quota is exhausted.
+        self._client_sets: list[dict[str, ChatGoogleGenerativeAI]] = [
+            self._build_client_set(k, primary_kwargs, fallback_kwargs)
+            for k in valid_keys
+        ]
+
+        self._current_idx: int = 0
+        # Maps a key index -> monotonic timestamp it hit its daily quota. A key is
+        # treated as exhausted only until _QUOTA_RESET_SECONDS elapses, then it's
+        # eligible again (Google's daily quota will have refilled by then).
+        self._exhausted_at: dict[int, float] = {}
+
+        logger.info(
+            "Generator initialised with %d API key(s) for mode '%s'.",
+            len(self._client_sets),
+            performance_mode,
+        )
+
+    @staticmethod
+    def _thinking_kwargs(model_name: str, thinking: str) -> dict[str, Any]:
+        """Map a thinking level to the right kwarg for the given model family.
+
+        Gemini 2.0 / 2.5 / 1.5 use a numeric ``thinking_budget``; Gemini 3+ uses
+        a string ``thinking_level``.
+        """
+        is_gemini_2_5 = any(v in model_name for v in ("2.5", "2.0", "1.5"))
+        if is_gemini_2_5:
+            budget_map = {"minimal": 0, "low": 512, "medium": 1024, "high": 2048}
+            budget = budget_map.get(thinking, 0)
+            return {"thinking_budget": budget} if budget > 0 else {}
+        return {"thinking_level": thinking}
+
+    def _build_client_set(
+        self,
+        api_key: str,
+        primary_kwargs: dict[str, Any],
+        fallback_kwargs: dict[str, Any],
+    ) -> dict[str, ChatGoogleGenerativeAI]:
+        """Construct the four ChatGoogleGenerativeAI clients bound to one API key."""
         key = SecretStr(api_key)
         temp = settings.GENERATION_TEMPERATURE
+        return {
+            "primary": ChatGoogleGenerativeAI(
+                model=self._primary_model_name,
+                google_api_key=key,
+                temperature=temp,
+                max_retries=0,
+                **primary_kwargs,
+            ),
+            "primary_json": ChatGoogleGenerativeAI(
+                model=self._primary_model_name,
+                google_api_key=key,
+                temperature=temp,
+                response_mime_type="application/json",
+                max_retries=0,
+                **primary_kwargs,
+            ),
+            "fallback": ChatGoogleGenerativeAI(
+                model=self._fallback_model_name,
+                google_api_key=key,
+                temperature=temp,
+                max_retries=0,
+                **fallback_kwargs,
+            ),
+            "fallback_json": ChatGoogleGenerativeAI(
+                model=self._fallback_model_name,
+                google_api_key=key,
+                temperature=temp,
+                response_mime_type="application/json",
+                max_retries=0,
+                **fallback_kwargs,
+            ),
+        }
 
-        # Map string thinking level to numeric thinking_budget for Gemini 2.0 / 2.5 / 1.5 models,
-        # or use thinking_level for Gemini 3+ models.
-        primary_kwargs: dict[str, Any] = {}
-        is_primary_gemini_2_5 = any(
-            v in self._primary_model_name for v in ("2.5", "2.0", "1.5")
-        )
-        if is_primary_gemini_2_5:
-            budget_map = {
-                "minimal": 0,
-                "low": 512,
-                "medium": 1024,
-                "high": 2048,
-            }
-            budget = budget_map.get(thinking, 0)
-            if budget > 0:
-                primary_kwargs["thinking_budget"] = budget
-        else:
-            primary_kwargs["thinking_level"] = thinking
+    def _is_exhausted(self, idx: int) -> bool:
+        """Whether key ``idx`` is currently within its daily-quota cooldown window.
 
-        fallback_kwargs: dict[str, Any] = {}
-        is_fallback_gemini_2_5 = any(
-            v in self._fallback_model_name for v in ("2.5", "2.0", "1.5")
-        )
-        if is_fallback_gemini_2_5:
-            budget_map = {
-                "minimal": 0,
-                "low": 512,
-                "medium": 1024,
-                "high": 2048,
-            }
-            budget = budget_map.get(thinking, 0)
-            if budget > 0:
-                fallback_kwargs["thinking_budget"] = budget
-        else:
-            fallback_kwargs["thinking_level"] = thinking
+        Expired entries are pruned so a key recovers automatically once Google's
+        daily quota has had time to refill — no process restart required.
+        """
+        marked_at = self._exhausted_at.get(idx)
+        if marked_at is None:
+            return False
+        if time.monotonic() - marked_at >= self._QUOTA_RESET_SECONDS:
+            del self._exhausted_at[idx]
+            return False
+        return True
 
-        # Primary clients (plain + JSON-enforced)
-        self._primary_client = ChatGoogleGenerativeAI(
-            model=self._primary_model_name,
-            google_api_key=key,
-            temperature=temp,
-            max_retries=0,
-            **primary_kwargs,
-        )
-        self._primary_client_json = ChatGoogleGenerativeAI(
-            model=self._primary_model_name,
-            google_api_key=key,
-            temperature=temp,
-            response_mime_type="application/json",
-            max_retries=0,
-            **primary_kwargs,
-        )
-
-        # Fallback clients (plain + JSON-enforced)
-        self._fallback_client = ChatGoogleGenerativeAI(
-            model=self._fallback_model_name,
-            google_api_key=key,
-            temperature=temp,
-            max_retries=0,
-            **fallback_kwargs,
-        )
-        self._fallback_client_json = ChatGoogleGenerativeAI(
-            model=self._fallback_model_name,
-            google_api_key=key,
-            temperature=temp,
-            response_mime_type="application/json",
-            max_retries=0,
-            **fallback_kwargs,
-        )
+    def _next_available_key(self) -> int | None:
+        """Return the index of the next non-exhausted key, or None."""
+        for i in range(len(self._client_sets)):
+            if not self._is_exhausted(i):
+                return i
+        return None
 
     async def generate_answer(
         self, query: str, context: list[dict[str, Any]]
@@ -960,6 +1000,16 @@ class Generator:
             return "fatal"
         return "transient"
 
+    @staticmethod
+    def _is_daily_quota_error(err_str: str) -> bool:
+        """Return True when the error indicates a *daily* (per-day) quota exhaustion.
+
+        Google's error payloads include a ``quotaId`` containing ``PerDay`` for
+        daily quotas. Switching API keys only helps for daily exhaustion — a
+        per-minute (RPM) 429 is better handled by the model-fallback path.
+        """
+        return "PerDay" in err_str or "exceeded your current quota" in err_str
+
     async def _call_llm_with_retry(
         self,
         system_instruction: str,
@@ -967,22 +1017,32 @@ class Generator:
         require_json: bool = False,
         single_attempt: bool = False,
     ) -> tuple[str, dict[str, int | str]]:
-        """Executes LLM generation with retries and primary → fallback failover.
+        """Executes LLM generation with retries, primary → fallback model failover,
+        and primary → secondary API-key failover on daily-quota exhaustion.
 
         Returns ``(content, usage)`` where usage contains token counts and model name.
 
+        Failover order for one request:
+          1. primary model on key N (with transient retries)
+          2. fallback model on key N
+          3. if a *daily* quota error is hit and another key is available, switch
+             to that key and restart at its primary model.
+          4. when all keys' daily quotas are exhausted → ServiceUnavailableError.
+
         When ``single_attempt`` is True, the primary model is tried exactly once
-        with no transient-retry and no fallback. This caps amplification for
-        callers that already wrap this in their own outer retry (e.g. the quiz
-        stricter-reprompt path). Whether to pass it is a *policy* decision the
-        caller takes from config (``QUIZ_REPROMPT_SINGLE_ATTEMPT``); the normal
-        path remains governed by ``settings.MAX_RETRIES``.
+        with no transient-retry and no model fallback (key failover on daily quota
+        still applies). This caps amplification for callers that already wrap this
+        in their own outer retry (e.g. the quiz stricter-reprompt path). Whether to
+        pass it is a *policy* decision the caller takes from config
+        (``QUIZ_REPROMPT_SINGLE_ATTEMPT``); the normal path remains governed by
+        ``settings.MAX_RETRIES``.
         """
         messages = [
             SystemMessage(content=system_instruction),
             HumanMessage(content=user_prompt),
         ]
 
+        # Per-key model-failover state. Reset whenever we switch to a fresh key.
         primary_attempts = 0
         # Normal path: 1 initial + MAX_RETRIES transient retries. single_attempt: 1.
         max_primary_attempts = 1 if single_attempt else settings.MAX_RETRIES + 1
@@ -995,10 +1055,11 @@ class Generator:
         delay = settings.RETRY_DELAY_SECONDS
 
         while True:
-            # Select appropriate model client
+            client_set = self._client_sets[self._current_idx]
+            # Select appropriate model client from the current key's client set
             if not use_fallback:
                 client = (
-                    self._primary_client_json if require_json else self._primary_client
+                    client_set["primary_json"] if require_json else client_set["primary"]
                 )
                 current_model = self._primary_model_name
                 primary_attempts += 1
@@ -1006,9 +1067,9 @@ class Generator:
                 max_attempts = max_primary_attempts
             else:
                 client = (
-                    self._fallback_client_json
+                    client_set["fallback_json"]
                     if require_json
-                    else self._fallback_client
+                    else client_set["fallback"]
                 )
                 current_model = self._fallback_model_name
                 fallback_attempts += 1
@@ -1027,13 +1088,37 @@ class Generator:
                         usage["input_tokens"] = meta.get("input_tokens", 0)
                         usage["output_tokens"] = meta.get("output_tokens", 0)
                         usage["total_tokens"] = meta.get("total_tokens", 0)
+                        details = meta.get("input_token_details") or {}
                     else:
                         usage["input_tokens"] = getattr(meta, "input_tokens", 0)
                         usage["output_tokens"] = getattr(meta, "output_tokens", 0)
                         usage["total_tokens"] = getattr(meta, "total_tokens", 0)
+                        details = getattr(meta, "input_token_details", None) or {}
+                    # Input tokens billed at the cached rate (Gemini implicit/explicit
+                    # context cache). `input_token_details` may be a dict or an object.
+                    #
+                    # TODO(explicit-caching): when we move to a SINGLE paid API key
+                    # (dropping the GOOGLE_API_KEY_2/3 multi-key failover), refactor to
+                    # use Gemini *explicit* context caching for the shared SYSTEM_PROMPT
+                    # (and large repeated document context) to cut input-token cost
+                    # ~75%. NOT worth it while multi-key is active: explicit caches are
+                    # scoped per project/key, so a key failover would cold-miss the
+                    # cache. Until then we only benefit from Gemini's automatic implicit
+                    # caching, captured below as cached_tokens. See apps/api/README.md.
+                    if isinstance(details, dict):
+                        usage["cached_tokens"] = int(details.get("cache_read", 0) or 0)
+                    else:
+                        usage["cached_tokens"] = int(
+                            getattr(details, "cache_read", 0) or 0
+                        )
                 else:
                     usage.update(
-                        {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+                        {
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": 0,
+                            "cached_tokens": 0,
+                        }
                     )
 
                 logger.info(
@@ -1082,8 +1167,36 @@ class Generator:
                         "Please try again later."
                     ) from e
 
+                # Daily quota exhausted on this key — switching models on the same
+                # key won't help (the per-day cap is per key). Mark the key, switch
+                # to the next available key, and restart at its primary model.
+                if error_kind == "rate_limited" and self._is_daily_quota_error(err_str):
+                    self._exhausted_at[self._current_idx] = time.monotonic()
+                    next_idx = self._next_available_key()
+                    if next_idx is not None:
+                        logger.warning(
+                            "Daily quota exhausted on API key %d. Switching to API key %d.",
+                            self._current_idx + 1,
+                            next_idx + 1,
+                        )
+                        self._current_idx = next_idx
+                        # Fresh key — restart this request at its primary model.
+                        use_fallback = False
+                        primary_attempts = 0
+                        fallback_attempts = 0
+                        continue
+                    logger.error(
+                        "All %d API key(s) have exhausted their daily quota.",
+                        len(self._client_sets),
+                    )
+                    raise ServiceUnavailableError(
+                        "Daily generation quota exhausted across all API keys. "
+                        "Please try again later."
+                    ) from e
+
                 # single_attempt callers get exactly one primary try and no
                 # fallback — surface the failure to their own outer retry logic.
+                # (Daily-quota key failover above still applies before this.)
                 if single_attempt:
                     logger.warning(
                         "single_attempt primary call failed (%s). No retry/fallback.",
@@ -1095,10 +1208,11 @@ class Generator:
 
                 # If we are using the primary model and fail:
                 if not use_fallback:
-                    # 1. Rate limit / Quota: fail over to the fallback immediately.
+                    # 1. RPM rate limit (non-daily): fail over to the fallback model
+                    #    immediately to protect the primary model's quota.
                     if error_kind == "rate_limited":
                         logger.warning(
-                            "Primary model rate limited (429/Quota). Triggering fast fallback to secondary model."
+                            "Primary model rate limited (429/RPM). Triggering fast fallback to secondary model."
                         )
                         use_fallback = True
                         continue

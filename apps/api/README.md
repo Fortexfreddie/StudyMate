@@ -285,7 +285,8 @@ signup/login and can never be modified or deleted via the API.
 | Method | Endpoint | Gate | Description |
 |---|---|---|---|
 | GET | `/admin/stats/overview` | Admin | System-wide aggregate metrics + 30-day series |
-| GET | `/admin/users` | Admin | Paginated users (`search`, `role`, `major`, `is_pro`, `sort_by`, `limit`≤100, `offset`) |
+| GET | `/admin/users` | Admin | Paginated users (`search`, `role`, `major`, `is_pro`, `sort_by`, `limit`≤100, `offset`); includes `last_active` |
+| GET | `/admin/users/{user_id}/profile` | Admin | One user's robust detail — counts, dates (signup/last-active/last-login), summary formats, perf modes, models, avg generation time/chunks, cached tokens (metadata only) |
 | GET | `/admin/users/{user_id}/usage` | Admin | One user's token usage (`start`, `end`, `request_type`) |
 | GET | `/admin/users/{user_id}/activity` | Admin | One user's audit trail — metadata only (`action_type`, `limit`≤100, `offset`) |
 | PATCH | `/admin/users/{user_id}` | Admin (`is_pro`) / Super (`role`) | Update tier and/or role |
@@ -505,6 +506,7 @@ ones touched by this integration:
 
 | Var | Default | Notes |
 |---|---|---|
+| `GOOGLE_API_KEY_2`, `GOOGLE_API_KEY_3` | `""` | Optional fallback Google AI keys. Both the embedder and the generator fail over to the next key when a key's **daily** quota is exhausted (per-key daily limit). Order: `GOOGLE_API_KEY` → `_2` → `_3`. Exhaustion is time-aware (24h cooldown, auto-recovers without restart) |
 | `MAX_RETRIES` | `1` | Max primary model retries for transient errors (503/empty/malformed responses) before falling back |
 | `QUIZ_REPROMPT_SINGLE_ATTEMPT` | `true` | When the quiz parser rejects the first generation, the stricter reformat reprompt is a single primary-model call (no internal retry/fallback). Caps worst-case LLM calls per quiz request at 4 (was 6). Set `false` to let the reprompt use the full `MAX_RETRIES` + fallback path |
 | `FREE_DAILY_TOKEN_LIMIT` | `50000` | Daily token quota for free-tier users (fixed UTC-day window) |
@@ -514,6 +516,17 @@ ones touched by this integration:
 | `MAX_UPLOAD_SIZE_MB` | `20` | Upload size cap; enforced via bounded chunked reads (oversized files rejected without full buffering) |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | accepts a comma-separated string in `.env` (add the Vercel URL for prod) |
 | `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.35` | min cosine score to keep a chunk |
+
+> **TODO — explicit caching (when on a single key):** The multi-key fallback above
+> (`GOOGLE_API_KEY_2/3`) is a free-tier daily-quota mitigation. **When the app moves to a
+> single paid key** (no daily cap, so multi-key failover is dropped), refactor the
+> generator to use Gemini **explicit context caching** for the shared `SYSTEM_PROMPT` and
+> large repeated document context — it bills cached input tokens ~75% cheaper. It is
+> deliberately **not** used today because explicit caches are scoped per project/key, so a
+> key failover would cold-miss the cache (the two features conflict). Until then we rely on
+> Gemini's automatic **implicit** caching, surfaced in admin as `cached_tokens`. Code
+> anchor: `services/generator.py` → `_call_llm_with_retry` usage-metadata block
+> (`TODO(explicit-caching)`).
 
 ---
 

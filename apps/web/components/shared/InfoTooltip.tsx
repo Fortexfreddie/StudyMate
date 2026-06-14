@@ -25,20 +25,32 @@ export function InfoTooltip({ children, label = "More info", className = "" }: I
     left: "50%",
     transform: "translateX(-50%)",
   });
+  // Vertical placement: "top" opens the panel above the trigger (default),
+  // "bottom" flips it below when there isn't enough room above (e.g. when the
+  // trigger sits in a page header near the top of the viewport). This prevents
+  // the panel being clipped above/behind the top bar.
+  const [placement, setPlacement] = useState<"top" | "bottom">("top");
 
   useEffect(() => {
     if (!open) return;
 
     const adjustPosition = () => {
-      if (!panelRef.current) return;
-      const rect = panelRef.current.getBoundingClientRect();
+      if (!panelRef.current || !wrapRef.current) return;
       const padding = 16;
-      let offset = 0;
 
-      if (rect.right > window.innerWidth - padding) {
-        offset = window.innerWidth - padding - rect.right;
-      } else if (rect.left < padding) {
-        offset = padding - rect.left;
+      // Vertical flip: if the panel would extend above the viewport, open below.
+      const triggerRect = wrapRef.current.getBoundingClientRect();
+      const panelRect = panelRef.current.getBoundingClientRect();
+      const spaceAbove = triggerRect.top;
+      const needed = panelRect.height + padding;
+      setPlacement(spaceAbove < needed ? "bottom" : "top");
+
+      // Horizontal clamp: nudge the panel back into view if it overflows a side.
+      let offset = 0;
+      if (panelRect.right > window.innerWidth - padding) {
+        offset = window.innerWidth - padding - panelRect.right;
+      } else if (panelRect.left < padding) {
+        offset = padding - panelRect.left;
       }
 
       setPositionStyle({
@@ -64,6 +76,7 @@ export function InfoTooltip({ children, label = "More info", className = "" }: I
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
       setPositionStyle({ left: "50%", transform: "translateX(-50%)" });
+      setPlacement("top");
     };
   }, [open]);
 
@@ -95,7 +108,9 @@ export function InfoTooltip({ children, label = "More info", className = "" }: I
           id={panelId}
           role="tooltip"
           style={positionStyle}
-          className="absolute bottom-full mb-1.5 z-50 w-56 max-w-[70vw] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 animate-in fade-in zoom-in-95 duration-150 normal-case tracking-normal text-left"
+          className={`absolute z-50 w-56 max-w-[70vw] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 animate-in fade-in zoom-in-95 duration-150 normal-case tracking-normal text-left ${
+            placement === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          }`}
         >
           {children}
         </span>
