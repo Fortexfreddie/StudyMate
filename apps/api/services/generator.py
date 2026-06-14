@@ -1002,13 +1002,16 @@ class Generator:
 
     @staticmethod
     def _is_daily_quota_error(err_str: str) -> bool:
-        """Return True when the error indicates a *daily* (per-day) quota exhaustion.
+        """Return True only when the error indicates a *daily* (per-day) quota.
 
-        Google's error payloads include a ``quotaId`` containing ``PerDay`` for
-        daily quotas. Switching API keys only helps for daily exhaustion — a
-        per-minute (RPM) 429 is better handled by the model-fallback path.
+        Must be specific: a daily error switches API keys, while a per-minute (RPM)
+        429 should instead fall through to the model-fallback / backoff path. The
+        generic 429 message ("You exceeded your current quota …") appears on BOTH,
+        so it can NOT be used to distinguish them — matching it would misclassify
+        every RPM throttle as a daily ban and exhaust all keys on the first blip.
+        Daily quotas carry ``PerDay`` in the ``quotaId`` / metric.
         """
-        return "PerDay" in err_str or "exceeded your current quota" in err_str
+        return "PerDay" in err_str
 
     async def _call_llm_with_retry(
         self,
