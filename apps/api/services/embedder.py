@@ -120,15 +120,20 @@ class Embedder:
 
     @staticmethod
     def _is_daily_quota_error(err_str: str) -> bool:
-        """Return True when the error indicates a *daily* quota exhaustion.
+        """Return True only when the error indicates a *daily* (per-day) quota.
 
-        Google's error payloads include a ``quotaId`` field.  Daily quotas
-        contain ``PerDay`` in the ID (e.g.
-        ``EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier``).
-        We also check for the human-readable ``exceeded your current quota``
-        phrase as a safety net.
+        This MUST be specific: a daily exhaustion marks the key unusable for 24h
+        and triggers a key switch, whereas a per-minute (RPM) 429 just needs a
+        short backoff on the SAME key. Google's *generic* 429 message
+        ("You exceeded your current quota …") appears on BOTH error kinds, so it
+        can NOT be used to tell them apart — matching it would misclassify every
+        RPM throttle as a daily ban and burn through all keys on the first blip.
+
+        Daily quotas are identified by ``PerDay`` in the ``quotaId`` / metric, e.g.
+        ``EmbedContentRequestsPerDayPerUserPerProjectPerModel-FreeTier``. Per-minute
+        quotas use ``PerMinute`` and carry a short ``retryDelay`` instead.
         """
-        return "PerDay" in err_str or "exceeded your current quota" in err_str
+        return "PerDay" in err_str
 
     @staticmethod
     def _is_rate_limited(err_str: str) -> bool:
