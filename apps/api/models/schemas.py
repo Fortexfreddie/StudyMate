@@ -196,6 +196,10 @@ SummaryFormat = Literal[
     "flashcards",
     "cheat_sheet",
     "mind_map",
+    # Rich free-form markdown (headings, tables, nested lists) — the premium format,
+    # rendered with the same markdown renderer the chat page uses. Carries no
+    # `structured` payload; the content lives entirely in `summary`.
+    "tabular",
 ]
 
 
@@ -441,6 +445,25 @@ class SummaryHistoryResponse(BaseModel):
     offset: int
 
 
+class SummaryDetailResponse(BaseModel):
+    """GET /history/summaries/{summary_id} — a single saved summary, fully renderable.
+
+    Unlike the list item, this carries the ``structured`` payload and ``sources`` so
+    the summary page can restore the exact completed view (charts/cards/markdown +
+    clickable source citations) from history without regenerating.
+    """
+
+    id: UUID
+    doc_id: UUID | None
+    topic: str
+    summary: str  # the plain-text/markdown rendering (matches SummaryResponse.summary)
+    format: SummaryFormat
+    structured: SummaryStructured = None
+    context_sufficient: bool
+    sources: list[SourceInfo] = []
+    created_at: datetime
+
+
 class QuizHistoryItem(BaseModel):
     """Single quiz session in history list."""
 
@@ -666,3 +689,70 @@ class AdminUserDeleteResponse(BaseModel):
 
     user_id: UUID
     deleted: bool = True
+
+
+# Admin — per-user token usage
+
+
+class AdminUserUsageResponse(BaseModel):
+    """GET /admin/users/{user_id}/usage — one user's token consumption over a window.
+
+    The window defaults to the last 30 days and is filterable via ``start``/``end``
+    (and optionally ``request_type``). All token figures come from the append-only
+    ``token_usage`` log, not the live quota counter, so they are stable historically.
+    """
+
+    user_id: UUID
+    email: str
+    full_name: str
+    is_pro: bool
+    role: str
+    # Window echoed back so the client can label the chart axis.
+    start_date: str  # ISO date (YYYY-MM-DD)
+    end_date: str  # ISO date (YYYY-MM-DD)
+    # Aggregates across the window
+    total_tokens: int
+    total_input_tokens: int
+    total_output_tokens: int
+    request_count: int
+    tokens_by_type: dict[str, int]
+    tokens_by_model: dict[str, int]
+    # Per-day split by request type, for the trend chart (sparse — gaps zero-filled
+    # client-side, matching the overview dashboard's convention).
+    daily_tokens: list[DailyTokenTrend]
+
+
+# Admin — per-user audit trail
+
+
+class AdminActivityItem(BaseModel):
+    """A single metadata record in a user's audit timeline.
+
+    Deliberately metadata-only: it carries an 80-char truncated ``preview`` of the
+    user's query/topic for context but never the full question text or the model's
+    answer body, so an admin can audit *what kind* of activity happened and its cost
+    without reading a student's private study content.
+    """
+
+    id: UUID
+    action_type: str  # "chat" | "summary" | "quiz"
+    created_at: datetime
+    doc_id: UUID | None = None
+    doc_filename: str | None = None
+    performance_mode: str | None = None
+    preview: str  # truncated query (chat) / topic (summary, quiz)
+    # Quiz-only metadata; None for chat/summary.
+    score: int | None = None
+    total_questions: int | None = None
+
+
+class AdminUserActivityResponse(BaseModel):
+    """GET /admin/users/{user_id}/activity — paginated audit timeline (metadata only)."""
+
+    user_id: UUID
+    email: str
+    full_name: str
+    items: list[AdminActivityItem]
+    total: int
+    limit: int
+    offset: int

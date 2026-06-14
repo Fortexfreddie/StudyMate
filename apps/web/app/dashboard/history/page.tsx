@@ -85,7 +85,11 @@ export default function HistoryPage() {
         status: "Summary Generated",
         statusColor: "bg-status-summary/10 text-status-summary border-status-summary/10",
         ...t,
-        href: s.doc_id ? `/dashboard/summary?doc=${s.doc_id}` : "/dashboard/summary",
+        // Deep-link to the saved summary itself (restored via ?summary=<id>),
+        // carrying doc for context. Previously this only reopened the blank form.
+        href: s.doc_id
+          ? `/dashboard/summary?summary=${s.id}&doc=${s.doc_id}`
+          : `/dashboard/summary?summary=${s.id}`,
       });
     }
 

@@ -286,6 +286,8 @@ signup/login and can never be modified or deleted via the API.
 |---|---|---|---|
 | GET | `/admin/stats/overview` | Admin | System-wide aggregate metrics + 30-day series |
 | GET | `/admin/users` | Admin | Paginated users (`search`, `role`, `major`, `is_pro`, `sort_by`, `limit`≤100, `offset`) |
+| GET | `/admin/users/{user_id}/usage` | Admin | One user's token usage (`start`, `end`, `request_type`) |
+| GET | `/admin/users/{user_id}/activity` | Admin | One user's audit trail — metadata only (`action_type`, `limit`≤100, `offset`) |
 | PATCH | `/admin/users/{user_id}` | Admin (`is_pro`) / Super (`role`) | Update tier and/or role |
 | DELETE | `/admin/users/{user_id}` | Super | Delete user + purge their vectors |
 | GET | `/admin/documents` | Admin | Paginated documents with owner info |
@@ -297,8 +299,22 @@ signup/login and can never be modified or deleted via the API.
 ```
 
 Guards: target super admin → `409`; `role` change by a non-super-admin → `403`;
-`role` not in `("user", "admin")` → `403`. Admins automatically receive the Pro
-token limit via `User.effective_is_pro` (no `is_pro` flag needed).
+`role` not in `("user", "admin")` → `403`. Promoting to `admin` also sets
+`is_pro = True` so the stored tier matches the displayed one; demoting to `user`
+leaves the tier untouched. Admins always receive the Pro token limit via
+`User.effective_is_pro` regardless of the stored flag.
+
+**`GET /admin/users/{user_id}/usage`** → 200 `AdminUserUsageResponse`: window
+totals, `tokens_by_type`, `tokens_by_model`, and a per-day `daily_tokens` trend,
+all summed from the append-only `token_usage` log over an inclusive UTC date
+window (defaults to the last 30 days).
+
+**`GET /admin/users/{user_id}/activity`** → 200 `AdminUserActivityResponse`: a
+paginated, time-ordered feed merging the user's chat/summary/quiz rows into
+**metadata-only** records — action type, timestamp, document, performance mode,
+quiz score, and an 80-char truncated query/topic `preview`. Full question text
+and answer bodies are never returned (privacy by design — see
+[docs/ADMIN.md](../../docs/ADMIN.md)).
 
 Full roles/super-admin/UI spec: [docs/ADMIN.md](../../docs/ADMIN.md). Promote
 admins from the CLI with `python scripts/promote_admin.py <email> [--demote]`.

@@ -83,7 +83,9 @@ StudyMate/
 | GET | `/usage` | ✅ | Get current daily token usage and account limits |
 | GET | `/admin/stats/overview` | 🛡️ | System-wide aggregate metrics + 30-day time series |
 | GET | `/admin/users` | 🛡️ | Paginated user list (search/filter/sort) |
-| PATCH | `/admin/users/{user_id}` | 🛡️ | Update a user's tier (admin) / role (super admin) |
+| GET | `/admin/users/{user_id}/usage` | 🛡️ | One user's token usage over a date window (filterable) |
+| GET | `/admin/users/{user_id}/activity` | 🛡️ | One user's audit trail — metadata + truncated preview only |
+| PATCH | `/admin/users/{user_id}` | 🛡️ | Update a user's tier (admin) / role (super admin); promoting to admin grants Pro |
 | DELETE | `/admin/users/{user_id}` | 🛡️👑 | Delete a user and purge their vectors (super admin) |
 | GET | `/admin/documents` | 🛡️ | Paginated document list with owner info |
 | DELETE | `/admin/documents/{doc_id}` | 🛡️ | Delete any document and purge its vectors |

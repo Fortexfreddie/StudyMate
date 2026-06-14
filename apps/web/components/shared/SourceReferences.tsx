@@ -1,5 +1,7 @@
 import { type ReactNode, Children, isValidElement, useState, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Source } from "@/lib/types";
 
 // The AI prose cites retrieved chunks as "Source #N", where N is the 1-based
@@ -73,6 +75,176 @@ export function linkifySources(
     }
     return child;
   });
+}
+
+/**
+ * Renders a short LLM string as inline markdown (bold/italic/code/links) while
+ * still turning "Source #N" mentions into clickable citation chips.
+ *
+ * The summary structured views (bullets, concept descriptions, flashcard backs,
+ * cheat-sheet values, mind-map leaves) receive raw markdown from the model. Before
+ * this, they were rendered as plain text, so `**bold**` and `` `code` `` leaked
+ * through as literal markers. This mirrors the chat page's ReactMarkdown setup but
+ * unwraps the top-level <p> so it stays inline inside the existing layout.
+ */
+export function InlineMarkdown({
+  text,
+  sourceCount,
+  onCite,
+}: {
+  text: string;
+  sourceCount: number;
+  onCite: (index: number) => void;
+}): ReactNode {
+  const link = (children: ReactNode) =>
+    linkifySources(children, sourceCount, onCite);
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        // Unwrap block-level <p> so the content flows inline within the card's
+        // own <p>/<span> wrapper instead of injecting nested block elements.
+        p: ({ children }) => <>{link(children)}</>,
+        strong: ({ children }) => (
+          <strong className="font-extrabold text-white">{children}</strong>
+        ),
+        em: ({ children }) => <em className="italic">{children}</em>,
+        code: ({ children }) => (
+          <code className="bg-black/30 rounded px-1 py-0.5 font-mono text-[0.9em] text-brand-primary">
+            {children}
+          </code>
+        ),
+        a: ({ children, href }) => (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-brand-primary underline underline-offset-2"
+          >
+            {children}
+          </a>
+        ),
+        ul: ({ children }) => (
+          <ul className="list-disc pl-4 flex flex-col gap-1">{children}</ul>
+        ),
+        ol: ({ children }) => (
+          <ol className="list-decimal pl-4 flex flex-col gap-1">{children}</ol>
+        ),
+        li: ({ children }) => <li>{link(children)}</li>,
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+}
+
+/**
+ * Shared ReactMarkdown component map for full block-level LLM content (chat answers
+ * and the tabular summary). `link` wraps text leaves so "Source #N" mentions become
+ * clickable chips.
+ *
+ * Tables are the important part: each table is wrapped in its OWN horizontally
+ * scrollable container (`overflow-x-auto` + `max-w-full`). Combined with a
+ * `min-w-0` parent, this keeps wide tables scrolling *inside their card* on mobile
+ * instead of widening the page and causing the whole screen to scroll left/right.
+ */
+export function buildMarkdownComponents(link: (children: ReactNode) => ReactNode) {
+  return {
+    table: ({ children }: { children?: ReactNode }) => (
+      <div className="overflow-x-auto max-w-full my-2 rounded-lg border border-border-subtle">
+        <table className="w-max min-w-full text-[11px] sm:text-xs border-collapse">
+          {children}
+        </table>
+      </div>
+    ),
+    thead: ({ children }: { children?: ReactNode }) => (
+      <thead className="bg-white/5">{children}</thead>
+    ),
+    th: ({ children }: { children?: ReactNode }) => (
+      <th className="border border-border-subtle px-2.5 py-1.5 text-left font-extrabold text-white whitespace-nowrap">
+        {link(children)}
+      </th>
+    ),
+    td: ({ children }: { children?: ReactNode }) => (
+      <td className="border border-border-subtle px-2.5 py-1.5 align-top text-text-muted">
+        {link(children)}
+      </td>
+    ),
+    p: ({ children }: { children?: ReactNode }) => (
+      <p className="leading-relaxed">{link(children)}</p>
+    ),
+    ul: ({ children }: { children?: ReactNode }) => (
+      <ul className="list-disc pl-5 flex flex-col gap-1">{children}</ul>
+    ),
+    ol: ({ children }: { children?: ReactNode }) => (
+      <ol className="list-decimal pl-5 flex flex-col gap-1">{children}</ol>
+    ),
+    li: ({ children }: { children?: ReactNode }) => <li>{link(children)}</li>,
+    strong: ({ children }: { children?: ReactNode }) => (
+      <strong className="font-extrabold text-white">{children}</strong>
+    ),
+    em: ({ children }: { children?: ReactNode }) => (
+      <em className="italic">{children}</em>
+    ),
+    code: ({ children }: { children?: ReactNode }) => (
+      <code className="bg-black/30 rounded px-1 py-0.5 font-mono text-[0.9em] text-brand-primary break-words">
+        {children}
+      </code>
+    ),
+    a: ({ children, href }: { children?: ReactNode; href?: string }) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-brand-primary underline underline-offset-2 break-words"
+      >
+        {children}
+      </a>
+    ),
+    h1: ({ children }: { children?: ReactNode }) => (
+      <h3 className="font-extrabold text-white text-sm mt-1">{children}</h3>
+    ),
+    h2: ({ children }: { children?: ReactNode }) => (
+      <h3 className="font-extrabold text-white text-sm mt-1">{children}</h3>
+    ),
+    h3: ({ children }: { children?: ReactNode }) => (
+      <h4 className="font-bold text-white mt-1">{children}</h4>
+    ),
+    h4: ({ children }: { children?: ReactNode }) => (
+      <h5 className="font-bold text-white/90">{children}</h5>
+    ),
+  };
+}
+
+/**
+ * Full block-level markdown renderer (headings, paragraphs, lists, code, and
+ * mobile-safe tables) with clickable "Source #N" citations. Used by the chat
+ * answers and the tabular summary so both render identically and never overflow
+ * the viewport horizontally.
+ */
+export function RichMarkdown({
+  text,
+  sourceCount,
+  onCite,
+  className = "",
+}: {
+  text: string;
+  sourceCount: number;
+  onCite: (index: number) => void;
+  className?: string;
+}): ReactNode {
+  const link = (children: ReactNode) =>
+    linkifySources(children, sourceCount, onCite);
+  return (
+    <div className={`markdown-body min-w-0 max-w-full flex flex-col gap-2 ${className}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={buildMarkdownComponents(link)}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 interface SourceCardProps {

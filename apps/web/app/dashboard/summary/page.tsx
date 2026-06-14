@@ -13,7 +13,11 @@ import {
 import { SparklesIcon, SleekLightningIcon } from "@/components/shared/Icons";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { GeneratingState } from "@/components/dashboard/GeneratingState";
-import { SourceCard, linkifySources, CollapsibleSources } from "@/components/shared/SourceReferences";
+import {
+  CollapsibleSources,
+  InlineMarkdown,
+  RichMarkdown,
+} from "@/components/shared/SourceReferences";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
 import { getActivePerfConfig } from "@/lib/performance";
@@ -31,6 +35,7 @@ import type {
 
 // UI label → backend format key.
 const FORMAT_OPTIONS: { label: string; value: SummaryFormat }[] = [
+  { label: "Tabular", value: "tabular" },
   { label: "Bullet Points", value: "bullets" },
   { label: "Key Concepts", value: "key_concepts" },
   { label: "Study Guide", value: "study_guide" },
@@ -43,6 +48,8 @@ function SummaryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const docId = searchParams.get("doc") ?? undefined;
+  // When present, restore a previously saved summary instead of starting fresh.
+  const summaryId = searchParams.get("summary") ?? undefined;
 
   const [docName, setDocName] = useState("Document");
   const [topic, setTopic] = useState("");
@@ -54,6 +61,8 @@ function SummaryContent() {
   const [result, setResult] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fullDoc, setFullDoc] = useState(false);
+  // True while fetching a saved summary via ?summary=<id> on first load.
+  const [restoring, setRestoring] = useState<boolean>(!!summaryId);
 
   // Interactive output state
   const [expandedConcept, setExpandedConcept] = useState<number | null>(0);
@@ -84,6 +93,47 @@ function SummaryContent() {
       active = false;
     };
   }, [docId]);
+
+  // Restore a saved summary when arriving from History (?summary=<id>). Maps the
+  // detail payload into the same shape the completed view renders, so a previously
+  // generated summary opens directly instead of dropping the user on the form.
+  useEffect(() => {
+    if (!summaryId) return;
+    let active = true;
+    setRestoring(true);
+    setError(null);
+    api.history
+      .summaryDetail(summaryId)
+      .then((detail) => {
+        if (!active) return;
+        setFormat(detail.format);
+        setTopic(detail.topic);
+        setResult({
+          summary: detail.summary,
+          format: detail.format,
+          structured: detail.structured,
+          context_sufficient: detail.context_sufficient,
+          sources: detail.sources,
+        });
+        setExpandedConcept(0);
+        setFlippedCards({});
+        setStep("completed");
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(
+          err instanceof ApiClientError
+            ? err.detail
+            : "Couldn't load that summary. It may have been deleted."
+        );
+      })
+      .finally(() => {
+        if (active) setRestoring(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [summaryId]);
 
   const generate = async () => {
     setError(null);
@@ -118,15 +168,37 @@ function SummaryContent() {
       <PageHeader
         title="Summarize Document"
         onBack={() => {
-          if (step === "setup")
+          // A restored-from-history summary has no setup form to return to — go back
+          // to History instead of dropping the user on an empty generate form.
+          if (summaryId && step === "completed") {
+            router.push("/dashboard/history");
+          } else if (step === "setup") {
             router.push(docId ? `/dashboard/document/${docId}` : "/dashboard");
-          else setStep("setup");
+          } else {
+            setStep("setup");
+          }
         }}
         className="mb-6"
       />
 
+      {/* RESTORING a saved summary from history */}
+      {restoring && step !== "completed" && (
+        <GeneratingState
+          title="Loading summary…"
+          subtitle="Fetching your saved summary"
+          accentClass="text-accent-coral"
+          accentColor="var(--color-accent-coral)"
+        />
+      )}
+
+      {error && restoring === false && step === "setup" && summaryId && (
+        <div className="bg-error-text/10 border border-error-text/20 text-error-text text-xs font-semibold rounded-xl p-3 mb-4">
+          {error}
+        </div>
+      )}
+
       {/* SETUP */}
-      {step === "setup" && (
+      {step === "setup" && !restoring && (
         <section className="flex flex-col gap-6 w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
           {error && (
             <div className="bg-error-text/10 border border-error-text/20 text-error-text text-xs font-semibold rounded-xl p-3">
@@ -292,7 +364,13 @@ function SummaryContent() {
           {!result.context_sufficient && (
             <div className="w-full bg-accent-coral/10 border border-accent-coral/20 rounded-2xl p-4 flex items-start gap-2.5">
               <AlertTriangle className="h-4 w-4 text-accent-coral shrink-0 mt-0.5" />
-              <p className="text-xs text-white leading-relaxed">{result.summary}</p>
+              <div className="markdown-body text-xs text-white leading-relaxed flex flex-col gap-1.5">
+                <InlineMarkdown
+                  text={result.summary}
+                  sourceCount={result.sources.length}
+                  onCite={cite}
+                />
+              </div>
             </div>
           )}
 
@@ -304,7 +382,20 @@ function SummaryContent() {
               setExpandedConcept={setExpandedConcept}
               flippedCards={flippedCards}
               setFlippedCards={setFlippedCards}
-              link={(children) => linkifySources(children, result.sources.length, cite)}
+              link={(text) => (
+                <InlineMarkdown
+                  text={text}
+                  sourceCount={result.sources.length}
+                  onCite={cite}
+                />
+              )}
+              rich={(text) => (
+                <RichMarkdown
+                  text={text}
+                  sourceCount={result.sources.length}
+                  onCite={cite}
+                />
+              )}
             />
           )}
 
@@ -333,7 +424,7 @@ function SummaryContent() {
 
 // ── Structured renderers ──────────────────────────────────────────────────────
 
-type LinkFn = (children: React.ReactNode) => React.ReactNode;
+type LinkFn = (text: string) => React.ReactNode;
 
 interface StructuredProps {
   result: SummaryResponse;
@@ -342,6 +433,7 @@ interface StructuredProps {
   flippedCards: Record<number, boolean>;
   setFlippedCards: (v: Record<number, boolean>) => void;
   link: LinkFn;
+  rich: LinkFn;
 }
 
 function StructuredSummary({
@@ -351,16 +443,16 @@ function StructuredSummary({
   flippedCards,
   setFlippedCards,
   link,
+  rich,
 }: StructuredProps) {
   const { format, structured, summary } = result;
 
-  // If the model couldn't produce a structured payload, show the plain text.
-  if (structured === null) {
+  // Tabular is rich free-form markdown (tables/headings) — render it fully, and
+  // use the same path as a fallback whenever a structured payload is missing.
+  if (format === "tabular" || structured === null) {
     return (
-      <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 shadow-md">
-        <p className="text-xs sm:text-sm text-text-muted leading-relaxed whitespace-pre-wrap">
-          {link(summary)}
-        </p>
+      <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-4 sm:p-5 shadow-md overflow-hidden">
+        <div className="text-xs sm:text-sm text-text-muted">{rich(summary)}</div>
       </div>
     );
   }

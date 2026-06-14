@@ -68,13 +68,32 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    documents: Mapped[list["Document"]] = relationship(back_populates="owner")
-    chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="user")
-    quiz_sessions: Mapped[list["QuizSession"]] = relationship(back_populates="user")
-    activity: Mapped[list["UserActivity"]] = relationship(back_populates="user")
-    token_usage: Mapped[list["TokenUsage"]] = relationship(back_populates="user")
-    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user")
-    summaries: Mapped[list["SummaryHistory"]] = relationship(back_populates="user")
+    # passive_deletes=True lets the database's ON DELETE CASCADE remove children
+    # instead of SQLAlchemy eagerly NULL-ing their FKs in Python. Without it,
+    # `db.delete(user)` tries to UPDATE these children's non-nullable user_id to
+    # NULL and raises an IntegrityError — which is exactly what broke admin user
+    # deletion. The FK columns already declare ondelete="CASCADE".
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="owner", passive_deletes=True
+    )
+    chat_messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    quiz_sessions: Mapped[list["QuizSession"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    activity: Mapped[list["UserActivity"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    token_usage: Mapped[list["TokenUsage"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    summaries: Mapped[list["SummaryHistory"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
 
     @property
     def is_admin_or_super(self) -> bool:
@@ -163,7 +182,9 @@ class QuizSession(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="quiz_sessions")
-    answers: Mapped[list["QuizAnswer"]] = relationship(back_populates="session")
+    answers: Mapped[list["QuizAnswer"]] = relationship(
+        back_populates="session", passive_deletes=True
+    )
 
 
 class QuizAnswer(Base):
