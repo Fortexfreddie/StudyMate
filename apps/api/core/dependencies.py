@@ -123,12 +123,20 @@ def get_vector_store(
 def get_embedder() -> Embedder:
     """Dependency injector for Embedder — cached singleton.
 
-    The Embedder is stateless (just wraps an API-keyed client), so constructing a
+    The Embedder is stateless (just wraps API-keyed clients), so constructing
     fresh ``GoogleGenerativeAIEmbeddings`` on every request was pure overhead.
+    Passes all configured API keys so the embedder can failover on daily quota.
     """
     global _embedder
     if _embedder is None:
-        _embedder = Embedder(api_key=settings.GOOGLE_API_KEY)
+        # Primary key plus any configured fallbacks, in priority order.
+        # Embedder filters out blanks, so unset fallbacks are harmless.
+        api_keys = [
+            settings.GOOGLE_API_KEY,
+            settings.GOOGLE_API_KEY_2,
+            settings.GOOGLE_API_KEY_3,
+        ]
+        _embedder = Embedder(api_keys=api_keys)
     return _embedder
 
 
@@ -148,9 +156,19 @@ def get_retriever(
 def get_generator(
     performance_mode: str = Depends(get_performance_mode),  # noqa: B008
 ) -> Generator:
-    """Dependency injector for Generator — uses request's performance mode and caches instances."""
+    """Dependency injector for Generator — uses request's performance mode and caches instances.
+
+    Passes the primary key plus any configured fallbacks so the generator can
+    fail over to another key when one key's daily quota is exhausted. The
+    Generator filters out blanks, so unset fallbacks are harmless.
+    """
     if performance_mode not in _generator_cache:
+        api_keys = [
+            settings.GOOGLE_API_KEY,
+            settings.GOOGLE_API_KEY_2,
+            settings.GOOGLE_API_KEY_3,
+        ]
         _generator_cache[performance_mode] = Generator(
-            api_key=settings.GOOGLE_API_KEY, performance_mode=performance_mode
+            api_keys=api_keys, performance_mode=performance_mode
         )
     return _generator_cache[performance_mode]

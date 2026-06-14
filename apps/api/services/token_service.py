@@ -222,15 +222,20 @@ async def record_token_usage(
     usage: dict[str, int | str],
     request_type: str,
     performance_mode: str,
+    generation_ms: int | None = None,
+    chunks_used: int | None = None,
 ) -> None:
     """Stage a per-request token-usage *log* row on the caller's transaction.
 
     This is the append-only audit log (``token_usage``), separate from the atomic
     quota counter. ``usage`` must contain ``input_tokens``, ``output_tokens``,
-    ``total_tokens``, and ``model_used``. Best-effort: staging failures are logged,
-    never propagated. The caller commits as part of its own transaction.
+    ``total_tokens``, and ``model_used`` (optionally ``cached_tokens``).
+    ``generation_ms`` and ``chunks_used`` are optional performance metadata supplied
+    by the caller. Best-effort: staging failures are logged, never propagated. The
+    caller commits as part of its own transaction.
     """
     try:
+        cached = usage.get("cached_tokens", 0)
         row = TokenUsage(
             user_id=user_id,
             input_tokens=usage.get("input_tokens", 0),
@@ -239,6 +244,9 @@ async def record_token_usage(
             model_used=usage.get("model_used", "unknown"),
             request_type=request_type,
             performance_mode=performance_mode,
+            generation_ms=generation_ms,
+            chunks_used=chunks_used,
+            cached_tokens=int(cached) if isinstance(cached, int | str) else 0,
         )
         db.add(row)
         # Caller commits as part of its own transaction.

@@ -13,10 +13,12 @@ This agent owns the **final generation step** of the RAG pipeline. It assembles 
 
 ## Interface (actual)
 
-`Generator` is constructed with `(api_key, performance_mode="high")` and exposes three
-async methods. Each is a **separate method** (there is no `mode` parameter), context is
-a `list[dict]` of retrieved chunks, and each returns a **tuple** (not a dataclass). All
-generation uses Gemini **JSON mode** (`response_mime_type="application/json"`).
+`Generator` is constructed with `(api_keys, performance_mode="high")` — `api_keys` is a
+`list[str]` (primary key plus optional `GOOGLE_API_KEY_2` / `GOOGLE_API_KEY_3` fallbacks;
+blanks are filtered, at least one is required). It exposes three async methods. Each is a
+**separate method** (there is no `mode` parameter), context is a `list[dict]` of retrieved
+chunks, and each returns a **tuple** (not a dataclass). All generation uses Gemini **JSON
+mode** (`response_mime_type="application/json"`).
 
 ### `generate_answer(query, context) -> (answer, context_sufficient, usage)`
 
@@ -44,8 +46,10 @@ the router releases the token reservation and persists nothing.
 
 ### Retry / fallback / error classification
 
-`_call_llm_with_retry` classifies failures: **rate-limit (429)** → immediate fallback;
-**transient (503/empty/malformed)** → retry primary up to `MAX_RETRIES` then fallback;
+`_call_llm_with_retry` classifies failures: **daily-quota 429** (`PerDay` quotaId) →
+switch to the next available API key and restart at its primary model (see *Multi-key
+failover* below); **RPM rate-limit (429)** → immediate model fallback; **transient
+(503/empty/malformed)** → retry primary up to `MAX_RETRIES` then model fallback;
 **fatal (auth/permission/invalid-argument)** → fail fast. The quiz stricter-reprompt
 uses a single primary call when `QUIZ_REPROMPT_SINGLE_ATTEMPT=true` (worst case 4 LLM
 calls per quiz request).
@@ -185,7 +189,8 @@ If `chunks` is an empty list (retrieval found nothing above threshold):
 
 ## Model Fallback & Retry Strategy
 
-The generation agent uses a two-model strategy to handle rate limits gracefully:
+The generation agent combines a **two-model** strategy (primary → fallback model) with
+**multi-key** failover (primary → secondary API key on daily-quota exhaustion):
 
 ```python
 # Model configuration (from core/config.py) — the "high" tier; medium/low tiers
@@ -198,11 +203,34 @@ QUIZ_REPROMPT_SINGLE_ATTEMPT = True
 ```
 
 ### Retry flow (errors are classified, not matched by substring):
-1. Call primary model.
-2. **Rate-limit (429)** → fail over to the fallback model immediately.
-3. **Transient (503/empty/malformed)** → retry primary up to `MAX_RETRIES`, then fallback.
-4. **Fatal (auth/permission/invalid-argument)** → fail fast, no retry/fallback.
-5. If the fallback also fails → raise `ServiceUnavailableError` (503).
+1. Call primary model on the current API key.
+2. **Daily-quota 429** (`PerDay` quotaId) → mark this key exhausted and switch to the
+   next available key, restarting at its primary model (see *Multi-key failover*).
+3. **RPM rate-limit (429)** → fail over to the fallback **model** immediately (same key).
+4. **Transient (503/empty/malformed)** → retry primary up to `MAX_RETRIES`, then fallback.
+5. **Fatal (auth/permission/invalid-argument)** → fail fast, no retry/fallback.
+6. If the fallback model also fails → raise `ServiceUnavailableError` (503).
+
+### Multi-key failover
+
+The free-tier daily request quota is **per API key per model**, so when a key's daily
+quota is exhausted, switching models on the *same* key won't help — only switching keys
+does. `Generator` holds one client set (primary/fallback × plain/json) per configured key
+and walks them in order:
+
+- On a **daily-quota** error, the current key is marked exhausted (timestamped) and the
+  request restarts on the next available key's primary model.
+- Key order: `GOOGLE_API_KEY` → `GOOGLE_API_KEY_2` → `GOOGLE_API_KEY_3`.
+- When **all** keys' daily quotas are exhausted → `ServiceUnavailableError` (503).
+- Exhaustion is **time-aware**: a key is skipped only for `_QUOTA_RESET_SECONDS` (24h)
+  after it failed, then it becomes eligible again automatically — no restart needed.
+  (Mirrors `Embedder`; Google's RPD quota resets at midnight Pacific / 08:00 UTC, so a
+  24h cooldown safely clears it regardless of when the key was exhausted.)
+
+> **Status-code note:** the generator raises **503** when all keys are exhausted, whereas
+> the embedder raises **429** (`QuotaExhaustedError`). This is intentional — the
+> generator's public methods normalize all generation failures to 503 so the router's
+> token-reservation refund path stays uniform.
 
 For **quiz generation**, there is an additional outer retry path:
 1. If the first generation is unparseable → retry once with a stricter reformat prompt.

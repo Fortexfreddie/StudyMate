@@ -14,7 +14,7 @@ from core.dependencies import (
     get_pdf_processor,
     get_vector_store,
 )
-from core.errors import DocumentNotFoundError
+from core.errors import DocumentNotFoundError, QuotaExhaustedError
 from core.rate_limit import UPLOAD_LIMIT, limiter
 from models.database import Document, User, get_db
 from models.schemas import (
@@ -111,6 +111,16 @@ async def upload_document(
     chunk_texts = [c.text for c in chunks]
     try:
         vectors = await embedder.embed_texts(chunk_texts)
+    except QuotaExhaustedError:
+        logger.warning("Upload rejected: daily embedding quota exhausted.")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Daily embedding quota exhausted. "
+                "Uploads will resume when the quota resets. "
+                "Please try again later."
+            ),
+        )
     except Exception as e:
         logger.exception("Ingestion embedding failed.")
         raise HTTPException(

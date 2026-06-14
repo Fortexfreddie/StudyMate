@@ -96,6 +96,9 @@ class AuthService:
         if user is None or not verify_password(password, user.password_hash):
             raise AuthenticationError("Invalid email or password.")
 
+        # Stamp the successful login time (staged on the transaction committed below).
+        user.last_login_at = datetime.now(UTC)
+
         # Keep the super-admin role in sync with SUPER_ADMIN_EMAIL as the single
         # source of truth. Staged on the transaction committed below.
         #   * The configured account is healed UP to super_admin (covers accounts

@@ -67,6 +67,11 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # Most recent successful login. NULL for accounts created before login tracking
+    # and for users who have never logged in since it was added.
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # passive_deletes=True lets the database's ON DELETE CASCADE remove children
     # instead of SQLAlchemy eagerly NULL-ing their FKs in Python. Without it,
@@ -263,6 +268,16 @@ class TokenUsage(Base):
     performance_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="high"
     )
+    # Wall-clock time (ms) spent inside the generator for this request — the perf
+    # signal admins care about. NULL for legacy rows written before this existed.
+    generation_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Number of retrieval chunks fed to the model as context (NULL for legacy/quiz
+    # paths that don't pass it through).
+    chunks_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Input tokens Gemini billed at the cached rate (usage_metadata cache_read).
+    # Often 0 since we don't configure explicit context caching, but captured for
+    # visibility. NULL for legacy rows.
+    cached_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

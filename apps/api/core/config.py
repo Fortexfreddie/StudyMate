@@ -62,6 +62,10 @@ class Settings(BaseSettings):
 
     # Google AI
     GOOGLE_API_KEY: str  # required — no default
+    # Optional fallback keys — used in order when the previous key's daily
+    # embedding quota is exhausted. Leave blank to disable.
+    GOOGLE_API_KEY_2: str = ""
+    GOOGLE_API_KEY_3: str = ""
 
     # Gemini Models — primary/fallback for the "high" performance tier (default)
     # GEMINI_PRIMARY_MODEL: str = "gemini-3.1-pro-preview"

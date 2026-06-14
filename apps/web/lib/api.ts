@@ -7,6 +7,7 @@ import type {
   AdminUserDeleteResponse,
   AdminUserListParams,
   AdminUserListResponse,
+  AdminUserProfileResponse,
   AdminUserUpdateRequest,
   AdminUserUsageParams,
   AdminUserUsageResponse,
@@ -353,6 +354,12 @@ export const api = {
       const query = searchParams.toString();
       return request<AdminUserUsageResponse>(
         `/admin/users/${userId}/usage${query ? `?${query}` : ""}`
+      );
+    },
+
+    userProfile(userId: string): Promise<AdminUserProfileResponse> {
+      return request<AdminUserProfileResponse>(
+        `/admin/users/${userId}/profile`
       );
     },
 

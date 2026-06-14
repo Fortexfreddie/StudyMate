@@ -387,6 +387,7 @@ export interface AdminUserListItem {
   role: string;
   document_count: number;
   created_at: string;
+  last_active: string | null; // ISO date (YYYY-MM-DD) or null if never active
 }
 
 export interface AdminUserListResponse {
@@ -441,6 +442,33 @@ export interface AdminUserUsageParams {
   request_type?: "chat" | "summary" | "quiz";
 }
 
+// Admin — per-user profile detail (metadata only)
+
+export interface AdminUserProfileResponse {
+  user_id: string;
+  email: string;
+  full_name: string;
+  major?: string | null;
+  is_pro: boolean;
+  role: string;
+  created_at: string; // signup date
+  last_active: string | null; // ISO date (YYYY-MM-DD)
+  last_login_at: string | null; // populated once login tracking lands (Phase 4)
+  total_documents: number;
+  total_chunks: number;
+  total_chats: number;
+  total_summaries: number;
+  total_quizzes: number;
+  average_quiz_score: number; // 0–100
+  summary_formats: Record<string, number>;
+  performance_modes: Record<string, number>;
+  tokens_by_model: Record<string, number>;
+  lifetime_tokens: number;
+  avg_generation_ms: Record<string, number>; // request_type -> avg ms
+  avg_chunks_used: Record<string, number>; // request_type -> avg chunks
+  cached_tokens_total: number;
+}
+
 // Admin — per-user audit trail (metadata only)
 
 export interface AdminActivityItem {
@@ -451,6 +479,7 @@ export interface AdminActivityItem {
   doc_filename: string | null;
   performance_mode: string | null;
   preview: string;
+  summary_format: string | null; // summary format (e.g. "cheat_sheet"); null for chat/quiz
   score: number | null;
   total_questions: number | null;
 }

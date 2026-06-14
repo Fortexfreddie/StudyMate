@@ -61,6 +61,13 @@ class AuthenticationError(StudyMateError):
         super().__init__(message=message, status_code=401)
 
 
+class QuotaExhaustedError(StudyMateError):
+    """Raised when all API keys have exhausted their daily quota (embedder)."""
+
+    def __init__(self, message: str = "Daily API quota exhausted. Please try again later.") -> None:
+        super().__init__(message=message, status_code=429)
+
+
 class DocumentNotFoundError(StudyMateError):
     """Raised when a requested document does not exist."""
 
@@ -70,6 +77,9 @@ class DocumentNotFoundError(StudyMateError):
             status_code=404,
         )
 ```
+
+> The hierarchy also defines `ForbiddenError` (403) and `ConflictError` (409) for
+> admin/role operations — omitted above for brevity; see `core/errors.py`.
 
 ---
 
@@ -137,11 +147,18 @@ The PDF processor raises `ValueError` for validation failures. The router catche
 
 ### Embedder (`services/embedder.py`)
 
+Accepts multiple API keys and fails over on daily-quota exhaustion (see `agents/EMBEDDER.md`).
+
 | Condition | Exception | HTTP Code |
 |---|---|---|
-| API rate limit after retries | `ServiceUnavailableError("Embedding service is unavailable. Try again.")` | 503 |
-| Network/5xx error | `ServiceUnavailableError("Embedding service is unavailable. Try again.")` | 503 |
-| Invalid API key | `ConfigurationError("Google API key is invalid or missing.")` | 500 |
+| Daily quota on one key | *No error* — switch to next available key and retry | — |
+| **All keys' daily quota exhausted** | `QuotaExhaustedError(...)` | **429** |
+| RPM rate limit after retries (same key) | `ServiceUnavailableError("Embedding service is unavailable. Try again.")` | 503 |
+| Network/5xx error (non-quota) | `ServiceUnavailableError("Embedding service is unavailable. Try again.")` | 503 |
+| No valid keys supplied | `ConfigurationError("At least one Google API key is required.")` | 500 |
+
+The upload router (`routers/documents.py`) catches `QuotaExhaustedError` and returns a
+**429** with a "try again when quota resets" message.
 
 ### Vector Store (`services/vector_store.py`)
 
@@ -162,14 +179,23 @@ The PDF processor raises `ValueError` for validation failures. The router catche
 
 ### Generator (`services/generator.py`)
 
+Accepts multiple API keys and fails over on daily-quota exhaustion (see `agents/GENERATION_AGENT.md`).
+
 | Condition | Exception | HTTP Code |
 |---|---|---|
 | Empty chunks (no context) | Generates with `context_sufficient=False` — **not an error** | 200/201 |
-| Rate limit (429) | Fast fallback to secondary model; only raises if the fallback also fails | 503 |
-| Transient (503/empty/malformed) | Retry primary up to `MAX_RETRIES`, then fallback; raises if all fail | 503 |
+| Daily quota on one key | *No error* — switch to next available key, restart at its primary model | — |
+| **All keys' daily quota exhausted** | `ServiceUnavailableError(...)` (normalized to 503, not 429 — see note) | 503 |
+| RPM rate limit (429, non-daily) | Fast fallback to secondary **model**; only raises if the fallback also fails | 503 |
+| Transient (503/empty/malformed) | Retry primary up to `MAX_RETRIES`, then model fallback; raises if all fail | 503 |
 | Fatal (auth/permission/invalid-argument) | `ServiceUnavailableError(...)` — **fail fast**, no retry/fallback | 503 |
 | Chat/summary parse or generation failure | `ServiceUnavailableError(...)` — nothing persisted, reservation released | 503 |
 | Quiz invalid JSON after stricter reprompt | `ServiceUnavailableError("Failed to generate a valid quiz. ...")` | 503 |
+
+> **Why 503 (not 429) when all keys are exhausted:** the generator's public methods
+> (`generate_answer` / `generate_summary` / `generate_quiz`) normalize *every* generation
+> failure to `ServiceUnavailableError` so the router's token-refund path is uniform. The
+> embedder, by contrast, surfaces a dedicated `QuotaExhaustedError` (429).
 
 > `GenerationError` (422) is still defined in the hierarchy but is **not** currently
 > raised by the generator — generation failures surface as `503`.

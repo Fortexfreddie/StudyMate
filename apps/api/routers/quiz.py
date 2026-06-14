@@ -1,6 +1,7 @@
 """Quiz API Router — implements quiz generation and submission endpoints."""
 
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, Request, status
@@ -117,6 +118,7 @@ async def generate_quiz(
 
     # 4. Command Gemini to generate structured multiple-choice questions. On
     #    failure, refund the reservation and let the 503 propagate.
+    gen_start = time.monotonic()
     try:
         generated_questions, usage = await generator.generate_quiz(
             topic=payload.topic,
@@ -126,13 +128,20 @@ async def generate_quiz(
     except Exception:
         await release_tokens(current_user.id, estimate)
         raise
+    generation_ms = int((time.monotonic() - gen_start) * 1000)
 
     # 5. Reconcile against actual accumulated usage + log the per-request row.
     await reconcile_tokens(
         current_user.id, estimate, int(usage.get("total_tokens", 0) or 0)
     )
     await record_token_usage(
-        db, current_user.id, usage, "quiz", generator.performance_mode
+        db,
+        current_user.id,
+        usage,
+        "quiz",
+        generator.performance_mode,
+        generation_ms=generation_ms,
+        chunks_used=len(matched_chunks),
     )
 
     # 6. Store the full session in the database

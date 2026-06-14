@@ -22,7 +22,7 @@ import { api, ApiClientError } from "@/lib/api";
 import type { AdminUserListItem, AdminUserListResponse } from "@/lib/types";
 import { AdminTabs } from "../components/AdminTabs";
 import { RoleBadge, TierBadge } from "../components/Badges";
-import { formatJoined, effectiveIsPro, isAdminRole } from "../components/adminHelpers";
+import { formatJoined, formatShortDate, effectiveIsPro, isAdminRole } from "../components/adminHelpers";
 import { EmptySearchIllustration } from "@/components/shared/EmptySearchIllustration";
 
 const PAGE_SIZE = 20;
@@ -239,6 +239,7 @@ export default function AdminUsersPage() {
                       <th className="font-extrabold px-4 py-4">Tier</th>
                       <th className="font-extrabold px-4 py-4 text-center">Docs</th>
                       <th className="font-extrabold px-4 py-4">Joined</th>
+                      <th className="font-extrabold px-4 py-4">Last active</th>
                       <th className="font-extrabold px-6 py-4 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -388,7 +389,8 @@ function UserCard({
       </div>
       <div className="text-[11px] text-text-muted">
         {user.major ? `${user.major} • ` : ""}
-        {user.document_count} docs • Joined {formatJoined(user.created_at)}
+        {user.document_count} docs • Joined {formatJoined(user.created_at)} •{" "}
+        {user.last_active ? `Active ${formatShortDate(user.last_active)}` : "Never active"}
       </div>
       <div className="border-t border-border-subtle pt-3">
         <ActionButtons user={user} isSuper={isSuper} onAction={onAction} compact />
@@ -428,6 +430,9 @@ function UserRow({
       <td className="px-4 py-4 text-text-muted text-center font-bold">{user.document_count}</td>
       <td className="px-4 py-4 text-text-muted whitespace-nowrap">
         {formatJoined(user.created_at)}
+      </td>
+      <td className="px-4 py-4 text-text-muted whitespace-nowrap">
+        {user.last_active ? formatShortDate(user.last_active) : "Never"}
       </td>
       <td className="px-6 py-4">
         <ActionButtons user={user} isSuper={isSuper} onAction={onAction} />

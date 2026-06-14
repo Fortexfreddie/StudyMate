@@ -65,6 +65,16 @@ class ConflictError(StudyMateError):
         super().__init__(message=message, status_code=409)
 
 
+class QuotaExhaustedError(StudyMateError):
+    """Raised when all API keys have exhausted their daily quota."""
+
+    def __init__(
+        self,
+        message: str = "Daily API quota exhausted. Please try again later.",
+    ) -> None:
+        super().__init__(message=message, status_code=429)
+
+
 class DocumentNotFoundError(StudyMateError):
     """Raised when a requested document does not exist."""
 
