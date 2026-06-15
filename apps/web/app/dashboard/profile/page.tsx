@@ -18,10 +18,13 @@ import {
   CheckCircle,
   Loader2,
   AlertCircle,
+  Compass,
 } from "lucide-react";
 import { SleekLightningIcon } from "@/components/shared/Icons";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
+import { Modal } from "@/components/shared/Modal";
+import { resetOnboarding } from "@/components/onboarding/OnboardingFlow";
 import { Input } from "@/components/shared/Input";
 import { Button } from "@/components/shared/Button";
 import { api, ApiClientError, getPerformanceMode, setPerformanceMode } from "@/lib/api";
@@ -63,6 +66,7 @@ export default function ProfilePage() {
   const [usageError, setUsageError] = useState<string | null>(null);
   const [faqOpenIndex, setFaqOpenIndex] = useState<number | null>(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showPerfHelp, setShowPerfHelp] = useState(false);
 
   // Load initial settings and fetch usage data
   useEffect(() => {
@@ -184,12 +188,62 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {/* Performance explainer — most users don't know what the tiers do, so a
+          visual ladder beats the short header tooltip for a full explanation. */}
+      <Modal
+        open={showPerfHelp}
+        onClose={() => setShowPerfHelp(false)}
+        title="How Performance Level works"
+        icon={<SleekLightningIcon className="h-5 w-5" />}
+        maxWidth="max-w-md"
+      >
+        <p className="text-xs text-text-muted leading-relaxed">
+          Performance Level decides how hard the AI thinks for every chat, summary, and quiz.
+          It&apos;s a trade-off: more thinking means deeper, more accurate answers, but they take
+          longer and spend more of your daily token budget.
+        </p>
+
+        <div className="flex flex-col gap-2">
+          {[
+            { tier: "Low", glyph: "⚡", note: "Fastest · shortest answers · cheapest on tokens" },
+            { tier: "Medium", glyph: "⚡⚡", note: "Balanced speed and quality" },
+            { tier: "High", glyph: "⚡⚡⚡", note: "Detailed reasoning · the default" },
+            { tier: "Very High", glyph: "🧠⚡⚡", note: "Deeper analysis · slower · more tokens" },
+            { tier: "Max", glyph: "🧠🧠⚡", note: "Deepest reasoning · highest token cost" },
+          ].map((row) => (
+            <div
+              key={row.tier}
+              className="flex items-center gap-3 rounded-2xl bg-surface-raised/60 border border-white/5 px-3 py-2.5"
+            >
+              <span className="text-sm w-14 shrink-0 leading-none">{row.glyph}</span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-extrabold text-white leading-tight">{row.tier}</span>
+                <span className="text-[10px] text-text-muted leading-tight">{row.note}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-[10px] text-text-muted leading-relaxed flex items-start gap-1.5 border-t border-white/5 pt-3">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            Tip: if you&apos;re running low on your daily token budget, drop to a lower level — you&apos;ll
+            get more requests out of what&apos;s left. The budget resets at midnight UTC.
+          </span>
+        </p>
+
+        <Button onClick={() => setShowPerfHelp(false)}>Got it</Button>
+      </Modal>
+
       {/* MAIN */}
       {activeScreen === "main" && (
         <>
           {/* Avatar + name */}
           <section className="flex flex-col items-center text-center gap-3 mt-1.5 select-none">
-            <div className="h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-accent-gold/30 via-accent-gold/90 to-accent-gold/20 shadow-avatar-gold flex items-center justify-center">
+            {/* gpu-isolate + a contained ring (instead of the large blurred
+                colored box-shadow) keeps MIUI/Redmi from leaving a corrupted
+                band here on scroll, while preserving the gold-ring look. */}
+            <div className="gpu-isolate h-[96px] w-[96px] rounded-full p-[3px] bg-gradient-to-tr from-accent-gold/30 via-accent-gold/90 to-accent-gold/20 ring-2 ring-accent-gold/20 flex items-center justify-center">
               <div className="h-full w-full rounded-full overflow-hidden bg-surface-raised border border-black/80 flex items-center justify-center text-accent-gold text-2xl font-black">
                 {initials}
               </div>
@@ -206,7 +260,7 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
             <div className="flex flex-col gap-5">
               {/* Stats — real */}
-              <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-4 shadow-md shadow-black/20">
+              <section className="gpu-isolate w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-4 shadow-md shadow-black/20">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs sm:text-sm font-extrabold text-white">Study Statistics</h3>
                   <div className="h-7 w-7 rounded-lg bg-surface-raised flex items-center justify-center text-accent-gold">
@@ -234,7 +288,7 @@ export default function ProfilePage() {
               </section>
 
               {/* Streak — real */}
-              <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex items-center justify-between shadow-md shadow-black/20">
+              <section className="gpu-isolate w-full bg-surface border border-white/5 rounded-3xl p-5 flex items-center justify-between shadow-md shadow-black/20">
                 <div className="flex items-center gap-3">
                   <div className="h-12 w-12 rounded-full border-2 border-accent-gold bg-accent-gold/10 flex items-center justify-center text-accent-gold">
                     <Flame className="h-6 w-6 fill-current" />
@@ -253,7 +307,7 @@ export default function ProfilePage() {
               </section>
 
               {/* Token Usage Card */}
-              <section className="w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/20">
+              <section className="gpu-isolate w-full bg-surface border border-white/5 rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/20">
                 <div className="flex flex-row flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <h4 className="text-xs sm:text-sm font-extrabold text-white inline-flex items-center gap-1.5 shrink-0">
@@ -312,13 +366,19 @@ export default function ProfilePage() {
 
                     {/* Document upload (page) quota — separate from the token
                         quota above because uploads consume the embedding model,
-                        which has its own daily limit. */}
+                        which has its own daily limit. Styled identically to the
+                        token block above so the two halves read as one card. */}
                     <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-white/5">
-                      <div className="flex justify-between items-end">
-                        <span className="text-[11px] font-extrabold text-text-muted uppercase tracking-wide">
+                      <div className="flex flex-row flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-xs sm:text-sm font-extrabold text-white inline-flex items-center gap-1.5 shrink-0">
                           PDF Uploads Today
-                        </span>
-                        <span className="text-[10px] font-black text-text-muted">
+                          <InfoTooltip label="What counts as a PDF upload?">
+                            Uploading a document runs every page through the embedding model so it
+                            can be searched and quizzed. That model has its own daily page limit,
+                            separate from the token budget above. It also resets at midnight UTC.
+                          </InfoTooltip>
+                        </h4>
+                        <span className="text-[10px] font-black text-text-muted shrink-0">
                           {usage.pages_remaining.toLocaleString()} pages left
                         </span>
                       </div>
@@ -363,7 +423,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Menu */}
-            <section className="w-full bg-surface border border-white/5 rounded-3xl p-2.5 flex flex-col gap-0.5 shadow-md shadow-black/20">
+            <section className="gpu-isolate w-full bg-surface border border-white/5 rounded-3xl p-2.5 flex flex-col gap-0.5 shadow-md shadow-black/20">
               {[
                 { label: "Edit Profile", icon: User },
                 { label: "Theme Preference", icon: Palette },
@@ -528,6 +588,15 @@ export default function ProfilePage() {
             </h1>
           </header>
 
+          <button
+            type="button"
+            onClick={() => setShowPerfHelp(true)}
+            className="-mt-2 self-start inline-flex items-center gap-1.5 text-[11px] font-bold text-accent-gold hover:underline cursor-pointer"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+            How does this work?
+          </button>
+
           <div className="grid grid-cols-1 gap-3.5 w-full">
             {([
               { key: "low", title: "Low Level", desc: "Fastest responses, shorter answers, uses low resources ⚡", badge: "Flash Lite" },
@@ -615,6 +684,28 @@ export default function ProfilePage() {
               })}
             </div>
           </section>
+
+          {/* Re-runnable product tour — keeps onboarding discoverable after the
+              first visit. Resets the local flag and replays it on the dashboard. */}
+          <button
+            type="button"
+            onClick={() => {
+              resetOnboarding();
+              router.push("/dashboard");
+            }}
+            className="w-full flex items-center justify-between py-3.5 px-4 rounded-2xl bg-surface border border-white/5 hover:bg-white/5 transition cursor-pointer text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-accent-gold/10 text-accent-gold flex items-center justify-center shrink-0">
+                <Compass className="h-4.5 w-4.5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs sm:text-sm font-extrabold text-white">Replay the tour</span>
+                <span className="text-[10px] text-text-muted">See the quick walkthrough again</span>
+              </div>
+            </div>
+            <ChevronRight className="h-4.5 w-4.5 text-text-muted shrink-0" />
+          </button>
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Search, Trophy, FileUp, FileText, ChevronRight, Plus } from "lucide-react";
 import { ProgressRing } from "./components/ProgressRing";
@@ -14,6 +14,7 @@ import { getFirstName } from "@/lib/user";
 import { api, ApiClientError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { getDocumentColor, getDocumentCategory } from "@/lib/format";
+import { OnboardingFlow, hasOnboarded } from "@/components/onboarding/OnboardingFlow";
 
 // Soft caps used only to turn raw counts into a ring percentage (visual scale).
 const RING_SCALE = { quizzes: 10, documents: 10, summaries: 30 };
@@ -26,6 +27,13 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+
+  // First-visit onboarding. Checked after mount so the server render stays
+  // stable (the flag lives in localStorage). UI-only — no backend state.
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  useEffect(() => {
+    if (!hasOnboarded()) setShowOnboarding(true);
+  }, []);
 
   const { data: docData, isLoading: docsLoading, error: docsError, refetch: refetchDocs } = useApi(
     () => api.documents.list(),
@@ -233,6 +241,8 @@ export default function DashboardPage() {
         onConfirm={handleDelete}
         onCancel={() => setDocumentToDelete(null)}
       />
+
+      {showOnboarding && <OnboardingFlow />}
     </div>
   );
 }

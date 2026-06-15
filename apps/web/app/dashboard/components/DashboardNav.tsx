@@ -61,6 +61,7 @@ export function DashboardNav() {
               <Link
                 key={item.label}
                 href={item.href}
+                data-tour={item.label.toLowerCase()}
                 className={`relative flex flex-col items-center gap-1 focus:outline-none transition-all duration-300 hover:scale-105 active:scale-95 pb-1 ${
                   active ? "text-brand-primary" : "text-text-muted hover:text-white"
                 }`}
@@ -92,6 +93,7 @@ export function DashboardNav() {
               <Link
                 key={item.label}
                 href={item.href}
+                data-tour={item.label.toLowerCase()}
                 className={`flex items-center gap-3 w-full rounded-2xl py-3.5 px-4 font-bold text-sm focus:outline-none transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${
                   active
                     ? "bg-brand-primary text-black shadow-lg shadow-brand-primary/10"

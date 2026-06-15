@@ -46,13 +46,13 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 animate-fade-in"
+      className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200"
       onClick={() => {
         if (!loading) onCancel();
       }}
     >
       <div
-        className="bg-surface-modal border border-border-subtle rounded-3xl p-6 max-w-sm w-full flex flex-col gap-4 shadow-2xl animate-scale-in text-left"
+        className="gpu-isolate bg-surface-modal border border-border-subtle rounded-3xl p-6 max-w-sm w-full flex flex-col gap-4 shadow-2xl shadow-black/50 animate-in scale-in duration-300 text-left"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">

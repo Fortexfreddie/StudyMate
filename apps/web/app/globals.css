@@ -68,6 +68,17 @@
   animation-name: slide-in-from-top-4;
 }
 
+/* Entrance scale for modals/tooltips (used with .animate-in). These pair with
+   the existing fade-in to give dialogs a subtle ease-out pop (200-300ms),
+   per the interface-animation guidance: animate only what aids comprehension. */
+.zoom-in-95 {
+  animation-name: zoom-in-95;
+}
+
+.scale-in {
+  animation-name: scale-in;
+}
+
 /* Animation Durations */
 .duration-200 { animation-duration: 200ms; }
 .duration-250 { animation-duration: 250ms; }
@@ -97,6 +108,16 @@
 @keyframes slide-in-from-top-4 {
   from { transform: translateY(-16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes zoom-in-95 {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { transform: scale(0.94) translateY(8px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
 }
 
 /* 3D Flashcard Helper Classes */
@@ -263,4 +284,19 @@ body {
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* GPU compositing containment.
+   MIUI/Redmi browsers mis-rasterize large blurred *colored* box-shadows layered
+   over gradients/borders on rounded elements during scroll, leaving a corrupted
+   band. Giving such elements their own promoted, isolated layer makes the
+   compositor rasterize them in a stable, self-contained surface and stops the
+   artifact from bleeding into neighbouring content. */
+@utility gpu-isolate {
+  isolation: isolate;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }

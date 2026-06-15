@@ -17,7 +17,9 @@ export function PageHeader({
   title,
   onBack,
   titleIcon,
-  showBell = true,
+  // Off by default: the bell is not yet wired to a real notifications feed, so a
+  // permanently-lit dot is misleading. Opt in explicitly once it has a backend.
+  showBell = false,
   className = "",
   children,
 }: PageHeaderProps) {
