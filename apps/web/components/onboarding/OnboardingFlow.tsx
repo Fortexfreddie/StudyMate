@@ -93,12 +93,6 @@ const COACHMARKS: Coachmark[] = [
     body: "Every summary, quiz, and chat you generate is saved in History so you can revisit it any time.",
   },
   {
-    selector: "[data-tour='leaderboard']",
-    icon: Trophy,
-    title: "Leaderboard & achievements",
-    body: "See how your study streaks and engagement rank against other students, and unlock badges for your efforts.",
-  },
-  {
     selector: "[data-tour='profile']",
     icon: User,
     title: "Settings & usage",

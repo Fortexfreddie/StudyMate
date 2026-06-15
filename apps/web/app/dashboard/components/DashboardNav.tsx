@@ -27,7 +27,6 @@ export function DashboardNav() {
     { label: "Home", icon: Home, href: "/dashboard" },
     { label: "Upload", icon: Upload, href: "/dashboard/upload" },
     { label: "History", icon: History, href: "/dashboard/history" },
-    { label: "Leaderboard", icon: Trophy, href: "/dashboard/leaderboard" },
     ...(isAdmin
       ? [{ label: "Admin", icon: Shield, href: "/dashboard/admin" }]
       : []),
@@ -78,9 +77,11 @@ export function DashboardNav() {
       {/* Desktop/Tablet Sidebar */}
       <aside className="hidden md:flex flex-col w-64 bg-card-bg border-r border-border-subtle h-screen sticky top-0 p-6 shrink-0 overflow-y-auto">
         <div className="flex items-center gap-3 mb-10 select-none">
-          <div className="h-8 w-8 rounded-xl bg-brand-primary flex items-center justify-center font-extrabold text-black">
-            S
-          </div>
+          <img
+            src="/logo.png"
+            alt="StudyMate Logo"
+            className="h-8 w-8 rounded-xl object-cover"
+          />
           <span className="text-lg font-black text-white tracking-wider">
             StudyMate
           </span>

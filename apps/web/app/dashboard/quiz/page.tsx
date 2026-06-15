@@ -239,8 +239,12 @@ function QuizContent() {
         className="mb-6"
       />
 
-      {restoring && (
-        <LoadingState className="my-12" label="Loading quiz details…" />
+      {/* RESTORING a saved quiz from history */}
+      {restoring && step !== "results" && (
+        <GeneratingState
+          title="Loading quiz…"
+          subtitle="Fetching your saved quiz results"
+        />
       )}
 
       {/* SETUP */}
