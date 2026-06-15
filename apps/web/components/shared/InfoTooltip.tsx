@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
 
 interface InfoTooltipProps {
@@ -15,47 +22,55 @@ interface InfoTooltipProps {
  * A small inline "(i)" affordance for explaining jargon (Context Depth, chunks,
  * performance tiers, …). Tap to toggle (mobile) or hover/focus to reveal
  * (desktop); closes on outside-click or Escape. Pure client, no library.
+ *
+ * The panel is rendered through a portal into <body> with `position: fixed`. This
+ * is deliberate: an in-flow/absolute panel either gets clipped by an `overflow`
+ * ancestor (cards, scroll areas) or extends the document width near a viewport
+ * edge. Portaling to body sidesteps both — it can't be clipped by ancestors and
+ * can't add page width — and we clamp its coordinates to the viewport so it
+ * always stays fully on-screen on mobile and desktop alike.
  */
 export function InfoTooltip({ children, label = "More info", className = "" }: InfoTooltipProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
-  const panelRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
-  const [positionStyle, setPositionStyle] = useState<React.CSSProperties>({
-    left: "50%",
-    transform: "translateX(-50%)",
-  });
-  // Vertical placement: "top" opens the panel above the trigger (default),
-  // "bottom" flips it below when there isn't enough room above (e.g. when the
-  // trigger sits in a page header near the top of the viewport). This prevents
-  // the panel being clipped above/behind the top bar.
-  const [placement, setPlacement] = useState<"top" | "bottom">("top");
+  // Viewport coordinates for the fixed panel; null until measured (so it doesn't
+  // flash at 0,0 before we've positioned it).
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Portals require the DOM; only render the panel after mount (also keeps SSR happy).
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!open) return;
 
     const adjustPosition = () => {
       if (!panelRef.current || !wrapRef.current) return;
-      const padding = 16;
+      const padding = 12;
+      const gap = 6;
 
-      // Vertical flip: if the panel would extend above the viewport, open below.
       const triggerRect = wrapRef.current.getBoundingClientRect();
       const panelRect = panelRef.current.getBoundingClientRect();
-      const spaceAbove = triggerRect.top;
-      const needed = panelRect.height + padding;
-      setPlacement(spaceAbove < needed ? "bottom" : "top");
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
 
-      // Horizontal clamp: nudge the panel back into view if it overflows a side.
-      let offset = 0;
-      if (panelRect.right > window.innerWidth - padding) {
-        offset = window.innerWidth - padding - panelRect.right;
-      } else if (panelRect.left < padding) {
-        offset = padding - panelRect.left;
-      }
+      // Vertical: prefer above the trigger; flip below if there's no room.
+      const fitsAbove = triggerRect.top >= panelRect.height + gap + padding;
+      const top = fitsAbove
+        ? triggerRect.top - gap - panelRect.height
+        : triggerRect.bottom + gap;
 
-      setPositionStyle({
-        left: "50%",
-        transform: `translateX(calc(-50% + ${offset}px))`,
+      // Horizontal: center over the trigger, then clamp into the viewport.
+      const center = triggerRect.left + triggerRect.width / 2;
+      let left = center - panelRect.width / 2;
+      left = Math.min(left, vw - padding - panelRect.width);
+      left = Math.max(left, padding);
+
+      setCoords({
+        top: Math.max(padding, Math.min(top, vh - padding - panelRect.height)),
+        left,
       });
     };
 
@@ -67,16 +82,22 @@ export function InfoTooltip({ children, label = "More info", className = "" }: I
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // The panel is fixed to the viewport, so it won't track a scrolling page —
+    // close it on scroll/resize rather than let it drift away from its trigger.
+    const onScrollResize = () => setOpen(false);
 
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScrollResize, true);
+    window.addEventListener("resize", onScrollResize);
 
     return () => {
       cancelAnimationFrame(rafId);
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
-      setPositionStyle({ left: "50%", transform: "translateX(-50%)" });
-      setPlacement("top");
+      window.removeEventListener("scroll", onScrollResize, true);
+      window.removeEventListener("resize", onScrollResize);
+      setCoords(null);
     };
   }, [open]);
 
@@ -102,19 +123,29 @@ export function InfoTooltip({ children, label = "More info", className = "" }: I
       >
         <Info className="h-3.5 w-3.5" />
       </button>
-      {open && (
-        <span
-          ref={panelRef}
-          id={panelId}
-          role="tooltip"
-          style={positionStyle}
-          className={`absolute z-50 w-56 max-w-[70vw] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 animate-in fade-in zoom-in-95 duration-150 normal-case tracking-normal text-left ${
-            placement === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          }`}
-        >
-          {children}
-        </span>
-      )}
+      {open &&
+        mounted &&
+        createPortal(
+          <div
+            ref={panelRef}
+            id={panelId}
+            role="tooltip"
+            // Plain opacity fade — no transform/keyframe animation, so the panel
+            // never appears to "fly in" from where it was first measured. It's
+            // positioned purely with top/left and just fades from 0 to 1 once
+            // `coords` are computed.
+            style={{
+              top: coords?.top ?? 0,
+              left: coords?.left ?? 0,
+              opacity: coords ? 1 : 0,
+              transition: "opacity 120ms ease-out",
+            }}
+            className="fixed z-[100] w-56 max-w-[calc(100vw-24px)] rounded-xl bg-surface-raised border border-border-subtle p-2.5 text-[10px] font-medium text-text-muted leading-relaxed shadow-xl shadow-black/40 normal-case tracking-normal text-left"
+          >
+            {children}
+          </div>,
+          document.body
+        )}
     </span>
   );
 }

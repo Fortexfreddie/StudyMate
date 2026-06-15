@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { LoadingState } from "@/components/shared/LoadingState";
 
 interface AdminGuardProps {
   children: ReactNode;
@@ -26,8 +27,8 @@ export function AdminGuard({ children }: AdminGuardProps) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-text-muted">
-        <p className="text-sm">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-bg-main">
+        <LoadingState label="Loading admin panel..." />
       </div>
     );
   }
