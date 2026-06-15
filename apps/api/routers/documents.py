@@ -3,7 +3,16 @@
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,12 +20,12 @@ from core.config import settings
 from core.dependencies import (
     get_current_user,
     get_embedder,
-    get_pdf_processor,
+    get_qdrant_client,
     get_vector_store,
 )
-from core.errors import DocumentNotFoundError, QuotaExhaustedError
+from core.errors import DocumentNotFoundError
 from core.rate_limit import UPLOAD_LIMIT, limiter
-from models.database import Document, User, get_db
+from models.database import Document, User, async_session, get_db
 from models.schemas import (
     DeleteResponse,
     DocumentInfo,
@@ -24,7 +33,6 @@ from models.schemas import (
     UploadResponse,
 )
 from services.activity_service import record_activity
-from services.embedder import Embedder
 from services.pdf_processor import PDFProcessor
 from services.vector_store import VectorStore
 
@@ -32,22 +40,127 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _process_document_ingestion(
+    doc_id: UUID,
+    file_bytes: bytes,
+    filename: str,
+) -> None:
+    """Background task: parse → embed → index a document, then flip its status.
+
+    Runs *after* the upload response has been sent (HTTP 202), so the slow
+    embedding work no longer blocks the request and can't trip the platform's
+    request timeout. Creates its own DB session, embedder, and vector store
+    because the request-scoped ones are gone once the response is returned.
+
+    On any failure the document row is marked ``status="failed"`` with a
+    human-readable ``error_message``, and any partially-written vectors are
+    purged so Qdrant doesn't accumulate orphans.
+    """
+    embedder = get_embedder()
+    vector_store = VectorStore(get_qdrant_client())
+    pdf_processor = PDFProcessor()
+
+    async def _mark_failed(message: str) -> None:
+        """Best-effort: flip the row to failed and purge any orphan vectors."""
+        try:
+            await vector_store.delete_by_doc_id(str(doc_id))
+        except Exception:
+            logger.exception("Failed to purge vectors for failed doc %s.", doc_id)
+        try:
+            async with async_session() as session:
+                row = await session.get(Document, doc_id)
+                if row is not None:
+                    row.status = "failed"
+                    row.error_message = message
+                    await session.commit()
+        except Exception:
+            logger.exception("Failed to mark doc %s as failed.", doc_id)
+
+    try:
+        chunks = pdf_processor.process_pdf(
+            file_bytes=file_bytes,
+            filename=filename,
+            doc_id=str(doc_id),
+        )
+    except ValueError as e:
+        # Bad/scanned/empty PDF — a permanent failure, surfaced to the user.
+        await _mark_failed(str(e))
+        return
+    except Exception:
+        logger.exception("Background PDF parsing failed for doc %s.", doc_id)
+        await _mark_failed("Failed to read the PDF. Please try a different file.")
+        return
+
+    chunk_texts = [c.text for c in chunks]
+    try:
+        vectors = await embedder.embed_texts(chunk_texts)
+    except Exception:
+        logger.exception("Background embedding failed for doc %s.", doc_id)
+        await _mark_failed(
+            "Failed to embed document — the embedding service may be rate "
+            "limited. Please delete this and try again later."
+        )
+        return
+
+    if vectors and len(vectors[0]) != settings.VECTOR_SIZE:
+        logger.error(
+            "Embedding dimension mismatch for doc %s: got %d, expected %d.",
+            doc_id,
+            len(vectors[0]),
+            settings.VECTOR_SIZE,
+        )
+        await _mark_failed("Embedding configuration error. Please contact support.")
+        return
+
+    try:
+        await vector_store.upsert_chunks(chunks, vectors)
+    except Exception:
+        logger.exception("Background vector indexing failed for doc %s.", doc_id)
+        await _mark_failed("Failed to index document chunks. Please try again.")
+        return
+
+    # Success — record real counts and flip to ready in a short transaction.
+    try:
+        async with async_session() as session:
+            row = await session.get(Document, doc_id)
+            if row is None:
+                # Row was deleted (e.g. user cancelled) while we processed — clean up.
+                await vector_store.delete_by_doc_id(str(doc_id))
+                return
+            row.page_count = len(set(c.page_number for c in chunks))
+            row.chunk_count = len(chunks)
+            row.status = "ready"
+            row.error_message = None
+            await session.commit()
+        logger.info("Document %s ingested: %d chunks ready.", doc_id, len(chunks))
+    except Exception:
+        logger.exception("Failed to finalize doc %s after indexing.", doc_id)
+        await _mark_failed("Failed to save document metadata.")
+
+
 @router.post(
     "/upload",
     response_model=UploadResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 @limiter.limit(UPLOAD_LIMIT)
 async def upload_document(
     request: Request,
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
-    pdf_processor: PDFProcessor = Depends(get_pdf_processor),  # noqa: B008
-    embedder: Embedder = Depends(get_embedder),  # noqa: B008
-    vector_store: VectorStore = Depends(get_vector_store),  # noqa: B008
 ) -> UploadResponse:
-    """Upload an academic PDF document, parse, chunk, embed, and store in vector DB."""
+    """Accept an academic PDF and process it asynchronously.
+
+    Validation that can fail fast (content-type, extension, size cap, emptiness)
+    happens inline so the client gets an immediate 4xx. The expensive work —
+    parsing, embedding, and indexing — is handed to a background task and the
+    endpoint returns HTTP 202 with ``status="processing"`` right away. This keeps
+    the request short so a long PDF can no longer exceed the platform's request
+    timeout and leave the upload UI spinning indefinitely. The client polls
+    ``GET /documents/{doc_id}`` until ``status`` is "ready" or "failed".
+    """
     # 1. Validate file content-type and extension
     if file.content_type != "application/pdf":
         raise HTTPException(
@@ -87,77 +200,27 @@ async def upload_document(
             detail="Uploaded file is empty.",
         )
 
-    # 2. Extract plain text page-by-page and split into chunks
+    # Cheap structural sanity check so a non-PDF is rejected synchronously rather
+    # than only surfacing as a "failed" document after the background task runs.
+    if not file_bytes.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a PDF document.",
+        )
+
+    # 2. Create the document row up front in the "processing" state and record the
+    #    study-activity for today, then commit. The heavy lifting happens after the
+    #    response is sent.
     doc_id = uuid4()
     filename = file.filename or "unknown.pdf"
 
-    try:
-        chunks = pdf_processor.process_pdf(
-            file_bytes=file_bytes,
-            filename=filename,
-            doc_id=str(doc_id),
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-    # 3. Embed clean text chunks and store in Qdrant FIRST — BEFORE opening any DB
-    #    transaction. Embedding can take minutes for a large PDF (batched calls with
-    #    backoff); holding a PG connection/transaction across it would exhaust the
-    #    pool under concurrent uploads. So we do the slow work pool-free, then write
-    #    metadata in a short transaction.
-    chunk_texts = [c.text for c in chunks]
-    try:
-        vectors = await embedder.embed_texts(chunk_texts)
-    except QuotaExhaustedError:
-        logger.warning("Upload rejected: daily embedding quota exhausted.")
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                "Daily embedding quota exhausted. "
-                "Uploads will resume when the quota resets. "
-                "Please try again later."
-            ),
-        )
-    except Exception as e:
-        logger.exception("Ingestion embedding failed.")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Failed to embed document chunks. Please try again.",
-        ) from e
-
-    # Guard against an embedding model returning the wrong dimensionality, which
-    # would otherwise fail deep inside Qdrant after the cost was already spent.
-    if vectors and len(vectors[0]) != settings.VECTOR_SIZE:
-        logger.error(
-            "Embedding dimension mismatch: got %d, expected %d.",
-            len(vectors[0]),
-            settings.VECTOR_SIZE,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Embedding configuration error. Please contact support.",
-        )
-
-    try:
-        await vector_store.upsert_chunks(chunks, vectors)
-    except Exception as e:
-        logger.exception("Ingestion vector indexing failed.")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Failed to index document chunks. Please try again.",
-        ) from e
-
-    # 4. Persist document metadata in a SHORT transaction. If this fails, purge the
-    #    vectors we just wrote so Qdrant doesn't accumulate orphans.
     db_doc = Document(
         id=doc_id,
         user_id=current_user.id,
         filename=filename,
-        page_count=len(set(c.page_number for c in chunks)),
-        chunk_count=len(chunks),
+        page_count=None,
+        chunk_count=None,
+        status="processing",
     )
     db.add(db_doc)
     await record_activity(db, current_user.id)
@@ -165,29 +228,24 @@ async def upload_document(
     try:
         await db.commit()
     except Exception as e:
-        logger.exception(
-            "Database commit failed for document upload. Rolling back vector store."
-        )
+        logger.exception("Failed to create processing document row.")
         await db.rollback()
-        try:
-            await vector_store.delete_by_doc_id(str(doc_id))
-        except Exception:
-            logger.exception(
-                "Failed to delete vectors from Qdrant on rollback cleanup."
-            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save document metadata.",
+            detail="Failed to start document upload. Please try again.",
         ) from e
 
-    await db.refresh(db_doc)
+    # 3. Schedule the parse → embed → index pipeline to run after the response.
+    background_tasks.add_task(
+        _process_document_ingestion, doc_id, file_bytes, filename
+    )
 
     return UploadResponse(
-        doc_id=db_doc.id,
-        filename=db_doc.filename,
-        page_count=db_doc.page_count,
-        chunk_count=db_doc.chunk_count,
-        status="processed",
+        doc_id=doc_id,
+        filename=filename,
+        page_count=None,
+        chunk_count=None,
+        status="processing",
     )
 
 
@@ -210,6 +268,8 @@ async def list_documents(
             filename=doc.filename,
             page_count=doc.page_count,
             chunk_count=doc.chunk_count,
+            status=doc.status,
+            error_message=doc.error_message,
             uploaded_at=doc.uploaded_at,
         )
         for doc in db_docs
@@ -241,6 +301,8 @@ async def get_document(
         filename=db_doc.filename,
         page_count=db_doc.page_count,
         chunk_count=db_doc.chunk_count,
+        status=db_doc.status,
+        error_message=db_doc.error_message,
         uploaded_at=db_doc.uploaded_at,
     )
 

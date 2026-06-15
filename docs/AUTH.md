@@ -190,6 +190,14 @@ Create a new user account.
 - `400` — email already registered, password too short
 - `422` — invalid request body
 
+> **Email normalization:** signup and login lower-case + trim the email at the schema
+> boundary (`SignupRequest` / `LoginRequest` validators) before any DB query or insert.
+> The `users.email` column is a case-sensitive `String` with a UNIQUE constraint (not
+> `citext`), so this prevents lock-outs and duplicate accounts from casing differences
+> (`John.Doe@x.edu` vs `john.doe@x.edu`). The `SUPER_ADMIN_EMAIL` comparison is normalized
+> the same way. Existing rows were backfilled by migration `f7a9c1d3b5e7` (which aborts if
+> two accounts collide only by case, so they can be resolved by hand first).
+
 ### `POST /auth/login`
 
 Authenticate and receive tokens.

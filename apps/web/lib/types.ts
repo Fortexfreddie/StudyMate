@@ -49,20 +49,28 @@ export interface RefreshResponse {
   token_type: string;
 }
 
+// Ingestion lifecycle for an uploaded document. Parsing/embedding/indexing run
+// in the background after upload, so a document is "processing" until its chunks
+// are indexed ("ready") or ingestion fails ("failed").
+export type DocumentStatus = "processing" | "ready" | "failed";
+
 export interface Document {
   doc_id: string;
   filename: string;
-  page_count: number;
-  chunk_count: number;
+  // null while still processing (counts are only known once parsing completes)
+  page_count: number | null;
+  chunk_count: number | null;
+  status: DocumentStatus;
+  error_message?: string | null;
   uploaded_at: string;
 }
 
 export interface UploadResponse {
   doc_id: string;
   filename: string;
-  page_count: number;
-  chunk_count: number;
-  status: string;
+  page_count: number | null;
+  chunk_count: number | null;
+  status: DocumentStatus;
 }
 
 export interface DocumentListResponse {

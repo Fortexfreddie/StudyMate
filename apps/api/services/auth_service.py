@@ -52,7 +52,12 @@ class AuthService:
         # Hash credentials and create user record. The configured super-admin email
         # is auto-promoted to super_admin + pro the moment it registers.
         pw_hash = hash_password(password)
-        is_super = bool(settings.SUPER_ADMIN_EMAIL) and email == settings.SUPER_ADMIN_EMAIL
+        # Compare case-insensitively: the incoming email is already normalized to
+        # lower-case (schema validator), but SUPER_ADMIN_EMAIL is a raw env value
+        # that may carry different casing — normalize it too, or promotion silently
+        # fails.
+        super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
+        is_super = bool(super_admin_email) and email == super_admin_email
         user = User(
             email=email,
             password_hash=pw_hash,
@@ -106,9 +111,8 @@ class AuthService:
         #   * Any account stored as super_admin whose email no longer matches the
         #     configured one is demoted back to "user" — so changing the env var
         #     transfers the title instead of leaving a second "ghost" super admin.
-        is_configured_super = bool(settings.SUPER_ADMIN_EMAIL) and (
-            email == settings.SUPER_ADMIN_EMAIL
-        )
+        super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
+        is_configured_super = bool(super_admin_email) and (email == super_admin_email)
         if is_configured_super and user.role != "super_admin":
             user.role = "super_admin"
             user.is_pro = True

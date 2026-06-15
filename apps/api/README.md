@@ -168,15 +168,18 @@ All errors return `{ "detail": "human-readable message" }`.
 
 ### Documents
 
-**`POST /documents/upload`** (`multipart/form-data`, field `file`) → 201
+**`POST /documents/upload`** (`multipart/form-data`, field `file`) → **202** (async)
 ```json
-{ "doc_id": "uuid", "filename": "notes.pdf", "page_count": 24, "chunk_count": 87, "status": "processed" }
+{ "doc_id": "uuid", "filename": "notes.pdf", "page_count": null, "chunk_count": null, "status": "processing" }
 ```
-Errors: `400` not a PDF/empty/image-only · `413` > 20MB · `500` indexing failure.
+Validation (type/extension/size/empty/`%PDF`) is inline; parsing + embedding + indexing
+run in a **background task**. Poll `GET /documents/{doc_id}` until `status` is `ready`
+(or `failed`, with `error_message`). Inline errors: `400` not a PDF/empty · `413` > 20MB ·
+`415` bad content-type. A bad/scanned PDF surfaces as `status:"failed"`, not an HTTP error.
 
-**`GET /documents`** → 200 → `{ "documents": [ { doc_id, filename, page_count, chunk_count, uploaded_at } ] }`
+**`GET /documents`** → 200 → `{ "documents": [ { doc_id, filename, page_count, chunk_count, status, error_message, uploaded_at } ] }` (counts `null` until `ready`)
 
-**`GET /documents/{doc_id}`** → 200 → single `DocumentInfo`. `404` if missing, `403` if not owner.
+**`GET /documents/{doc_id}`** → 200 → single `DocumentInfo` (also the upload-progress poll endpoint; carries `status`). `404` if missing, `403` if not owner.
 
 **`DELETE /documents/{doc_id}`** → 200 → `{ "doc_id": "uuid", "deleted": true }` (also purges Qdrant vectors).
 

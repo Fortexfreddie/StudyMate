@@ -963,6 +963,7 @@ async def list_documents(
             filename=doc.filename,
             page_count=doc.page_count,
             chunk_count=doc.chunk_count,
+            status=doc.status,
             uploaded_at=doc.uploaded_at,
             owner_id=owner.id,
             owner_name=owner.full_name,

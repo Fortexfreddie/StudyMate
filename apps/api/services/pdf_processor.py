@@ -62,47 +62,100 @@ class PDFProcessor:
         if total_pages == 0:
             raise ValueError("PDF contains no readable pages.")
 
-        chunks: list[DocumentChunk] = []
-        total_extracted_characters = 0
+        # 1. Extract + clean every page first, then stitch them into ONE continuous
+        #    string. Splitting per-page (the old approach) severed any paragraph that
+        #    spanned a page boundary and prevented chunk_overlap from bridging it. We
+        #    keep a (char_offset -> page_number) map so each resulting chunk can still
+        #    be attributed to the page it starts on.
+        page_boundaries: list[tuple[int, int]] = []  # (start_offset, page_number)
+        text_parts: list[str] = []
+        cursor = 0
+        separator = "\n\n"
 
-        # Extract and split page by page
         for page_idx, page in enumerate(reader.pages, start=1):
-            text = page.extract_text()
-            if not text:
+            raw = page.extract_text()
+            if not raw:
+                continue
+            cleaned = self._clean_text(raw)
+            if not cleaned:
                 continue
 
-            cleaned_text = self._clean_text(text)
-            total_extracted_characters += len(cleaned_text)
+            if text_parts:
+                # Account for the separator joining the previous page to this one.
+                cursor += len(separator)
+            page_boundaries.append((cursor, page_idx))
+            text_parts.append(cleaned)
+            cursor += len(cleaned)
 
-            # Split clean page text
-            page_splits = self._splitter.split_text(cleaned_text)
-
-            for split in page_splits:
-                # Enforce minimum chunk length constraints
-                if len(split) < settings.MIN_CHUNK_LENGTH:
-                    continue
-
-                chunk_id = str(uuid4())
-                token_count = self._approximate_tokens(split)
-
-                chunks.append(
-                    DocumentChunk(
-                        chunk_id=chunk_id,
-                        doc_id=doc_id,
-                        filename=filename,
-                        page_number=page_idx,
-                        text=split,
-                        token_count=token_count,
-                    )
-                )
-
-        # Reject image-only PDFs
-        if total_extracted_characters == 0:
+        # Reject image-only PDFs (nothing extractable on any page).
+        if not text_parts:
             raise ValueError(
                 "PDF appears to be a scanned image. Text extraction is not supported."
             )
 
+        full_text = separator.join(text_parts)
+
+        # 2. Split the whole document at once, so overlap carries across page breaks.
+        splits = self._splitter.split_text(full_text)
+
+        # 3. Coalesce splits shorter than MIN_CHUNK_LENGTH into the previous chunk
+        #    instead of silently discarding them — this used to permanently drop short
+        #    trailing sentences (e.g. a page's closing line) from the index.
+        merged: list[str] = []
+        for split in splits:
+            stripped = split.strip()
+            if not stripped:
+                continue
+            if len(stripped) < settings.MIN_CHUNK_LENGTH and merged:
+                merged[-1] = f"{merged[-1]} {stripped}"
+            else:
+                merged.append(stripped)
+
+        # 4. Attribute each chunk to a page by locating its text in the combined
+        #    string and matching that offset against the page-boundary map. Searching
+        #    from a running cursor keeps this O(n) and robust to repeated text.
+        chunks: list[DocumentChunk] = []
+        search_from = 0
+        for chunk_text in merged:
+            offset = full_text.find(chunk_text, search_from)
+            if offset == -1:
+                # Coalescing inserted a space the combined string doesn't contain;
+                # fall back to locating just the chunk's leading segment.
+                offset = full_text.find(chunk_text.split(" ", 1)[0], search_from)
+                if offset == -1:
+                    offset = search_from
+            search_from = offset + 1
+
+            page_number = self._page_for_offset(offset, page_boundaries)
+            chunks.append(
+                DocumentChunk(
+                    chunk_id=str(uuid4()),
+                    doc_id=doc_id,
+                    filename=filename,
+                    page_number=page_number,
+                    text=chunk_text,
+                    token_count=self._approximate_tokens(chunk_text),
+                )
+            )
+
         return chunks
+
+    @staticmethod
+    def _page_for_offset(
+        offset: int, page_boundaries: list[tuple[int, int]]
+    ) -> int:
+        """Return the page number whose text range contains ``offset``.
+
+        ``page_boundaries`` is an ascending list of (start_offset, page_number).
+        A chunk spanning a page break is attributed to the page it *starts* on.
+        """
+        page_number = page_boundaries[0][1]
+        for start_offset, num in page_boundaries:
+            if offset >= start_offset:
+                page_number = num
+            else:
+                break
+        return page_number
 
     def _clean_text(self, text: str) -> str:
         """Normalize whitespaces, strip headers/footers, and preserve paragraphs."""

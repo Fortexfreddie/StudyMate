@@ -125,8 +125,20 @@ class Document(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    page_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # page_count / chunk_count are NULL while a document is still "processing" —
+    # they're only known once the background embedding task finishes parsing.
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ingestion lifecycle. A document is created "processing", flips to "ready"
+    # once chunks are embedded + indexed, or "failed" if ingestion errored. The
+    # frontend polls this so the upload request never has to stay open for the
+    # full (potentially multi-minute) embedding run — which is what was tripping
+    # the platform's request timeout and leaving the UI spinning forever.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="ready", index=True
+    )
+    # Human-readable reason when status == "failed" (NULL otherwise).
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -102,6 +102,20 @@ async def generate_quiz(
         top_k=effective_top_k,
     )
 
+    # 2.5. Bail out early if retrieval found nothing relevant (topic absent from the
+    #      document, or everything fell below the similarity threshold). Unlike chat
+    #      and summary — which can honestly degrade to a "limited context" answer —
+    #      a quiz must produce structured questions or none at all. Calling the LLM
+    #      against empty context only burns tokens and fights the zero-fabrication
+    #      system prompt, so reject *before* reserving tokens or generating.
+    if not matched_chunks:
+        raise StudyMateError(
+            "Couldn't find enough relevant information in your document(s) to build "
+            "a quiz on this topic. Try a topic covered by the material, or upload a "
+            "document about it.",
+            status_code=404,
+        )
+
     # 3. Reserve the estimated token cost atomically BEFORE the LLM call. Quiz can
     #    issue multiple LLM attempts; the single reservation covers them and is
     #    reconciled against the *accumulated* usage afterwards.

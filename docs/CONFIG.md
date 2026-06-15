@@ -52,7 +52,8 @@ class Settings(BaseSettings):
 
     # --- Embedding ---
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
-    EMBEDDING_BATCH_SIZE: int = 50
+    EMBEDDING_BATCH_SIZE: int = 100
+    EMBEDDING_BATCH_DELAY_SECONDS: float = 0.2
 
     # --- Qdrant ---
     QDRANT_URL: str  # required — no default
@@ -123,8 +124,9 @@ settings = Settings()
 | `QUIZ_REPROMPT_SINGLE_ATTEMPT` | `true` | Quiz reformat reprompt = single LLM call (caps quiz calls at 4) |
 | `FREE_DAILY_TOKEN_LIMIT` | `50000` | Free-tier daily token quota (fixed UTC-day window) |
 | `PRO_DAILY_TOKEN_LIMIT` | `500000` | Pro-tier daily token quota |
-| `EMBEDDING_MODEL` | `"models/gemini-embedding-2"` | Embedding model identifier |
-| `EMBEDDING_BATCH_SIZE` | `50` | Chunks per embedding API call |
+| `EMBEDDING_MODEL` | `"models/gemini-embedding-2"` | Embedding model identifier (8,192-token input cap per text; chunks are ~500 tokens) |
+| `EMBEDDING_BATCH_SIZE` | `100` | Texts per embedding API call (fewer round-trips = faster ingestion) |
+| `EMBEDDING_BATCH_DELAY_SECONDS` | `0.2` | Proactive pause between embedding batches; `0` disables it (free-tier quota is token-per-minute gated, so spacing is light, not the throttle) |
 | `COLLECTION_NAME` | `"studymate_chunks"` | Qdrant collection name |
 | `VECTOR_SIZE` | `3072` | Embedding vector dimensions |
 | `UPSERT_BATCH_SIZE` | `100` | Points per Qdrant upsert call |

@@ -77,10 +77,12 @@ multi-key daily-quota failover (see *Error Handling* below).
 
 ## Batching Strategy
 
-For large documents with many chunks (100+), embeddings are processed in batches to avoid API timeouts and rate limits:
+For large documents with many chunks (100+), embeddings are processed in batches to
+maximise throughput and stay within the embedding API's per-request limits:
 
 ```python
-EMBEDDING_BATCH_SIZE = 50  # chunks per API call
+EMBEDDING_BATCH_SIZE = 100          # texts per API call
+EMBEDDING_BATCH_DELAY_SECONDS = 0.2 # light courtesy pause between batches
 
 async def embed_texts_batched(self, texts: list[str]) -> list[list[float]]:
     results: list[list[float]] = []
@@ -88,8 +90,28 @@ async def embed_texts_batched(self, texts: list[str]) -> list[list[float]]:
         batch = texts[i : i + EMBEDDING_BATCH_SIZE]
         batch_embeddings = await self._client.aembed_documents(batch)
         results.extend(batch_embeddings)
+        # token-per-minute gated, not RPM — so spacing is light, not the throttle
+        await asyncio.sleep(EMBEDDING_BATCH_DELAY_SECONDS)
     return results
 ```
+
+### Model input limits (per Google docs)
+
+| Model | Max input tokens **per text** | Status |
+|---|---|---|
+| `gemini-embedding-2` (current) | **8,192** (shared across modalities; silently truncates over-limit input) | Recommended |
+| `gemini-embedding-001` | 2,048 | Available, *not recommended* for new projects |
+
+Our chunks are ~500 tokens (`DEFAULT_CHUNK_SIZE`), so **individual chunks are never
+truncated** on either model. Free-tier embedding quota is gated by **tokens-per-minute**,
+not requests-per-minute — which is why `EMBEDDING_BATCH_DELAY_SECONDS` is a light courtesy
+pause (set it to `0` to disable) and real rate-limit hits are handled reactively by
+`_call_with_retry`'s backoff. The two embedding models live in **incompatible** vector
+spaces; switching models requires re-embedding every stored document.
+
+> **Ingestion runs in the background.** `embed_texts` is invoked from a FastAPI
+> background task (see `DOCUMENT_PROCESSOR.md`), *not* inline in the upload request, so a
+> long document's embedding run can no longer exceed the platform request timeout.
 
 ---
 
@@ -126,7 +148,8 @@ clears it safely regardless of when the key was exhausted.)
 # apps/api/core/config.py
 
 EMBEDDING_MODEL = "models/gemini-embedding-2"
-EMBEDDING_BATCH_SIZE = 50
+EMBEDDING_BATCH_SIZE = 100            # texts per embedding request
+EMBEDDING_BATCH_DELAY_SECONDS = 0.2   # proactive pause between batches (0 = off)
 ```
 
 ---
@@ -136,7 +159,7 @@ EMBEDDING_BATCH_SIZE = 50
 - **Same model for chunks and queries** — `gemini-embedding-2` is used for both to ensure vectors exist in the same semantic space. Using different models would make cosine similarity meaningless.
 - **Async methods** — all embedding calls are async to avoid blocking FastAPI's event loop during document upload.
 - **`langchain-google-genai`** is used as the wrapper rather than calling the `google-genai` SDK directly, because LangChain's `GoogleGenerativeAIEmbeddings` class handles API key injection, retry logic, and async support cleanly.
-- **Batch size of 50** balances throughput against API rate limits. A 200-chunk document requires 4 API calls rather than 200.
+- **Batch size of 100** balances throughput against the embedding API's per-request limits. A 200-chunk document requires 2 API calls rather than 200. Larger batches mean fewer round-trips, which shortens total ingestion time (now run in the background, but still bounded by worker capacity).
 - **Multiple API keys** — accepts a list of keys and fails over on daily-quota exhaustion. This is a free-tier mitigation for a no-revenue student project; the clean long-term path is a single paid key. Per-key daily quotas are intended to be per-project, so using extra keys purely to extend quota is a gray area under Google's terms.
 
 ---

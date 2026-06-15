@@ -180,6 +180,29 @@ async def generate_summary(
             top_k=effective_top_k,
         )
 
+    # 3.5. Bail out if retrieval found nothing at all. With zero chunks there is no
+    #      grounding content, so calling the LLM only burns tokens and risks it
+    #      summarizing from its own knowledge against the no-hallucination rule.
+    #      (A *partial* context still proceeds — the generator can honestly return
+    #      context_sufficient=false for a thin-but-related summary. This guard is
+    #      only for the truly-empty case.) The cause differs by mode, so the message
+    #      does too: a full-document summary with no chunks means the document isn't
+    #      indexed yet (still processing / failed ingestion), not a missing topic.
+    if not matched_chunks:
+        if payload.full_document:
+            raise StudyMateError(
+                "This document has no indexed content to summarize yet. If you just "
+                "uploaded it, wait for processing to finish; otherwise it may have "
+                "failed to process — try re-uploading it.",
+                status_code=409,
+            )
+        raise StudyMateError(
+            "Couldn't find relevant information in your document(s) to summarize "
+            "this topic. Try a topic covered by the material, or pick a different "
+            "document.",
+            status_code=404,
+        )
+
     # 4. Reserve the estimated token cost atomically BEFORE the LLM call.
     context_text = " ".join(str(c.get("text") or "") for c in matched_chunks)
     estimate = estimate_request_tokens(context_text, payload.topic, "summary")

@@ -178,9 +178,9 @@ local `isLoading`/`error` state in the component.
 |---|---|---|---|
 | **Login / Signup** | — | `auth.login` / `auth.signup` | stores tokens, redirects to dashboard |
 | **Dashboard home** | `documents.list`, `stats.get` | — | rings show real counts; streak CTA from stats |
-| **Upload** | — | `documents.upload` | client-side PDF + 20MB check; redirects to the new doc; honest "processing" state |
+| **Upload** | — | `documents.upload` | client-side PDF + 20MB check; 60s upload-fetch timeout (no infinite spinner); upload returns 202 and redirects to the new doc, which polls until ready |
 | **Documents** | `documents.list` | — | loading/empty/error states; cards link to detail |
-| **Document detail** | `documents.get` | `documents.remove` | actions to quiz/summary/chat; confirm-to-delete danger zone |
+| **Document detail** | `documents.get` | `documents.remove` | **polls `documents.get` every 3s while `status:"processing"`**; live processing banner / failed banner with `error_message`; quiz/summary/chat actions gated until `status:"ready"`; confirm-to-delete danger zone |
 | **Chat** | `documents.get`, `history.chatHistory` | `chat.send` | renders `sources` + a "limited context" notice on `context_sufficient:false`; inline `Source #N` citations in the answer are clickable and scroll to / highlight the matching source card |
 | **Quiz** | — | `quiz.generate` → `quiz.submit` | presets 5/10/15/20/30 (cap 30) with a "larger quizzes take longer" hint; **server-graded**; per-question review with explanations |
 | **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text; supports full-document sequential overview summaries (bypassing similarity search); renders `sources` cards with clickable inline `Source #N` citations |

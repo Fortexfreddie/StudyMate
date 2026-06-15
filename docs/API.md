@@ -30,31 +30,45 @@ All error responses follow: `{ "detail": "Human-readable error message" }`
 ## Documents
 
 ### `POST /documents/upload` 🔒
-Upload and process a PDF. Triggers: extraction → chunking → embedding → storage in Qdrant. Document is linked to the authenticated user.
+Accept a PDF and process it **asynchronously**. Validation that can fail fast
+(content-type, `.pdf` extension, size cap, empty file, `%PDF` header) runs inline and
+returns an immediate `4xx`. The expensive work — extraction → chunking → embedding →
+storage in Qdrant — runs in a **background task**, and the endpoint returns `202` right
+away. This keeps the request short so a long PDF can't exceed the platform request timeout
+and leave the client hanging. Poll `GET /documents/{doc_id}` until `status` is `ready` (or
+`failed`).
 
 **Request:** `multipart/form-data`
 - `file`: PDF binary (required)
 
-**Response 201:**
+**Response 202 (Accepted):**
 ```json
 {
   "doc_id": "uuid-v4-string",
   "filename": "lecture_notes.pdf",
-  "page_count": 24,
-  "chunk_count": 87,
-  "status": "processed"
+  "page_count": null,
+  "chunk_count": null,
+  "status": "processing"
 }
 ```
 
-**Errors:**
-- `400` — not a PDF, empty file, image-only PDF
+`page_count` / `chunk_count` are `null` until processing completes. `status` is one of
+`processing` | `ready` | `failed`.
+
+**Errors (inline, synchronous):**
+- `400` — not a PDF (missing `%PDF` header), empty file, or wrong extension
 - `413` — file too large (> 20MB)
-- `503` — embedding service unavailable
+- `415` — unsupported content-type
+- `500` — could not create the document record
+
+> A *parse* failure (image-only/scanned PDF, 0 readable pages) or an embedding/indexing
+> failure is **not** an HTTP error here — it surfaces later as `status: "failed"` on the
+> document, with a human-readable `error_message`.
 
 ---
 
 ### `GET /documents` 🔒
-List all processed documents for the current user.
+List all documents for the current user (any status).
 
 **Response 200:**
 ```json
@@ -65,6 +79,8 @@ List all processed documents for the current user.
       "filename": "lecture_notes.pdf",
       "page_count": 24,
       "chunk_count": 87,
+      "status": "ready",
+      "error_message": null,
       "uploaded_at": "2026-05-19T10:00:00Z"
     }
   ]
@@ -74,7 +90,8 @@ List all processed documents for the current user.
 ---
 
 ### `GET /documents/{doc_id}` 🔒
-Get a single document's metadata. Only the document owner can access it.
+Get a single document's metadata — **also the polling endpoint** the client uses to track
+ingestion progress after an upload. Only the document owner can access it.
 
 **Response 200:**
 ```json
@@ -83,9 +100,14 @@ Get a single document's metadata. Only the document owner can access it.
   "filename": "lecture_notes.pdf",
   "page_count": 24,
   "chunk_count": 87,
+  "status": "ready",
+  "error_message": null,
   "uploaded_at": "2026-05-19T10:00:00Z"
 }
 ```
+
+`status` ∈ `processing` | `ready` | `failed`. When `failed`, `error_message` explains why
+and the counts stay `null`.
 
 **Errors:**
 - `403` — not the document owner

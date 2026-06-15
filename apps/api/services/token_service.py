@@ -155,22 +155,41 @@ async def reserve_tokens(
 async def _adjust(session: AsyncSession, user_id: UUID, day: date, delta: int) -> None:
     """Add ``delta`` (may be negative) to today's counter, clamped at >= 0.
 
+    The arithmetic is performed **atomically in PostgreSQL** —
+    ``SET reserved_tokens = GREATEST(0, reserved_tokens + :delta)`` — rather than as
+    a Python read-modify-write. This matters because ``reconcile_tokens`` and
+    ``release_tokens`` each run in their own transaction without a row lock: a
+    read-then-write would let two concurrent adjustments read the same base value
+    and have the second commit clobber the first's delta (a lost update), causing
+    the authoritative quota counter to drift from real usage over a busy day. Doing
+    the add inside a single ``INSERT ... ON CONFLICT DO UPDATE`` statement lets the
+    row lock it takes serialize concurrent adjustments correctly (same technique as
+    ``reserve_tokens``).
+
     Operates on an existing session without committing; caller commits.
     """
-    row = await session.scalar(
-        select(DailyTokenUsage).where(
-            DailyTokenUsage.user_id == user_id,
-            DailyTokenUsage.usage_date == day,
+    # Seed-or-adjust in one statement: insert the row with a clamped delta, or — if
+    # it already exists — atomically add the delta to the stored value (clamped at
+    # 0). The ON CONFLICT path does the arithmetic against the row's *current* DB
+    # value under the row lock, so concurrent adjustments can't clobber each other.
+    stmt = (
+        pg_insert(DailyTokenUsage)
+        .values(
+            user_id=user_id,
+            usage_date=day,
+            reserved_tokens=max(0, delta),
+        )
+        .on_conflict_do_update(
+            constraint="uq_daily_token_usage_day",
+            set_={
+                "reserved_tokens": func.greatest(
+                    0, DailyTokenUsage.reserved_tokens + delta
+                ),
+                "updated_at": func.now(),
+            },
         )
     )
-    if row is None:
-        # Nothing to adjust against (shouldn't happen after a reserve, but be safe).
-        if delta > 0:
-            session.add(
-                DailyTokenUsage(user_id=user_id, usage_date=day, reserved_tokens=delta)
-            )
-        return
-    row.reserved_tokens = max(0, row.reserved_tokens + delta)
+    await session.execute(stmt)
 
 
 async def reconcile_tokens(user_id: UUID, estimate: int, actual: int) -> None:

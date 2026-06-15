@@ -139,8 +139,8 @@ export default function UploadPage() {
 
         {isUploading && (
           <p className="text-center text-[11px] text-text-muted -mt-2">
-            Extracting text, chunking, embedding, and indexing — this can take a
-            moment for large documents.
+            Uploading… processing continues in the background, so you can follow
+            along on the next screen — no need to wait here.
           </p>
         )}
       </form>

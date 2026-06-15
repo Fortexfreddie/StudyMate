@@ -91,7 +91,17 @@ class Settings(BaseSettings):
     PRO_DAILY_TOKEN_LIMIT: int = 500_000
     # Embedding
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
-    EMBEDDING_BATCH_SIZE: int = 50
+    # Texts sent per embedding request. gemini-embedding-2 accepts up to 8,192
+    # input tokens *per text*; our chunks are ~500 tokens, so even large batches
+    # stay well within limits. Bigger batch = fewer round-trips = faster ingestion,
+    # which matters because ingestion runs against the platform request window.
+    EMBEDDING_BATCH_SIZE: int = 100
+    # Proactive pause between embedding batches. The free-tier embedding quota is
+    # gated by tokens-per-minute, not requests-per-minute, so heavy per-batch
+    # spacing is unnecessary — real rate-limit hits are caught reactively with
+    # exponential backoff in the embedder. Kept small to avoid bloating the total
+    # ingestion time (set to 0 to disable proactive spacing entirely).
+    EMBEDDING_BATCH_DELAY_SECONDS: float = 0.2
     # Qdrant
     QDRANT_URL: str  # required — no default
     QDRANT_API_KEY: str  # required — no default
