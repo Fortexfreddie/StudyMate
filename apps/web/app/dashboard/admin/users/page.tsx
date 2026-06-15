@@ -389,7 +389,7 @@ function UserCard({
       </div>
       <div className="text-[11px] text-text-muted">
         {user.major ? `${user.major} • ` : ""}
-        {user.document_count} docs • Joined {formatJoined(user.created_at)} •{" "}
+        {user.document_count} docs • {user.page_count} pages • Joined {formatJoined(user.created_at)} •{" "}
         {user.last_active ? `Active ${formatShortDate(user.last_active)}` : "Never active"}
       </div>
       <div className="border-t border-border-subtle pt-3">
@@ -427,7 +427,16 @@ function UserRow({
       <td className="px-4 py-4">
         <TierBadge isPro={effectiveIsPro(user.role, user.is_pro)} />
       </td>
-      <td className="px-4 py-4 text-text-muted text-center font-bold">{user.document_count}</td>
+      <td className="px-4 py-4">
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-[10px] font-black text-brand-primary bg-brand-primary/5 border border-brand-primary/15 px-2 py-0.5 rounded-md leading-none">
+            {user.document_count} docs
+          </span>
+          <span className="text-[9px] font-black text-accent-gold bg-accent-gold/5 border border-accent-gold/15 px-2 py-0.5 rounded-md leading-none">
+            {user.page_count} pgs
+          </span>
+        </div>
+      </td>
       <td className="px-4 py-4 text-text-muted whitespace-nowrap">
         {formatJoined(user.created_at)}
       </td>

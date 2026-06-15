@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from models.database import DailyTokenUsage, TokenUsage, async_session
+from services.page_quota_service import current_pages_used, page_limit_for
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ class UsageSummary:
     token_limit: int
     by_type: dict[str, int]  # {"chat": 1200, "summary": 3400, "quiz": 500}
     reset_time: datetime
+    # Upload (page) quota — a separate dimension from tokens; uploads consume the
+    # embedding model, not the generation model. See ``page_quota_service``.
+    pages_used_today: int
+    page_limit: int
 
 
 def _today() -> date:
@@ -307,9 +312,13 @@ async def get_usage_summary(
     for request_type, total in rows:
         by_type[request_type] = int(total)
 
+    pages_used = await current_pages_used(db, user_id)
+
     return UsageSummary(
         tokens_used_today=total_used,
         token_limit=limit,
         by_type=by_type,
         reset_time=end,
+        pages_used_today=pages_used,
+        page_limit=page_limit_for(is_pro),
     )

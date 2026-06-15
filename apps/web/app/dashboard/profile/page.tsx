@@ -309,6 +309,40 @@ export default function ProfilePage() {
                         Lower performance levels consume significantly fewer tokens and allow more requests per day.
                       </span>
                     </p>
+
+                    {/* Document upload (page) quota — separate from the token
+                        quota above because uploads consume the embedding model,
+                        which has its own daily limit. */}
+                    <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-white/5">
+                      <div className="flex justify-between items-end">
+                        <span className="text-[11px] font-extrabold text-text-muted uppercase tracking-wide">
+                          PDF Uploads Today
+                        </span>
+                        <span className="text-[10px] font-black text-text-muted">
+                          {usage.pages_remaining.toLocaleString()} pages left
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-end">
+                        <span className="text-lg font-black text-white leading-none">
+                          {usage.pages_used_today.toLocaleString()}
+                          <span className="text-xs font-bold text-text-muted"> / {usage.page_limit.toLocaleString()} pages</span>
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="h-2 w-full bg-surface-raised border border-white/5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            usage.pages_used_today >= usage.page_limit
+                              ? "bg-accent-coral"
+                              : usage.pages_used_today >= usage.page_limit * 0.8
+                              ? "bg-status-warning"
+                              : "bg-accent-gold"
+                          }`}
+                          style={{ width: `${Math.min(100, (usage.pages_used_today / usage.page_limit) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 ) : usageError ? (
                   <div className="flex items-center justify-between gap-2 py-3">

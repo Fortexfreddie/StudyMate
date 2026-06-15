@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     # Token usage limits (per calendar-day window resetting at 00:00 UTC, per user)
     FREE_DAILY_TOKEN_LIMIT: int = 50_000
     PRO_DAILY_TOKEN_LIMIT: int = 500_000
+    # Document upload (page) limits — a SEPARATE per-user/day quota from tokens.
+    # Uploads consume the embedding model (gemini-embedding), which has its own
+    # Google-side quota (requests/day + tokens/minute) distinct from the generation
+    # model that tokens are billed against. Counting pages — not tokens — keeps the
+    # two dimensions independent so a heavy uploader can't silently drain a user's
+    # chat/summary/quiz budget (and vice versa). Same 00:00 UTC reset window.
+    FREE_DAILY_PAGE_LIMIT: int = 50
+    PRO_DAILY_PAGE_LIMIT: int = 1_000
     # Embedding
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     # Texts sent per embedding request. gemini-embedding-2 accepts up to 8,192

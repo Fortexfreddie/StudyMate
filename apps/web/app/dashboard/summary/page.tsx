@@ -53,7 +53,7 @@ function SummaryContent() {
 
   const [docName, setDocName] = useState("Document");
   const [topic, setTopic] = useState("");
-  const [format, setFormat] = useState<SummaryFormat>("bullets");
+  const [format, setFormat] = useState<SummaryFormat>("tabular");
   const [topK, setTopK] = useState<number>(10);
   const [maxK, setMaxK] = useState<number>(20);
   const [perfMode, setPerfMode] = useState<string>("high");
