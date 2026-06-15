@@ -74,8 +74,16 @@ class Document(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    page_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # NULL while still "processing" — counts are only known after parsing.
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ingestion lifecycle: "processing" → "ready" | "failed". Embedding/indexing
+    # runs in a background task after upload, so the row is created "processing"
+    # and the client polls until it settles. error_message is set on "failed".
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="ready", index=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

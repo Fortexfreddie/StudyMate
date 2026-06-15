@@ -25,6 +25,19 @@ class HealthResponse(BaseModel):
 # Auth
 
 
+def _normalize_email(v: str) -> str:
+    """Lower-case and trim an email so it's stored/queried canonically.
+
+    Emails are case-insensitive in practice, but the ``users.email`` column is a
+    plain (case-sensitive) ``String`` with a UNIQUE constraint — not ``citext``.
+    Without normalizing, ``John.Doe@x.edu`` and ``john.doe@x.edu`` are distinct:
+    a user could be locked out (login casing differs from signup) or create two
+    accounts for one inbox. Normalizing at the schema boundary makes every auth
+    path consistent. (See also the matching backfill migration ``f7a9c1d3b5e7``.)
+    """
+    return v.strip().lower()
+
+
 class SignupRequest(BaseModel):
     """POST /auth/signup request body."""
 
@@ -32,12 +45,16 @@ class SignupRequest(BaseModel):
     password: str = Field(..., min_length=8)
     full_name: str = Field(..., min_length=1, max_length=255)
 
+    _normalize_email = field_validator("email")(_normalize_email)
+
 
 class LoginRequest(BaseModel):
     """POST /auth/login request body."""
 
     email: EmailStr
     password: str
+
+    _normalize_email = field_validator("email")(_normalize_email)
 
 
 class RefreshRequest(BaseModel):
@@ -91,23 +108,43 @@ class TokenResponse(BaseModel):
 # Documents
 
 
+# Ingestion lifecycle states surfaced to the client. Kept as a plain ``str`` on the
+# models below (mirroring how ``User.role`` is typed) so values read straight off the
+# ORM column don't trip the static type-checker; these are the only valid values.
+DocumentStatus = Literal["processing", "ready", "failed"]
+
+
 class UploadResponse(BaseModel):
-    """POST /documents/upload response."""
+    """POST /documents/upload response.
+
+    Returned with HTTP 202 *immediately* after the upload is accepted — parsing,
+    embedding, and indexing run in the background. ``status`` is "processing" at
+    this point; the client polls ``GET /documents/{doc_id}`` until it becomes
+    "ready" (or "failed"). ``page_count`` / ``chunk_count`` are therefore unknown
+    (None) in this initial response. ``status`` is one of ``DocumentStatus``.
+    """
 
     doc_id: UUID
     filename: str
-    page_count: int
-    chunk_count: int
-    status: str = "processed"
+    page_count: int | None = None
+    chunk_count: int | None = None
+    status: str = "processing"
 
 
 class DocumentInfo(BaseModel):
-    """Single document entry in the document list."""
+    """Single document entry — list and detail views.
+
+    ``page_count`` / ``chunk_count`` are None until background processing finishes.
+    ``status`` (one of ``DocumentStatus``) reflects the ingestion lifecycle;
+    ``error_message`` is populated only when ``status == "failed"``.
+    """
 
     doc_id: UUID
     filename: str
-    page_count: int
-    chunk_count: int
+    page_count: int | None = None
+    chunk_count: int | None = None
+    status: str = "ready"
+    error_message: str | None = None
     uploaded_at: datetime
 
     model_config = {"from_attributes": True}
@@ -664,12 +701,17 @@ class AdminUserUpdateRequest(BaseModel):
 
 
 class AdminDocumentListItem(BaseModel):
-    """A document row in the admin document list, with owner info."""
+    """A document row in the admin document list, with owner info.
+
+    ``page_count`` / ``chunk_count`` are None for documents still processing or
+    that failed ingestion; ``status`` is one of ``DocumentStatus``.
+    """
 
     doc_id: UUID
     filename: str
-    page_count: int
-    chunk_count: int
+    page_count: int | None = None
+    chunk_count: int | None = None
+    status: str = "ready"
     uploaded_at: datetime
     owner_id: UUID
     owner_name: str

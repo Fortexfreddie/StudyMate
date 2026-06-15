@@ -89,7 +89,8 @@ class ApiClientError extends Error {
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  retry = true
+  retry = true,
+  timeoutMs?: number
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const headers: Record<string, string> = {
@@ -108,10 +109,36 @@ async function request<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // Optional client-side timeout. Without this a stalled request (e.g. a proxy
+  // holding a slow connection open) would leave the caller's UI spinning
+  // forever — so we abort and surface an honest message instead.
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let signal = options.signal ?? undefined;
+  if (timeoutMs !== undefined) {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    signal = controller.signal;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiClientError(
+        0,
+        "The request timed out. Your connection may be slow, or the server " +
+          "is taking longer than expected. Please try again."
+      );
+    }
+    throw err;
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 
   if (response.status === 401 && retry) {
     const refreshToken = getRefreshToken();
@@ -196,10 +223,15 @@ export const api = {
     upload(file: File): Promise<UploadResponse> {
       const formData = new FormData();
       formData.append("file", file);
-      return request<UploadResponse>("/documents/upload", {
-        method: "POST",
-        body: formData,
-      });
+      // Upload now returns 202 immediately (processing happens in the background),
+      // so a 60s ceiling comfortably covers the byte transfer without ever letting
+      // the UI hang indefinitely. Polling GET /documents/{id} tracks the rest.
+      return request<UploadResponse>(
+        "/documents/upload",
+        { method: "POST", body: formData },
+        true,
+        60_000
+      );
     },
 
     list(): Promise<DocumentListResponse> {

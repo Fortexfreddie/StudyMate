@@ -76,7 +76,7 @@ class Embedder:
 
         results: list[list[float]] = []
         batch_size = settings.EMBEDDING_BATCH_SIZE
-        delay_between_batches = 1.0
+        delay_between_batches = settings.EMBEDDING_BATCH_DELAY_SECONDS
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
@@ -97,12 +97,11 @@ class Embedder:
             # Cast batch_embeddings explicitly to list[list[float]] to satisfy Mypy
             results.extend(list(batch_embeddings))
 
-            # Proactively space out embedding requests to maintain average rate <= 75 RPM
-            if i + batch_size < len(texts):
-                logger.info(
-                    "Spacing out embedding batches to respect rate limits. Sleeping for %.2f seconds.",
-                    delay_between_batches,
-                )
+            # Proactively space out embedding requests. Free-tier embedding quota
+            # is token-per-minute gated (not RPM), so this is a light courtesy
+            # pause, not the primary throttle — real 429s are handled reactively
+            # with backoff in _call_with_retry. Skipped entirely when set to 0.
+            if delay_between_batches > 0 and i + batch_size < len(texts):
                 await asyncio.sleep(delay_between_batches)
 
         return results

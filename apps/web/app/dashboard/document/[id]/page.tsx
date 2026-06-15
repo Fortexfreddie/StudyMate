@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Trash2,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { SparklesIcon } from "@/components/shared/Icons";
 import { DocumentDetailIllustration } from "./components/DocumentDetailIllustration";
@@ -30,6 +31,15 @@ export default function DocumentDetailPage() {
     () => api.documents.get(id),
     [id]
   );
+
+  // While the document is still being parsed/embedded in the background, poll its
+  // status every few seconds and refetch until it settles ("ready" or "failed").
+  // This is what turns the old "spinner forever" upload into honest live progress.
+  useEffect(() => {
+    if (!doc || doc.status !== "processing") return;
+    const timer = setInterval(refetch, 3000);
+    return () => clearInterval(timer);
+  }, [doc, refetch]);
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -74,6 +84,8 @@ export default function DocumentDetailPage() {
 
   const { bgColor, textColor } = getDocumentColor(doc.doc_id);
   const uploadDate = formatUploadedAtWithTime(doc.uploaded_at);
+  const isProcessing = doc.status === "processing";
+  const isFailed = doc.status === "failed";
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-[800px] mx-auto w-full">
@@ -108,7 +120,11 @@ export default function DocumentDetailPage() {
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 shrink-0" />
               <span className="text-xs sm:text-sm font-semibold">
-                {doc.page_count} Pages • {doc.chunk_count} Chunks
+                {isProcessing
+                  ? "Processing…"
+                  : isFailed
+                  ? "Processing failed"
+                  : `${doc.page_count} Pages • ${doc.chunk_count} Chunks`}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -125,8 +141,46 @@ export default function DocumentDetailPage() {
         </div>
       </section>
 
-      {/* Action panel */}
-      <section className="flex flex-col gap-4">
+      {/* Processing banner — live status while the background pipeline runs */}
+      {isProcessing && (
+        <div className="mb-6 flex items-start gap-3 bg-brand-primary/10 border border-brand-primary/25 rounded-2xl p-4">
+          <Loader2 className="h-5 w-5 shrink-0 text-brand-primary animate-spin mt-0.5" />
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-extrabold text-white">
+              Processing your document…
+            </span>
+            <span className="text-xs text-text-muted leading-relaxed">
+              We&apos;re parsing, chunking, and embedding it now. This can take a
+              minute or two for long documents — it&apos;s not your connection.
+              This page updates automatically; you can safely leave and come back.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Failure banner — ingestion errored; the doc can be deleted and retried */}
+      {isFailed && (
+        <div className="mb-6 flex items-start gap-3 bg-error-text/10 border border-error-text/25 rounded-2xl p-4">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-error-text mt-0.5" />
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-extrabold text-white">
+              Couldn&apos;t process this document
+            </span>
+            <span className="text-xs text-text-muted leading-relaxed">
+              {doc.error_message ??
+                "Something went wrong while processing this file. Please delete it and try uploading again."}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Action panel — disabled until the document is fully indexed */}
+      <section
+        className={`flex flex-col gap-4 ${
+          doc.status === "ready" ? "" : "opacity-50 pointer-events-none select-none"
+        }`}
+        aria-disabled={doc.status !== "ready"}
+      >
         <Link href={`/dashboard/quiz?doc=${id}`}>
           <div className="w-full bg-card-bg border border-border-subtle hover:border-brand-primary/20 rounded-3xl p-4 sm:p-5 flex items-center justify-between transition-all duration-200 cursor-pointer shadow-lg shadow-black/20 group">
             <div className="flex items-center gap-4">
