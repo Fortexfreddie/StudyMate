@@ -102,7 +102,9 @@ export default function HistoryPage() {
         status: "Quiz Completed",
         statusColor: "bg-emerald-400/10 text-emerald-400 border-emerald-400/10",
         ...t,
-        href: s.doc_id ? `/dashboard/quiz?doc=${s.doc_id}` : "/dashboard/quiz",
+        href: s.doc_id
+          ? `/dashboard/quiz?session=${s.id}&doc=${s.doc_id}`
+          : `/dashboard/quiz?session=${s.id}`,
       });
     }
 

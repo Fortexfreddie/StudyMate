@@ -110,6 +110,11 @@ class AuthService:
         if user is None or not verify_password(password, user.password_hash):
             raise AuthenticationError("Invalid email or password.")
 
+        # Block suspended accounts at login too (the request layer also blocks them,
+        # but a suspended user must not be able to mint fresh tokens at all).
+        if user.is_suspended:
+            raise AuthenticationError("Your account has been suspended.")
+
         # Stamp the successful login time (staged on the transaction committed below).
         user.last_login_at = datetime.now(UTC)
 

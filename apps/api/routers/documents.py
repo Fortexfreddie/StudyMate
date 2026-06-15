@@ -33,7 +33,7 @@ from models.schemas import (
     DocumentListResponse,
     UploadResponse,
 )
-from services.activity_service import record_activity
+from services.activity_service import record_activity, record_event
 from services.page_quota_service import (
     reconcile_pages,
     release_pages,
@@ -278,6 +278,7 @@ async def upload_document(
     )
     db.add(db_doc)
     await record_activity(db, current_user.id)
+    await record_event(db, current_user.id, "upload", doc_id=doc_id)
 
     try:
         await db.commit()

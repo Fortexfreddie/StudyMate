@@ -14,6 +14,8 @@ import { ResultsTrophySvg } from "./components/ResultsTrophySvg";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { GeneratingState } from "@/components/dashboard/GeneratingState";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
+import { CollapsibleSources } from "@/components/shared/SourceReferences";
+import { LoadingState } from "@/components/shared/LoadingState";
 import { api, ApiClientError } from "@/lib/api";
 import { getActivePerfConfig } from "@/lib/performance";
 import type { QuizQuestion, QuizResult, Source } from "@/lib/types";
@@ -31,8 +33,10 @@ function QuizContent() {
   const searchParams = useSearchParams();
   const docId = searchParams.get("doc") ?? undefined;
   const topicParam = searchParams.get("topic") ?? "";
+  const sessionIdParam = searchParams.get("session") ?? undefined;
 
   const [step, setStep] = useState<Step>("setup");
+  const [restoring, setRestoring] = useState<boolean>(!!sessionIdParam);
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [topic, setTopic] = useState<string>(topicParam);
   const [topK, setTopK] = useState<number>(10);
@@ -66,6 +70,55 @@ function QuizContent() {
     setMaxK(config.max);
     setPerfMode(mode);
   }, []);
+
+  useEffect(() => {
+    if (!sessionIdParam) return;
+    let active = true;
+    setRestoring(true);
+    setError(null);
+    api.history
+      .quizDetail(sessionIdParam)
+      .then((detail) => {
+        if (!active) return;
+        setSessionId(detail.id);
+        setTopic(detail.topic);
+        setQuestions(detail.questions);
+
+        // Map answers to QuizResult[]
+        const mappedResults: QuizResult[] = detail.answers.map((ans) => ({
+          question_index: ans.question_index,
+          selected_index: ans.selected_index,
+          correct_index: ans.correct_index,
+          is_correct: ans.is_correct,
+          explanation: detail.questions[ans.question_index]?.explanation ?? "",
+        }));
+        setResults(mappedResults);
+        setScore(detail.score);
+
+        // Reconstruct skipped/answered indices for the answers array
+        const reconstructedAnswers = new Array(detail.questions.length).fill(undefined);
+        detail.answers.forEach((ans) => {
+          reconstructedAnswers[ans.question_index] = ans.selected_index === -1 ? undefined : ans.selected_index;
+        });
+        setAnswers(reconstructedAnswers);
+
+        setStep("results");
+        setRestoring(false);
+      })
+      .catch((err) => {
+        if (!active) return;
+        const detail =
+          err instanceof ApiClientError
+            ? err.detail
+            : "Failed to load the quiz details.";
+        setError(detail);
+        setRestoring(false);
+        setStep("setup");
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionIdParam]);
 
   const startQuiz = async () => {
     setError(null);
@@ -110,13 +163,13 @@ function QuizContent() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const payload = finalAnswers
-        .map((selected, idx) =>
-          selected === undefined
-            ? null
-            : { question_index: idx, selected_index: selected }
-        )
-        .filter((a): a is { question_index: number; selected_index: number } => a !== null);
+      const payload = questions.map((_, idx) => {
+        const selected = finalAnswers[idx];
+        return {
+          question_index: idx,
+          selected_index: selected === undefined || selected === null ? -1 : selected,
+        };
+      });
 
       const res = await api.quiz.submit(sessionId, { answers: payload });
       setResults(res.results);
@@ -173,16 +226,25 @@ function QuizContent() {
       <PageHeader
         title="Generate Quiz"
         onBack={() => {
-          if (step === "setup")
+          if (sessionIdParam) {
+            router.push("/dashboard/history");
+          } else if (step === "setup") {
             router.push(docId ? `/dashboard/document/${docId}` : "/dashboard");
-          else if (step === "results") handleResetQuiz();
-          else setStep("setup");
+          } else if (step === "results") {
+            handleResetQuiz();
+          } else {
+            setStep("setup");
+          }
         }}
         className="mb-6"
       />
 
+      {restoring && (
+        <LoadingState className="my-12" label="Loading quiz details…" />
+      )}
+
       {/* SETUP */}
-      {step === "setup" && (
+      {!restoring && step === "setup" && (
         <section className="flex flex-col gap-6 w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
           {error && (
             <div className="bg-error-text/10 border border-error-text/20 text-error-text text-xs font-semibold rounded-xl p-3">
@@ -284,7 +346,7 @@ function QuizContent() {
       )}
 
       {/* GENERATING (indeterminate — real RAG call) */}
-      {step === "generating" && (
+      {!restoring && step === "generating" && (
         <GeneratingState
           title="Generating Quiz…"
           subtitle="AI is reading the document and writing questions"
@@ -292,7 +354,7 @@ function QuizContent() {
       )}
 
       {/* QUIZ */}
-      {step === "quiz" && activeQuestion && (
+      {!restoring && step === "quiz" && activeQuestion && (
         <section className="flex flex-col gap-5 w-full animate-in fade-in duration-300">
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between w-full">
@@ -425,7 +487,7 @@ function QuizContent() {
       )}
 
       {/* RESULTS */}
-      {step === "results" && (
+      {!restoring && step === "results" && (
         <section className="flex flex-col gap-6 w-full animate-in fade-in duration-500">
           <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col items-center justify-center shadow-lg shadow-black/25 animate-in fade-in slide-in-from-bottom-3 duration-500">
             <ResultsTrophySvg
@@ -518,31 +580,11 @@ function QuizContent() {
 
           {/* Source citations the quiz was grounded in */}
           {sources.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <h3 className="text-[10px] font-black uppercase tracking-wider text-text-muted px-1">
-                Grounded in {sources.length} source{sources.length > 1 ? "s" : ""}
-              </h3>
-              <div className="flex flex-col gap-2">
-                {sources.map((s, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-card-bg border border-border-subtle rounded-xl p-3 flex flex-col gap-0.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-white truncate">
-                        {s.filename} • p.{s.page_number}
-                      </span>
-                      <span className="text-[9px] font-bold text-brand-primary shrink-0">
-                        {Math.round(s.similarity_score * 100)}% match
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-text-muted leading-snug line-clamp-2">
-                      {s.text_preview}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <CollapsibleSources
+              sources={sources}
+              activeIdx={null}
+              registerRef={() => {}}
+            />
           )}
 
           <div className="flex flex-col gap-3">
@@ -553,12 +595,16 @@ function QuizContent() {
               New Quiz
             </button>
             <button
-              onClick={() =>
-                router.push(docId ? `/dashboard/document/${docId}` : "/dashboard")
-              }
+              onClick={() => {
+                if (sessionIdParam) {
+                  router.push("/dashboard/history");
+                } else {
+                  router.push(docId ? `/dashboard/document/${docId}` : "/dashboard");
+                }
+              }}
               className="w-full bg-surface/80 hover:bg-input-bg border border-border-subtle rounded-2xl py-4.5 text-xs font-bold text-white transition cursor-pointer select-none"
             >
-              Back to Document
+              {sessionIdParam ? "Back to History" : "Back to Document"}
             </button>
           </div>
         </section>

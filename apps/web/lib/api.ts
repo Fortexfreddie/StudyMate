@@ -1,7 +1,9 @@
 import type {
   AdminDocumentListParams,
   AdminDocumentListResponse,
+  AdminOnlineResponse,
   AdminOverview,
+  AdminRecentActivityResponse,
   AdminUserActivityParams,
   AdminUserActivityResponse,
   AdminUserDeleteResponse,
@@ -18,6 +20,7 @@ import type {
   DeleteResponse,
   Document,
   DocumentListResponse,
+  LeaderboardResponse,
   LoginRequest,
   QuizDetailResponse,
   QuizHistoryResponse,
@@ -140,7 +143,8 @@ async function request<T>(
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 
-  if (response.status === 401 && retry) {
+  const isAuthRoute = path.startsWith("/auth/login") || path.startsWith("/auth/signup") || path.startsWith("/auth/refresh");
+  if (response.status === 401 && retry && !isAuthRoute) {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
       try {
@@ -154,9 +158,29 @@ async function request<T>(
           const data: RefreshResponse = await refreshResponse.json();
           setTokens(data.access_token, data.refresh_token ?? refreshToken);
           return request<T>(path, options, false);
+        } else {
+          // If refresh returned a specific error (e.g. account suspended), throw that instead of generic message
+          try {
+            const refreshError = await refreshResponse.json();
+            if (refreshError.detail) {
+              // Normalize error detail array/object if needed (but since it's auth/refresh, detail is usually a string)
+              let refreshDetail = refreshError.detail;
+              if (Array.isArray(refreshDetail)) {
+                refreshDetail = refreshDetail.map((e: any) => e.msg || "Error").join("; ");
+              } else if (typeof refreshDetail === "object" && refreshDetail !== null) {
+                refreshDetail = JSON.stringify(refreshDetail);
+              }
+              clearTokens();
+              throw new ApiClientError(401, refreshDetail);
+            }
+          } catch {
+            // Ignore JSON parsing failures
+          }
         }
-      } catch {
-        // Refresh failed
+      } catch (err) {
+        if (err instanceof ApiClientError) {
+          throw err;
+        }
       }
     }
     clearTokens();
@@ -164,14 +188,45 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    let detail = "An unexpected error occurred.";
+    let detail: any = "An unexpected error occurred.";
     try {
       const errorBody = await response.json();
       detail = errorBody.detail || detail;
     } catch {
       // Body not JSON
     }
-    throw new ApiClientError(response.status, detail);
+
+    // Normalize detail to a string to prevent rendering objects as React children
+    let detailStr = "An unexpected error occurred.";
+    if (typeof detail === "string") {
+      detailStr = detail;
+    } else if (Array.isArray(detail)) {
+      detailStr = detail
+        .map((err: any) => {
+          const pathParts = Array.isArray(err.loc) ? err.loc : [];
+          // Filter out internal request locations
+          const cleanLocs = pathParts.filter((x: any) => x !== "body" && x !== "query" && x !== "path");
+          const field = cleanLocs.join(".");
+          let msg = err.msg || "Invalid value";
+
+          // Friendly error translation
+          if (field === "answers" && msg.includes("at least 1 item")) {
+            return "Please answer at least one question before submitting.";
+          }
+          if (msg.toLowerCase() === "field required") {
+            return field ? `The "${field}" field is required.` : "A required field is missing.";
+          }
+
+          // Capitalize field name for presentation
+          const fieldName = field ? field.charAt(0).toUpperCase() + field.slice(1) : "";
+          return fieldName ? `${fieldName}: ${msg}` : msg;
+        })
+        .join("; ");
+    } else if (typeof detail === "object" && detail !== null) {
+      detailStr = JSON.stringify(detail);
+    }
+
+    throw new ApiClientError(response.status, detailStr);
   }
 
   return response.json() as Promise<T>;
@@ -444,6 +499,43 @@ export const api = {
       return request<DeleteResponse>(`/admin/documents/${docId}`, {
         method: "DELETE",
       });
+    },
+
+    online(): Promise<AdminOnlineResponse> {
+      return request<AdminOnlineResponse>("/admin/online");
+    },
+
+    recentActivity(params?: {
+      limit?: number;
+      offset?: number;
+    }): Promise<AdminRecentActivityResponse> {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set("limit", String(params.limit));
+      if (params?.offset) searchParams.set("offset", String(params.offset));
+      const query = searchParams.toString();
+      return request<AdminRecentActivityResponse>(
+        `/admin/activity/recent${query ? `?${query}` : ""}`
+      );
+    },
+
+    leaderboard(metric?: string): Promise<LeaderboardResponse> {
+      const searchParams = new URLSearchParams();
+      if (metric) searchParams.set("metric", metric);
+      const query = searchParams.toString();
+      return request<LeaderboardResponse>(
+        `/admin/leaderboard${query ? `?${query}` : ""}`
+      );
+    },
+  },
+
+  leaderboard: {
+    get(metric?: string): Promise<LeaderboardResponse> {
+      const searchParams = new URLSearchParams();
+      if (metric) searchParams.set("metric", metric);
+      const query = searchParams.toString();
+      return request<LeaderboardResponse>(
+        `/leaderboard${query ? `?${query}` : ""}`
+      );
     },
   },
 };

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Upload, History, User, Shield } from "lucide-react";
+import { Home, Upload, History, User, Shield, Trophy } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { getFirstName, getInitials } from "@/lib/user";
 
@@ -27,6 +27,7 @@ export function DashboardNav() {
     { label: "Home", icon: Home, href: "/dashboard" },
     { label: "Upload", icon: Upload, href: "/dashboard/upload" },
     { label: "History", icon: History, href: "/dashboard/history" },
+    { label: "Leaderboard", icon: Trophy, href: "/dashboard/leaderboard" },
     ...(isAdmin
       ? [{ label: "Admin", icon: Shield, href: "/dashboard/admin" }]
       : []),

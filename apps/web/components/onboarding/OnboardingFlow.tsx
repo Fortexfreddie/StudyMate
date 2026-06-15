@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
-import { Home, Upload, History, User, ArrowRight, type LucideProps } from "lucide-react";
+import { Home, Upload, History, User, Trophy, ArrowRight, type LucideProps } from "lucide-react";
 import { Modal } from "@/components/shared/Modal";
 import { OnboardingIllustration } from "@/app/components/OnboardingIllustration";
 import { SleekLightningIcon, AIAssistantIcon } from "@/components/shared/Icons";
@@ -91,6 +91,12 @@ const COACHMARKS: Coachmark[] = [
     icon: History,
     title: "Pick up where you left off",
     body: "Every summary, quiz, and chat you generate is saved in History so you can revisit it any time.",
+  },
+  {
+    selector: "[data-tour='leaderboard']",
+    icon: Trophy,
+    title: "Leaderboard & achievements",
+    body: "See how your study streaks and engagement rank against other students, and unlock badges for your efforts.",
   },
   {
     selector: "[data-tour='profile']",

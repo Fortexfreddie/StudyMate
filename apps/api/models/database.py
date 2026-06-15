@@ -72,6 +72,23 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Soft-suspension. A suspended user keeps all their data but is blocked at the
+    # auth layer — both at login and on every authenticated request — so an admin
+    # can disable an account without deleting it. ``suspended_at`` records when the
+    # block was applied (NULL when never suspended).
+    is_suspended: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Last time this user made ANY authenticated request — drives "online" detection
+    # in the admin panel. Updated by get_current_user, throttled to at most once per
+    # 60s per user so it is not written on every single request. NULL until the first
+    # authenticated request after this column was added.
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # passive_deletes=True lets the database's ON DELETE CASCADE remove children
     # instead of SQLAlchemy eagerly NULL-ing their FKs in Python. Without it,
@@ -97,6 +114,9 @@ class User(Base):
         back_populates="user", passive_deletes=True
     )
     summaries: Mapped[list["SummaryHistory"]] = relationship(
+        back_populates="user", passive_deletes=True
+    )
+    activity_events: Mapped[list["ActivityEvent"]] = relationship(
         back_populates="user", passive_deletes=True
     )
 
@@ -252,6 +272,38 @@ class UserActivity(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="activity")
+
+
+class ActivityEvent(Base):
+    """Append-only per-action event log powering the live activity feed and the
+    most-active rankings in the admin panel.
+
+    One row is written per study action (chat, summary, quiz, upload). This is
+    deliberately distinct from ``UserActivity`` — that table holds one row per user
+    per calendar day (for streak computation), whereas this is an ungrouped event
+    stream so the admin dashboard can show *who did what, when* as a live feed and
+    rank users by raw event volume. Writes are best-effort (see
+    ``services/activity_service.record_event``) and never block the primary action.
+    """
+
+    __tablename__ = "activity_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # "chat" | "summary" | "quiz" | "upload"
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    doc_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    user: Mapped["User"] = relationship(back_populates="activity_events")
 
 
 class TokenUsage(Base):

@@ -538,10 +538,12 @@ class QuizDetailResponse(BaseModel):
     """GET /history/quizzes/{session_id} response."""
 
     id: UUID
+    doc_id: UUID | None = None
     topic: str
     total_questions: int
     score: int
     answers: list[QuizAnswerDetail]
+    questions: list[QuizQuestion]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -631,6 +633,52 @@ class TopUploader(BaseModel):
     page_count: int = 0
 
 
+class TopTokenUser(BaseModel):
+    """A user ranked by lifetime token consumption, for the top-token-users list."""
+
+    user_id: UUID
+    full_name: str
+    email: str
+    total_tokens: int
+    request_count: int = 0
+
+
+class TopStreakUser(BaseModel):
+    """A user ranked by current study streak (consecutive active days)."""
+
+    user_id: UUID
+    full_name: str
+    email: str
+    streak: int
+
+
+class RecentActivityItem(BaseModel):
+    """One entry in the global live activity feed (metadata only).
+
+    Surfaces *who* did *what kind* of action and *when* — never the private query,
+    topic, or answer body. ``doc_filename`` is the document the action targeted
+    (None for doc-less actions or a since-deleted document).
+    """
+
+    user_id: UUID
+    full_name: str
+    email: str
+    event_type: str  # "chat" | "summary" | "quiz" | "upload"
+    doc_id: UUID | None = None
+    doc_filename: str | None = None
+    created_at: datetime
+
+
+class OnlineUser(BaseModel):
+    """A user currently considered online (seen within the presence window)."""
+
+    user_id: UUID
+    full_name: str
+    email: str
+    role: str
+    last_seen_at: datetime
+
+
 class AdminOverviewResponse(BaseModel):
     """GET /admin/stats/overview — every aggregate stat for the dashboard.
 
@@ -680,6 +728,14 @@ class AdminOverviewResponse(BaseModel):
     daily_pages: list[DailyCount] = []
     # Leaderboard
     top_uploaders: list[TopUploader]
+    # Top 10 users by lifetime token consumption (the cost driver).
+    top_token_users: list[TopTokenUser] = []
+    # Top 10 users by current study streak.
+    top_streak_users: list[TopStreakUser] = []
+    # Presence — users seen within the online window (see admin.ONLINE_WINDOW).
+    online_users_count: int = 0
+    # Latest few entries of the global activity feed (metadata only).
+    recent_activity: list[RecentActivityItem] = []
 
 
 # Admin — user management
@@ -698,6 +754,9 @@ class AdminUserListItem(BaseModel):
     page_count: int = 0
     created_at: datetime
     last_active: date | None = None  # most recent UserActivity date, or None
+    is_suspended: bool = False
+    last_seen_at: datetime | None = None  # presence heartbeat, or None
+    is_online: bool = False  # computed: last_seen_at within the online window
 
 
 class AdminUserListResponse(BaseModel):
@@ -719,6 +778,9 @@ class AdminUserUpdateRequest(BaseModel):
 
     is_pro: bool | None = None
     role: str | None = None
+    # Soft-suspension toggle (admin-level — does not require super_admin). The
+    # protected super-admin account can never be suspended.
+    is_suspended: bool | None = None
 
 
 # Admin — document management
@@ -817,6 +879,11 @@ class AdminUserProfileResponse(BaseModel):
     created_at: datetime  # signup date
     last_active: date | None = None  # most recent activity day
     last_login_at: datetime | None = None  # Phase 4: populated once login tracking lands
+    last_seen_at: datetime | None = None  # presence heartbeat, or None
+    is_online: bool = False  # computed: last_seen_at within the online window
+    is_suspended: bool = False
+    suspended_at: datetime | None = None
+    current_streak: int = 0  # consecutive active days up to today
     # Lifetime content counts
     total_documents: int
     total_pages: int = 0
@@ -873,3 +940,57 @@ class AdminUserActivityResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# Admin — presence & global activity feed
+
+
+class AdminOnlineResponse(BaseModel):
+    """GET /admin/online — users currently online (seen within the presence window)."""
+
+    users: list[OnlineUser]
+    total: int  # number of users currently online
+    window_seconds: int  # the online window, echoed for the client to label
+
+
+class AdminRecentActivityResponse(BaseModel):
+    """GET /admin/activity/recent — paginated global activity feed (metadata only)."""
+
+    items: list[RecentActivityItem]
+    total: int
+    limit: int
+    offset: int
+
+
+# Leaderboard (admin + user-facing)
+
+
+class LeaderboardEntry(BaseModel):
+    """One ranked row of the leaderboard.
+
+    ``value`` is the ranking metric's value for the selected ``metric`` (events,
+    tokens, or streak); ``streak`` and ``total_tokens`` are always populated so the
+    UI can show secondary stats. ``email`` is None on the user-facing route (only
+    the admin view exposes it). ``badges`` are derived achievement keys.
+    """
+
+    rank: int
+    user_id: UUID
+    full_name: str
+    email: str | None = None
+    value: int
+    streak: int = 0
+    total_tokens: int = 0
+    badges: list[str] = []
+
+
+class LeaderboardResponse(BaseModel):
+    """GET /leaderboard and GET /admin/leaderboard — ranked entries + caller's row.
+
+    ``me`` is the calling user's own entry (with their true rank even if outside the
+    returned top-N); None on the admin route or if the caller has no ranking data.
+    """
+
+    metric: str  # "activity" | "tokens" | "streak"
+    entries: list[LeaderboardEntry]
+    me: LeaderboardEntry | None = None
