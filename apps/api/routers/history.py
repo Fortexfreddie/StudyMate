@@ -240,10 +240,12 @@ async def get_quiz_detail(
 
     return QuizDetailResponse(
         id=session.id,
+        doc_id=session.doc_id,
         topic=session.topic,
         total_questions=session.total_questions,
         score=session.score,
         answers=response_answers,
+        questions=session.questions,
         created_at=session.created_at,
     )
 

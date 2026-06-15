@@ -13,9 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.database import UserActivity
+from models.database import ActivityEvent, UserActivity
 
 logger = logging.getLogger(__name__)
+
+# Event types recorded in the append-only activity feed.
+_EVENT_TYPES = frozenset({"chat", "summary", "quiz", "upload"})
 
 
 async def record_activity(db: AsyncSession, user_id: UUID) -> None:
@@ -37,6 +40,33 @@ async def record_activity(db: AsyncSession, user_id: UUID) -> None:
     except Exception:
         logger.warning(
             "Failed to record study activity for user %s (non-fatal).",
+            user_id,
+            exc_info=True,
+        )
+
+
+async def record_event(
+    db: AsyncSession,
+    user_id: UUID,
+    event_type: str,
+    doc_id: UUID | None = None,
+) -> None:
+    """Append an ``ActivityEvent`` row for the live feed (best-effort, no commit).
+
+    Unlike ``record_activity`` (one idempotent row per day), this always inserts a
+    new row so the admin feed and most-active rankings see every individual action.
+    Staged on the caller's transaction — the caller commits — and never raises, so a
+    feed write can't break the primary action (chat/summary/quiz/upload).
+    """
+    if event_type not in _EVENT_TYPES:
+        logger.warning("Ignoring unknown activity event_type %r.", event_type)
+        return
+    try:
+        db.add(ActivityEvent(user_id=user_id, event_type=event_type, doc_id=doc_id))
+    except Exception:
+        logger.warning(
+            "Failed to record activity event %s for user %s (non-fatal).",
+            event_type,
             user_id,
             exc_info=True,
         )

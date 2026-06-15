@@ -1,13 +1,14 @@
 """FastAPI dependency injection — shared resources for route handlers."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import InvalidTokenError
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import PERFORMANCE_MODES, settings
@@ -23,6 +24,11 @@ from services.vector_store import VectorStore
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
+
+# Presence heartbeat throttle — update User.last_seen_at at most once per this many
+# seconds per user. Keeps "online" detection accurate without writing on every
+# authenticated request.
+_HEARTBEAT_THROTTLE_SECONDS = 60
 
 # Shared client singletons
 _qdrant_client: AsyncQdrantClient | None = None
@@ -65,7 +71,43 @@ async def get_current_user(
     if user is None:
         raise AuthenticationError("User not found.")
 
+    # Block suspended accounts at the request layer — a suspended user's existing
+    # access token must stop working immediately, not just at their next login.
+    if user.is_suspended:
+        raise AuthenticationError("Your account has been suspended.")
+
+    await _touch_last_seen(db, user)
+
     return user
+
+
+async def _touch_last_seen(db: AsyncSession, user: User) -> None:
+    """Throttled presence heartbeat — stamp ``last_seen_at`` for "online" detection.
+
+    Updates at most once per ``_HEARTBEAT_THROTTLE_SECONDS`` per user so this adds
+    no more than one tiny UPDATE per minute to a user's request stream. Fully
+    best-effort: a heartbeat failure must never turn a valid request into a 500, so
+    it rolls back its own partial write and swallows the error.
+    """
+    now = datetime.now(UTC)
+    last_seen = user.last_seen_at
+    if last_seen is not None and (now - last_seen) <= timedelta(
+        seconds=_HEARTBEAT_THROTTLE_SECONDS
+    ):
+        return
+    try:
+        await db.execute(
+            update(User).where(User.id == user.id).values(last_seen_at=now)
+        )
+        await db.commit()
+        user.last_seen_at = now
+    except Exception:
+        await db.rollback()
+        logger.warning(
+            "Failed to update last_seen_at for user %s (non-fatal).",
+            user.id,
+            exc_info=True,
+        )
 
 
 async def get_current_admin(

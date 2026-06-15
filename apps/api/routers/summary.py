@@ -14,7 +14,7 @@ from core.errors import StudyMateError
 from core.rate_limit import LLM_LIMIT, limiter
 from models.database import Document, SummaryHistory, User, get_db
 from models.schemas import GenerationMeta, SourceInfo, SummaryRequest, SummaryResponse
-from services.activity_service import record_activity
+from services.activity_service import record_activity, record_event
 from services.generator import Generator
 from services.retriever import Retriever
 from services.token_service import (
@@ -123,6 +123,7 @@ async def generate_summary(
         )
         db.add(new_msg)
         await record_activity(db, current_user.id)
+        await record_event(db, current_user.id, "summary", doc_id=payload.doc_id)
         await db.commit()
         await db.refresh(new_msg)
 
@@ -289,6 +290,7 @@ async def generate_summary(
     )
     db.add(db_message)
     await record_activity(db, current_user.id)
+    await record_event(db, current_user.id, "summary", doc_id=payload.doc_id)
     await db.commit()
     await db.refresh(db_message)
 

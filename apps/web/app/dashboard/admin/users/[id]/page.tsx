@@ -216,6 +216,20 @@ export default function AdminUserDetailPage() {
 
       {profile && (
         <div className="flex flex-col gap-4 mb-8">
+          {profile.is_suspended && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-3xl p-4 flex items-center gap-3 text-red-400 text-xs sm:text-sm font-bold animate-in slide-in-from-top-1 duration-200">
+              <span className="h-8 w-8 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0 text-red-400">
+                ⚠️
+              </span>
+              <div className="flex-1">
+                <p className="text-white font-extrabold">Account Suspended</p>
+                <p className="text-[11px] text-text-muted mt-0.5 font-medium">
+                  This account was suspended{profile.suspended_at ? ` on ${new Date(profile.suspended_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}. Access to the platform is blocked.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Lifetime count tiles */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <UsageTile icon={FileStack} label="Documents" value={formatNumber(profile.total_documents)} />
@@ -230,10 +244,26 @@ export default function AdminUserDetailPage() {
               <h4 className="text-[10px] font-black text-white uppercase tracking-wider mb-1">
                 Account
               </h4>
+              <MetaRow label="Status" value={
+                profile.is_suspended ? (
+                  <span className="text-red-400 font-extrabold">Suspended</span>
+                ) : profile.is_online ? (
+                  <span className="text-emerald-400 font-extrabold flex items-center gap-1.5 justify-end">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Online now
+                  </span>
+                ) : (
+                  <span className="text-text-muted font-bold">Offline</span>
+                )
+              } />
               <MetaRow label="Signed up" value={formatJoined(profile.created_at)} />
               <MetaRow
                 label="Last active"
                 value={profile.last_active ? formatShortDate(profile.last_active) : "Never"}
+              />
+              <MetaRow
+                label="Current streak"
+                value={`🔥 ${profile.current_streak} days`}
               />
               <MetaRow
                 label="Last login"
@@ -570,7 +600,7 @@ function UsageTile({
   );
 }
 
-function MetaRow({ label, value }: { label: string; value: string }) {
+function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between text-xs py-1 border-b border-white/[0.02] last:border-0">
       <span className="text-text-muted font-medium">{label}</span>

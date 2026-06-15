@@ -308,10 +308,12 @@ export interface QuizDetailAnswer {
 
 export interface QuizDetailResponse {
   id: string;
+  doc_id?: string | null;
   topic: string;
   total_questions: number;
   score: number;
   answers: QuizDetailAnswer[];
+  questions: QuizQuestion[];
   created_at: string;
 }
 
@@ -358,6 +360,39 @@ export interface TopUploader {
   page_count: number;
 }
 
+export interface TopTokenUser {
+  user_id: string;
+  full_name: string;
+  email: string;
+  total_tokens: number;
+  request_count: number;
+}
+
+export interface TopStreakUser {
+  user_id: string;
+  full_name: string;
+  email: string;
+  streak: number;
+}
+
+export interface RecentActivityItem {
+  user_id: string;
+  full_name: string;
+  email: string;
+  event_type: string; // "chat" | "summary" | "quiz" | "upload"
+  doc_id: string | null;
+  doc_filename: string | null;
+  created_at: string;
+}
+
+export interface OnlineUser {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  last_seen_at: string;
+}
+
 export interface AdminOverview {
   total_users: number;
   total_admins: number;
@@ -387,6 +422,10 @@ export interface AdminOverview {
   daily_tokens: DailyTokenTrend[];
   daily_pages: DailyCount[];
   top_uploaders: TopUploader[];
+  top_token_users: TopTokenUser[];
+  top_streak_users: TopStreakUser[];
+  online_users_count: number;
+  recent_activity: RecentActivityItem[];
 }
 
 // Admin — user management
@@ -402,6 +441,9 @@ export interface AdminUserListItem {
   page_count: number;
   created_at: string;
   last_active: string | null; // ISO date (YYYY-MM-DD) or null if never active
+  is_suspended: boolean;
+  last_seen_at: string | null;
+  is_online: boolean;
 }
 
 export interface AdminUserListResponse {
@@ -414,6 +456,7 @@ export interface AdminUserListResponse {
 export interface AdminUserUpdateRequest {
   is_pro?: boolean;
   role?: string;
+  is_suspended?: boolean;
 }
 
 export interface AdminUserDeleteResponse {
@@ -470,7 +513,12 @@ export interface AdminUserProfileResponse {
   role: string;
   created_at: string; // signup date
   last_active: string | null; // ISO date (YYYY-MM-DD)
-  last_login_at: string | null; // populated once login tracking lands (Phase 4)
+  last_login_at: string | null;
+  last_seen_at: string | null;
+  is_online: boolean;
+  is_suspended: boolean;
+  suspended_at: string | null;
+  current_streak: number;
   total_documents: number;
   total_pages: number;
   total_chunks: number;
@@ -557,4 +605,38 @@ export interface UsageResponse {
   pages_used_today: number;
   page_limit: number;
   pages_remaining: number;
+}
+
+// Admin — presence & global activity feed
+
+export interface AdminOnlineResponse {
+  users: OnlineUser[];
+  total: number;
+  window_seconds: number;
+}
+
+export interface AdminRecentActivityResponse {
+  items: RecentActivityItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// Leaderboard (admin + user-facing)
+
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  value: number;
+  streak: number;
+  total_tokens: number;
+  badges: string[];
+}
+
+export interface LeaderboardResponse {
+  metric: string; // "activity" | "tokens" | "streak"
+  entries: LeaderboardEntry[];
+  me: LeaderboardEntry | null;
 }

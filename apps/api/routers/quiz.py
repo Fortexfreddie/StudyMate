@@ -22,7 +22,7 @@ from models.schemas import (
     QuizSubmitResponse,
     SourceInfo,
 )
-from services.activity_service import record_activity
+from services.activity_service import record_activity, record_event
 from services.generator import Generator
 from services.retriever import Retriever
 from services.token_service import (
@@ -168,9 +168,12 @@ async def generate_quiz(
         score=0,
     )
     db.add(db_session)
-    # Generating a quiz is a study action — record it for the streak, consistent
-    # with chat and summary (best-effort; never breaks the request).
+    # Generating a quiz is a study action — record it for the streak and the live
+    # activity feed, consistent with chat and summary (best-effort; never breaks the
+    # request). The feed event is recorded only here at generation (not at submit) so
+    # each quiz appears once in the feed.
     await record_activity(db, current_user.id)
+    await record_event(db, current_user.id, "quiz", doc_id=payload.doc_id)
     await db.commit()
     await db.refresh(db_session)
 

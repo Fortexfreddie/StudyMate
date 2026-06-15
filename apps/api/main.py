@@ -31,6 +31,7 @@ from routers import (
     chat,
     documents,
     history,
+    leaderboard,
     quiz,
     stats,
     summary,
@@ -176,3 +177,4 @@ app.include_router(history.router, prefix="/history", tags=["History"])
 app.include_router(stats.router, prefix="/stats", tags=["Stats"])
 app.include_router(usage.router, prefix="/usage", tags=["Usage"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(leaderboard.router, prefix="/leaderboard", tags=["Leaderboard"])

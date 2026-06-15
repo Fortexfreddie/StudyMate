@@ -110,6 +110,11 @@ class AuthService:
         if user is None or not verify_password(password, user.password_hash):
             raise AuthenticationError("Invalid email or password.")
 
+        # Block suspended accounts at login too (the request layer also blocks them,
+        # but a suspended user must not be able to mint fresh tokens at all).
+        if user.is_suspended:
+            raise AuthenticationError("Your account has been suspended.")
+
         # Stamp the successful login time (staged on the transaction committed below).
         user.last_login_at = datetime.now(UTC)
 
@@ -122,11 +127,16 @@ class AuthService:
         #     transfers the title instead of leaving a second "ghost" super admin.
         super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
         is_configured_super = bool(super_admin_email) and (email == super_admin_email)
-        if is_configured_super and user.role != "super_admin":
-            user.role = "super_admin"
-            user.is_pro = True
-            
-            # Demote any ghost super admins immediately
+        if is_configured_super:
+            if user.role != "super_admin":
+                user.role = "super_admin"
+                user.is_pro = True
+
+            # Demote any ghost super admins on every login — not only when this
+            # account is healing up from a lower role. A title transfer (env email
+            # changed) can leave the previous holder stamped super_admin while the
+            # new configured account is already super_admin, so the demotion must
+            # run regardless of this user's current role.
             await self._db.execute(
                 update(User)
                 .where(User.role == "super_admin", User.id != user.id)

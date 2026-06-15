@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/shared/Checkbox";
 import { LoginIllustration } from "./components/LoginIllustration";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { validateEmail, validatePassword } from "@/lib/validation";
+import { ApiClientError } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -52,8 +53,9 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push("/dashboard");
-    } catch {
-      setErrors({ global: "Invalid email or password" });
+    } catch (err) {
+      const msg = err instanceof ApiClientError ? err.detail : "Invalid email or password";
+      setErrors({ global: msg });
     } finally {
       setIsLoading(false);
     }

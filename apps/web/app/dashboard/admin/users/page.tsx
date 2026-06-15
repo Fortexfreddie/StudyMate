@@ -12,6 +12,8 @@ import {
   ChevronRight,
   ChevronDown,
   Check,
+  Ban,
+  ShieldAlert,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -32,6 +34,7 @@ const TIER_FILTERS = ["all", "pro", "free"] as const;
 type Action =
   | { kind: "tier"; user: AdminUserListItem }
   | { kind: "role"; user: AdminUserListItem }
+  | { kind: "suspend"; user: AdminUserListItem }
   | { kind: "delete"; user: AdminUserListItem };
 
 export default function AdminUsersPage() {
@@ -113,6 +116,12 @@ export default function AdminUsersPage() {
         await api.admin.updateUser(user.id, { role: nextRole });
         showToast(
           `${user.full_name} ${nextRole === "admin" ? "promoted to Admin" : "demoted to User"}`,
+          "success"
+        );
+      } else if (kind === "suspend") {
+        await api.admin.updateUser(user.id, { is_suspended: !user.is_suspended });
+        showToast(
+          `${user.full_name} ${user.is_suspended ? "unsuspended" : "suspended"}`,
           "success"
         );
       } else {
@@ -231,29 +240,31 @@ export default function AdminUsersPage() {
 
               {/* Desktop: table */}
               <div className="hidden md:block bg-card-bg border border-border-subtle rounded-3xl overflow-hidden shadow-xl shadow-black/30">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted border-b border-border-subtle bg-surface-raised/20">
-                      <th className="font-extrabold px-6 py-4">User</th>
-                      <th className="font-extrabold px-4 py-4">Role</th>
-                      <th className="font-extrabold px-4 py-4">Tier</th>
-                      <th className="font-extrabold px-4 py-4 text-center">Docs</th>
-                      <th className="font-extrabold px-4 py-4">Joined</th>
-                      <th className="font-extrabold px-4 py-4">Last active</th>
-                      <th className="font-extrabold px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.users.map((u) => (
-                      <UserRow
-                        key={u.id}
-                        user={u}
-                        isSuper={isSuper}
-                        onAction={openAction}
-                      />
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-sm table-auto">
+                    <thead>
+                      <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted border-b border-border-subtle bg-surface-raised/20">
+                        <th className="font-extrabold px-6 py-4">User</th>
+                        <th className="font-extrabold px-4 py-4">Role</th>
+                        <th className="font-extrabold px-4 py-4">Tier</th>
+                        <th className="font-extrabold px-4 py-4 text-center">Docs</th>
+                        <th className="font-extrabold px-4 py-4">Joined</th>
+                        <th className="font-extrabold px-4 py-4">Last active</th>
+                        <th className="font-extrabold px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.users.map((u) => (
+                        <UserRow
+                          key={u.id}
+                          user={u}
+                          isSuper={isSuper}
+                          onAction={openAction}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </>
           )}
@@ -349,6 +360,19 @@ function ActionButtons({
         {!compact && (user.role === "admin" ? "Demote" : "Promote")}
       </button>
       <button
+        disabled={locked}
+        onClick={() => onAction({ kind: "suspend", user })}
+        className={`${base} ${pad} ${
+          user.is_suspended
+            ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+            : "border-red-500/30 text-red-400 hover:bg-red-500/10"
+        }`}
+        aria-label={user.is_suspended ? "Unsuspend user" : "Suspend user"}
+      >
+        <Ban className="h-3.5 w-3.5" />
+        {!compact && (user.is_suspended ? "Unsuspend" : "Suspend")}
+      </button>
+      <button
         disabled={!isSuper}
         onClick={() => onAction({ kind: "delete", user })}
         className={`${base} ${pad} border-red-500/30 text-red-400 hover:bg-red-500/10`}
@@ -374,15 +398,25 @@ function UserCard({
     <div className="bg-card-bg border border-border-subtle rounded-3xl p-5 flex flex-col gap-3.5 shadow-md shadow-black/10">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col min-w-0">
-          <Link
-            href={`/dashboard/admin/users/${user.id}`}
-            className="text-sm font-extrabold text-white truncate hover:text-brand-primary transition-colors"
-          >
-            {user.full_name}
-          </Link>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Link
+              href={`/dashboard/admin/users/${user.id}`}
+              className="text-sm font-extrabold text-white truncate hover:text-brand-primary transition-colors"
+            >
+              {user.full_name}
+            </Link>
+            {user.is_online && (
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Online" />
+            )}
+          </div>
           <span className="text-[11px] text-text-muted truncate mt-0.5">{user.email}</span>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {user.is_suspended && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider bg-red-500/10 text-red-400 border-red-500/20">
+              Suspended
+            </span>
+          )}
           <RoleBadge role={user.role} />
           <TierBadge isPro={effectiveIsPro(user.role, user.is_pro)} />
         </div>
@@ -412,17 +446,29 @@ function UserRow({
     <tr className="border-b border-border-subtle last:border-0 hover:bg-white/[0.015] transition-colors duration-150">
       <td className="px-6 py-4">
         <div className="flex flex-col min-w-0">
-          <Link
-            href={`/dashboard/admin/users/${user.id}`}
-            className="font-extrabold text-white text-sm truncate hover:text-brand-primary transition-colors w-fit"
-          >
-            {user.full_name}
-          </Link>
+          <div className="flex items-center gap-1.5">
+            <Link
+              href={`/dashboard/admin/users/${user.id}`}
+              className="font-extrabold text-white text-sm truncate hover:text-brand-primary transition-colors w-fit"
+            >
+              {user.full_name}
+            </Link>
+            {user.is_online && (
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Online" />
+            )}
+          </div>
           <span className="text-[11px] text-text-muted truncate mt-0.5">{user.email}</span>
         </div>
       </td>
       <td className="px-4 py-4">
-        <RoleBadge role={user.role} />
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {user.is_suspended && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider bg-red-500/10 text-red-400 border-red-500/20">
+              Suspended
+            </span>
+          )}
+          <RoleBadge role={user.role} />
+        </div>
       </td>
       <td className="px-4 py-4">
         <TierBadge isPro={effectiveIsPro(user.role, user.is_pro)} />
@@ -597,6 +643,26 @@ function ActionModal({
                 {toPro ? "Pro (500k tokens/day)" : "Free (50k tokens/day)"}
               </span>
             </div>
+          </>
+        ),
+      };
+    }
+    if (kind === "suspend") {
+      const suspending = !user.is_suspended;
+      return {
+        tone: suspending ? ("danger" as const) : ("neutral" as const),
+        icon: Ban,
+        title: suspending ? "Suspend User" : "Unsuspend User",
+        confirmLabel: suspending ? "Suspend User" : "Unsuspend User",
+        loadingLabel: "Saving...",
+        body: (
+          <>
+            <strong className="text-white">{user.full_name}</strong> ({user.email})
+            <p className="mt-2">
+              {suspending
+                ? "Are you sure you want to suspend this user? This will immediately block them from all API access and new token generation. Their study data is preserved."
+                : "Are you sure you want to unsuspend this user? This will restore their access to the platform."}
+            </p>
           </>
         ),
       };

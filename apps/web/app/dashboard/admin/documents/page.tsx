@@ -200,53 +200,55 @@ export default function AdminDocumentsPage() {
 
               {/* Desktop: table */}
               <div className="hidden md:block bg-card-bg border border-border-subtle rounded-3xl overflow-hidden shadow-xl shadow-black/30">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted border-b border-border-subtle bg-surface-raised/20">
-                      <th className="font-extrabold px-6 py-4">File</th>
-                      <th className="font-extrabold px-4 py-4">Owner</th>
-                      <th className="font-extrabold px-4 py-4 text-center">Pages</th>
-                      <th className="font-extrabold px-4 py-4 text-center">Chunks</th>
-                      <th className="font-extrabold px-4 py-4">Uploaded</th>
-                      <th className="font-extrabold px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.documents.map((doc) => (
-                      <tr
-                        key={doc.doc_id}
-                        className="border-b border-border-subtle last:border-0 hover:bg-white/[0.015] transition-colors duration-150"
-                      >
-                        <td className="px-6 py-4">
-                          <span className="font-extrabold text-white text-sm truncate block max-w-[220px]">
-                            {getDocumentTitle(doc)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-white truncate">{doc.owner_name}</span>
-                            <span className="text-[11px] text-text-muted truncate mt-0.5">
-                              {doc.owner_email}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.page_count}</td>
-                        <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.chunk_count}</td>
-                        <td className="px-4 py-4 text-text-muted whitespace-nowrap">
-                          {formatUploadedAt(doc.uploaded_at)}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => openDelete(doc)}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-red-500/30 text-red-400 text-[11px] font-extrabold hover:bg-red-500/10 transition cursor-pointer"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" /> Delete
-                          </button>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[800px] text-sm table-auto">
+                    <thead>
+                      <tr className="text-left text-[11px] uppercase tracking-wider text-text-muted border-b border-border-subtle bg-surface-raised/20">
+                        <th className="font-extrabold px-6 py-4">File</th>
+                        <th className="font-extrabold px-4 py-4">Owner</th>
+                        <th className="font-extrabold px-4 py-4 text-center">Pages</th>
+                        <th className="font-extrabold px-4 py-4 text-center">Chunks</th>
+                        <th className="font-extrabold px-4 py-4">Uploaded</th>
+                        <th className="font-extrabold px-6 py-4 text-right">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {data.documents.map((doc) => (
+                        <tr
+                          key={doc.doc_id}
+                          className="border-b border-border-subtle last:border-0 hover:bg-white/[0.015] transition-colors duration-150"
+                        >
+                          <td className="px-6 py-4">
+                            <span className="font-extrabold text-white text-sm truncate block max-w-[220px]">
+                              {getDocumentTitle(doc)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold text-white truncate">{doc.owner_name}</span>
+                              <span className="text-[11px] text-text-muted truncate mt-0.5">
+                                {doc.owner_email}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.page_count}</td>
+                          <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.chunk_count}</td>
+                          <td className="px-4 py-4 text-text-muted whitespace-nowrap">
+                            {formatUploadedAt(doc.uploaded_at)}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => openDelete(doc)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-red-500/30 text-red-400 text-[11px] font-extrabold hover:bg-red-500/10 transition cursor-pointer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </>
           )}

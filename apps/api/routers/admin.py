@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import (
     Float,
     Integer,
+    Select,
     String,
     cast,
     func,
@@ -39,6 +40,7 @@ from core.errors import (
     StudyMateError,
 )
 from models.database import (
+    ActivityEvent,
     ChatMessage,
     DailyPageUsage,
     DailyTokenUsage,
@@ -54,7 +56,9 @@ from models.schemas import (
     AdminActivityItem,
     AdminDocumentListItem,
     AdminDocumentListResponse,
+    AdminOnlineResponse,
     AdminOverviewResponse,
+    AdminRecentActivityResponse,
     AdminUserActivityResponse,
     AdminUserDeleteResponse,
     AdminUserListItem,
@@ -65,10 +69,18 @@ from models.schemas import (
     DailyCount,
     DailyTokenTrend,
     DeleteResponse,
+    LeaderboardEntry,
+    LeaderboardResponse,
     MajorBreakdown,
+    OnlineUser,
+    RecentActivityItem,
+    TopStreakUser,
+    TopTokenUser,
     TopUploader,
     UserResponse,
 )
+from services.activity_service import compute_streak
+from services.badges import compute_badges
 from services.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -78,11 +90,58 @@ router = APIRouter()
 _MAX_PAGE = 100
 # How far back the dashboard time series reach.
 _TREND_DAYS = 30
+# A user is "online" if their last authenticated request (last_seen_at) was within
+# this window. Tuned to the heartbeat throttle in core.dependencies (60s) plus
+# slack for an idle-but-present user.
+ONLINE_WINDOW = timedelta(minutes=5)
+# How many rows the leaderboard returns, and how many streak candidates to score.
+_LEADERBOARD_LIMIT = 20
+# Number of recent feed entries embedded in the overview response.
+_OVERVIEW_FEED_LEN = 5
 
 
 def _today():
     """Current UTC calendar day — matches the token quota window."""
     return datetime.now(UTC).date()
+
+
+def _online_cutoff() -> datetime:
+    """The ``last_seen_at`` threshold at/after which a user counts as online."""
+    return datetime.now(UTC) - ONLINE_WINDOW
+
+
+def _is_online(last_seen_at: datetime | None) -> bool:
+    """True if ``last_seen_at`` falls within the online window."""
+    return last_seen_at is not None and last_seen_at >= _online_cutoff()
+
+
+async def _top_streak_users(db: AsyncSession, limit: int) -> list[tuple[User, int]]:
+    """Return ``(user, streak)`` pairs ranked by current streak, highest first.
+
+    The candidate set is bounded to users active within the last two days — a lapsed
+    streak is 0, so anyone whose most recent activity is older than yesterday can
+    never rank. This keeps the per-user ``compute_streak`` calls to a small set
+    instead of scanning every user. Ties broken by streak desc then created_at.
+    """
+    cutoff = _today() - timedelta(days=1)
+    candidate_ids = (
+        await db.execute(
+            select(func.distinct(UserActivity.user_id)).where(
+                UserActivity.activity_date >= cutoff
+            )
+        )
+    ).scalars().all()
+    if not candidate_ids:
+        return []
+
+    users = (
+        await db.execute(select(User).where(User.id.in_(candidate_ids)))
+    ).scalars().all()
+
+    scored = [(u, await compute_streak(db, u.id)) for u in users]
+    scored = [pair for pair in scored if pair[1] > 0]
+    scored.sort(key=lambda pair: (pair[1], pair[0].created_at), reverse=True)
+    return scored[:limit]
 
 
 def _like_pattern(term: str) -> str:
@@ -361,6 +420,71 @@ async def overview(
         for uid, name, email, doc_count, page_count in uploader_rows
     ]
 
+    # Top users by lifetime token consumption (the cost driver). Mirrors the
+    # top-uploaders query but aggregates the token_usage log.
+    token_user_rows = await db.execute(
+        select(
+            User.id,
+            User.full_name,
+            User.email,
+            func.coalesce(func.sum(TokenUsage.total_tokens), 0),
+            func.count(TokenUsage.id),
+        )
+        .join(TokenUsage, TokenUsage.user_id == User.id)
+        .group_by(User.id, User.full_name, User.email)
+        .order_by(func.coalesce(func.sum(TokenUsage.total_tokens), 0).desc())
+        .limit(10)
+    )
+    top_token_users = [
+        TopTokenUser(
+            user_id=uid,
+            full_name=name,
+            email=email,
+            total_tokens=int(total),
+            request_count=int(req_count),
+        )
+        for uid, name, email, total, req_count in token_user_rows
+    ]
+
+    # Top users by current study streak.
+    top_streak_users = [
+        TopStreakUser(
+            user_id=u.id, full_name=u.full_name, email=u.email, streak=streak
+        )
+        for u, streak in await _top_streak_users(db, 10)
+    ]
+
+    # Presence — count users seen within the online window.
+    online_users_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.last_seen_at >= _online_cutoff())
+        )
+        or 0
+    )
+
+    # Latest few activity-feed entries (metadata only).
+    feed_rows = await db.execute(
+        select(ActivityEvent, User.full_name, User.email, Document.filename)
+        .join(User, User.id == ActivityEvent.user_id)
+        .outerjoin(Document, Document.id == ActivityEvent.doc_id)
+        .order_by(ActivityEvent.created_at.desc())
+        .limit(_OVERVIEW_FEED_LEN)
+    )
+    recent_activity = [
+        RecentActivityItem(
+            user_id=ev.user_id,
+            full_name=name,
+            email=email,
+            event_type=ev.event_type,
+            doc_id=ev.doc_id,
+            doc_filename=filename,
+            created_at=ev.created_at,
+        )
+        for ev, name, email, filename in feed_rows
+    ]
+
     return AdminOverviewResponse(
         total_users=total_users,
         total_admins=total_admins,
@@ -390,6 +514,10 @@ async def overview(
         daily_tokens=daily_tokens,
         daily_pages=daily_pages,
         top_uploaders=top_uploaders,
+        top_token_users=top_token_users,
+        top_streak_users=top_streak_users,
+        online_users_count=online_users_count,
+        recent_activity=recent_activity,
     )
 
 
@@ -483,6 +611,9 @@ async def list_users(
             page_count=int(pc),
             created_at=u.created_at,
             last_active=la,
+            is_suspended=u.is_suspended,
+            last_seen_at=u.last_seen_at,
+            is_online=_is_online(u.last_seen_at),
         )
         for u, dc, pc, la in rows
     ]
@@ -616,6 +747,8 @@ async def user_profile(
         )
     )
 
+    current_streak = await compute_streak(db, user_id)
+
     return AdminUserProfileResponse(
         user_id=target.id,
         email=target.email,
@@ -626,6 +759,11 @@ async def user_profile(
         created_at=target.created_at,
         last_active=last_active,
         last_login_at=target.last_login_at,
+        last_seen_at=target.last_seen_at,
+        is_online=_is_online(target.last_seen_at),
+        is_suspended=target.is_suspended,
+        suspended_at=target.suspended_at,
+        current_streak=current_streak,
         total_documents=total_documents,
         total_pages=total_pages,
         total_chunks=total_chunks,
@@ -832,7 +970,7 @@ async def user_activity(
     # NULLs: quiz-only score/total_questions are NULL for chat/summary, quiz has no
     # performance_mode, and summary_format is set only on the summary branch. Column
     # names come from the first branch (chat).
-    chat_q = select(
+    chat_q: Select = select(
         ChatMessage.id.label("id"),
         literal_column("'chat'").label("kind"),
         ChatMessage.created_at.label("created_at"),
@@ -844,7 +982,7 @@ async def user_activity(
         cast(null(), Integer).label("total_questions"),
     ).where(ChatMessage.user_id == user_id)
 
-    summary_q = select(
+    summary_q: Select = select(
         SummaryHistory.id,
         literal_column("'summary'"),
         SummaryHistory.created_at,
@@ -856,7 +994,7 @@ async def user_activity(
         cast(null(), Integer),
     ).where(SummaryHistory.user_id == user_id)
 
-    quiz_q = select(
+    quiz_q: Select = select(
         QuizSession.id,
         literal_column("'quiz'"),
         QuizSession.created_at,
@@ -917,10 +1055,11 @@ async def update_user(
     admin: User = Depends(get_current_admin),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> UserResponse:
-    """Update a user's tier and/or role.
+    """Update a user's tier, role, and/or suspension status.
 
-    ``is_pro`` requires admin; ``role`` requires super_admin. The super_admin
-    account is immutable, and "super_admin" can never be assigned.
+    ``is_pro`` requires admin; ``role`` requires super_admin. ``is_suspended``
+    toggles the soft-suspension flag (admin-level). The super_admin account is
+    immutable and can never be suspended, demoted, or assigned.
     """
     target = await db.scalar(select(User).where(User.id == user_id))
     if target is None:
@@ -946,6 +1085,17 @@ async def update_user(
 
     if payload.is_pro is not None:
         target.is_pro = payload.is_pro
+
+    # Soft-suspension toggle — set/clear the suspension flag and timestamp.
+    if payload.is_suspended is not None:
+        if payload.is_suspended and not target.is_suspended:
+            # Suspending — stamp the audit timestamp.
+            target.is_suspended = True
+            target.suspended_at = datetime.now(UTC)
+        elif not payload.is_suspended and target.is_suspended:
+            # Un-suspending — clear both the flag and the audit timestamp.
+            target.is_suspended = False
+            target.suspended_at = None
 
     await db.commit()
     await db.refresh(target)
@@ -993,6 +1143,255 @@ async def delete_user(
             )
 
     return AdminUserDeleteResponse(user_id=user_id, deleted=True)
+
+
+# Online users
+
+
+@router.get("/online", response_model=AdminOnlineResponse)
+async def online_users(
+    _admin: User = Depends(get_current_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> AdminOnlineResponse:
+    """List all users seen within the online window, newest first."""
+    cutoff = _online_cutoff()
+    rows = await db.execute(
+        select(User)
+        .where(User.last_seen_at >= cutoff)
+        .order_by(User.last_seen_at.desc())
+    )
+    users = []
+    for u in rows.scalars():
+        if u.last_seen_at is not None:
+            users.append(
+                OnlineUser(
+                    user_id=u.id,
+                    full_name=u.full_name,
+                    email=u.email,
+                    role=u.role,
+                    last_seen_at=u.last_seen_at,
+                )
+            )
+    return AdminOnlineResponse(
+        users=users,
+        total=len(users),
+        window_seconds=int(ONLINE_WINDOW.total_seconds()),
+    )
+
+
+# Global activity feed
+
+
+@router.get("/activity/recent", response_model=AdminRecentActivityResponse)
+async def recent_activity(
+    _admin: User = Depends(get_current_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    limit: int = Query(default=20, ge=1, le=_MAX_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> AdminRecentActivityResponse:
+    """Paginated global activity feed from the append-only event stream."""
+    total = (
+        await db.scalar(select(func.count()).select_from(ActivityEvent)) or 0
+    )
+    rows = await db.execute(
+        select(ActivityEvent, User.full_name, User.email, Document.filename)
+        .join(User, User.id == ActivityEvent.user_id)
+        .outerjoin(Document, Document.id == ActivityEvent.doc_id)
+        .order_by(ActivityEvent.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    items = [
+        RecentActivityItem(
+            user_id=ev.user_id,
+            full_name=name,
+            email=email,
+            event_type=ev.event_type,
+            doc_id=ev.doc_id,
+            doc_filename=filename,
+            created_at=ev.created_at,
+        )
+        for ev, name, email, filename in rows
+    ]
+    return AdminRecentActivityResponse(
+        items=items, total=total, limit=limit, offset=offset
+    )
+
+
+# Admin leaderboard
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponse)
+async def admin_leaderboard(
+    _admin: User = Depends(get_current_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    metric: str = Query(default="activity"),
+) -> LeaderboardResponse:
+    """Admin leaderboard — ranked users by activity (event count), tokens, or streak.
+
+    Returns the top ``_LEADERBOARD_LIMIT`` users. The admin view includes emails;
+    the user-facing route (``/leaderboard``) strips them.
+    """
+    if metric not in ("activity", "tokens", "streak"):
+        raise StudyMateError(
+            'metric must be "activity", "tokens", or "streak".', status_code=400
+        )
+
+    entries = await _build_leaderboard(db, metric, include_email=True)
+    return LeaderboardResponse(metric=metric, entries=entries, me=None)
+
+
+async def _build_leaderboard(
+    db: AsyncSession,
+    metric: str,
+    *,
+    include_email: bool = False,
+    me_user_id: UUID | None = None,
+) -> list[LeaderboardEntry]:
+    """Shared leaderboard builder used by both admin and user-facing routes.
+
+    Returns ranked ``LeaderboardEntry`` objects. When ``me_user_id`` is given it
+    is NOT included in the returned list — the caller handles the ``me`` field
+    separately by looking up the user's rank.
+    """
+
+    if metric == "activity":
+        # Rank by total ActivityEvent count.
+        row_q = await db.execute(
+            select(
+                User.id,
+                User.full_name,
+                User.email,
+                func.count(ActivityEvent.id).label("value"),
+            )
+            .join(ActivityEvent, ActivityEvent.user_id == User.id)
+            .group_by(User.id, User.full_name, User.email)
+            .order_by(func.count(ActivityEvent.id).desc())
+            .limit(_LEADERBOARD_LIMIT)
+        )
+    elif metric == "tokens":
+        row_q = await db.execute(
+            select(
+                User.id,
+                User.full_name,
+                User.email,
+                func.coalesce(func.sum(TokenUsage.total_tokens), 0).label("value"),
+            )
+            .join(TokenUsage, TokenUsage.user_id == User.id)
+            .group_by(User.id, User.full_name, User.email)
+            .order_by(func.coalesce(func.sum(TokenUsage.total_tokens), 0).desc())
+            .limit(_LEADERBOARD_LIMIT)
+        )
+    else:  # streak
+        scored = await _top_streak_users(db, _LEADERBOARD_LIMIT)
+        entries: list[LeaderboardEntry] = []
+        for rank, (u, streak) in enumerate(scored, start=1):
+            # Fetch lifetime token total for the secondary stat.
+            lifetime = (
+                await db.scalar(
+                    select(func.coalesce(func.sum(TokenUsage.total_tokens), 0)).where(
+                        TokenUsage.user_id == u.id
+                    )
+                )
+                or 0
+            )
+            badges = await _badges_for_user(db, u.id, streak=streak)
+            entries.append(
+                LeaderboardEntry(
+                    rank=rank,
+                    user_id=u.id,
+                    full_name=u.full_name,
+                    email=u.email if include_email else None,
+                    value=streak,
+                    streak=streak,
+                    total_tokens=lifetime,
+                    badges=badges,
+                )
+            )
+        return entries
+
+    # Common path for activity/tokens metrics.
+    entries = []
+    for rank, (uid, name, email, value) in enumerate(row_q, start=1):
+        streak = await compute_streak(db, uid)
+        lifetime = int(value) if metric == "tokens" else (
+            await db.scalar(
+                select(func.coalesce(func.sum(TokenUsage.total_tokens), 0)).where(
+                    TokenUsage.user_id == uid
+                )
+            )
+            or 0
+        )
+        badges = await _badges_for_user(db, uid, streak=streak)
+        entries.append(
+            LeaderboardEntry(
+                rank=rank,
+                user_id=uid,
+                full_name=name,
+                email=email if include_email else None,
+                value=int(value),
+                streak=streak,
+                total_tokens=lifetime,
+                badges=badges,
+            )
+        )
+    return entries
+
+
+async def _badges_for_user(
+    db: AsyncSession, user_id: UUID, *, streak: int = 0
+) -> list[str]:
+    """Compute badges for a single user from their lifetime counts."""
+    total_summaries = (
+        await db.scalar(
+            select(func.count()).select_from(SummaryHistory).where(
+                SummaryHistory.user_id == user_id
+            )
+        )
+        or 0
+    )
+    total_quizzes = (
+        await db.scalar(
+            select(func.count()).select_from(QuizSession).where(
+                QuizSession.user_id == user_id
+            )
+        )
+        or 0
+    )
+    total_documents = (
+        await db.scalar(
+            select(func.count()).select_from(Document).where(
+                Document.user_id == user_id
+            )
+        )
+        or 0
+    )
+    total_chats = (
+        await db.scalar(
+            select(func.count()).select_from(ChatMessage).where(
+                ChatMessage.user_id == user_id
+            )
+        )
+        or 0
+    )
+    avg_ratio = await db.scalar(
+        select(
+            func.avg(
+                cast(QuizSession.score, Float)
+                / func.nullif(QuizSession.total_questions, 0)
+            )
+        ).where(QuizSession.user_id == user_id)
+    )
+    average_quiz_score = round(float(avg_ratio) * 100, 1) if avg_ratio else 0.0
+
+    return compute_badges(
+        streak=streak,
+        total_summaries=total_summaries,
+        total_quizzes=total_quizzes,
+        total_documents=total_documents,
+        total_chats=total_chats,
+        average_quiz_score=average_quiz_score,
+    )
 
 
 # Documents

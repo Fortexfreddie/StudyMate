@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Users,
   ShieldCheck,
@@ -11,6 +12,8 @@ import {
   Coins,
   Activity,
   TrendingUp,
+  Wifi,
+  FileUp,
 } from "lucide-react";
 import {
   Area,
@@ -29,6 +32,7 @@ import {
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
+import { Modal } from "@/components/shared/Modal";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { AdminOverview } from "@/lib/types";
@@ -116,12 +120,80 @@ const tooltipStyle = {
   itemStyle: { color: "#fff" },
 };
 
+function formatTimeAgo(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  if (diffSecs < 10) return "just now";
+  if (diffSecs < 60) return `${diffSecs}s ago`;
+  const diffMins = Math.floor(diffSecs / 60);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return new Date(isoString).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data, isLoading, error, refetch } = useApi(() => api.admin.online(), [open]);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Online Users"
+      icon={<Wifi className="h-5 w-5" />}
+      maxWidth="max-w-md"
+    >
+      {isLoading && <LoadingState className="py-8" label="Loading online users..." />}
+      {error && (
+        <ErrorState
+          className="py-8"
+          title="Failed to load online users"
+          message={error}
+          onRetry={refetch}
+        />
+      )}
+      {data && (
+        <div className="flex flex-col gap-3 max-h-[350px] overflow-y-auto pr-1">
+          {data.users.length === 0 ? (
+            <p className="text-xs text-text-muted py-6 text-center">
+              No users online.
+            </p>
+          ) : (
+            data.users.map((u) => (
+              <div
+                key={u.user_id}
+                className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0"
+              >
+                <div className="h-8.5 w-8.5 rounded-full bg-brand-primary/10 border border-brand-primary/20 flex items-center justify-center text-brand-primary font-bold text-xs uppercase">
+                  {u.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-xs font-extrabold text-white truncate">
+                    {u.full_name}
+                  </span>
+                  <span className="text-[10px] text-text-muted truncate mt-0.5">
+                    {u.email}
+                  </span>
+                </div>
+                <span className="text-[10px] text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-2 py-0.5 rounded-md font-bold shrink-0 animate-pulse">
+                  Online
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export default function AdminOverviewPage() {
   const { data, isLoading, error, refetch } = useApi<AdminOverview>(
     () => api.admin.overview(),
     []
   );
   const palette = useChartPalette();
+  const [showOnlineModal, setShowOnlineModal] = useState(false);
 
   return (
     <div className="flex-1 flex flex-col p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full">
@@ -146,6 +218,8 @@ export default function AdminOverviewPage() {
           onRetry={refetch}
         />
       )}
+
+      <OnlineUsersModal open={showOnlineModal} onClose={() => setShowOnlineModal(false)} />
 
       {data && (
         <div className="flex flex-col gap-6">
@@ -176,6 +250,15 @@ export default function AdminOverviewPage() {
               hint={`${formatNumber(data.active_users_7d)} / 7d`}
               info="Unique users performing actions today. Hint shows 7-day active user count."
             />
+            <div onClick={() => setShowOnlineModal(true)} className="cursor-pointer">
+              <StatTile
+                icon={Wifi}
+                label="Online now"
+                value={formatNumber(data.online_users_count)}
+                hint="view"
+                info="Users who made an authenticated request in the last 5 minutes. Click to view list."
+              />
+            </div>
             <StatTile
               icon={FileText}
               label="Documents"
@@ -425,6 +508,137 @@ export default function AdminOverviewPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </ChartCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Top Token Users */}
+            <ChartCard title="Top token users">
+              {data.top_token_users.length === 0 ? (
+                <p className="text-xs text-text-muted py-6 text-center">
+                  No token usage recorded yet.
+                </p>
+              ) : (
+                <div className="flex flex-col divide-y divide-border-subtle">
+                  {data.top_token_users.map((u, i) => (
+                    <div
+                      key={u.user_id}
+                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                    >
+                      <span className="h-6 w-6 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-[10px] font-black text-text-muted shrink-0 shadow-sm">
+                        {i + 1}
+                      </span>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-xs font-extrabold text-white truncate">
+                          {u.full_name}
+                        </span>
+                        <span className="text-[11px] text-text-muted truncate mt-0.5">
+                          {u.email}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-[10px] font-black text-brand-primary shrink-0 bg-brand-primary/5 border border-brand-primary/15 px-2.5 py-1 rounded-lg">
+                          {formatCompact(u.total_tokens)} tokens
+                        </span>
+                        <span className="text-[9px] font-black text-accent-gold shrink-0 bg-accent-gold/5 border border-accent-gold/15 px-2 py-0.5 rounded-md">
+                          {formatNumber(u.request_count)} reqs
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ChartCard>
+
+            {/* Top Streak Users */}
+            <ChartCard title="Top streak users">
+              {data.top_streak_users.length === 0 ? (
+                <p className="text-xs text-text-muted py-6 text-center">
+                  No active streaks.
+                </p>
+              ) : (
+                <div className="flex flex-col divide-y divide-border-subtle">
+                  {data.top_streak_users.map((u, i) => (
+                    <div
+                      key={u.user_id}
+                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                    >
+                      <span className="h-6 w-6 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-[10px] font-black text-text-muted shrink-0 shadow-sm">
+                        {i + 1}
+                      </span>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-xs font-extrabold text-white truncate">
+                          {u.full_name}
+                        </span>
+                        <span className="text-[11px] text-text-muted truncate mt-0.5">
+                          {u.email}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-xs font-black text-accent-coral shrink-0 bg-accent-coral/5 border border-accent-coral/15 px-2.5 py-1 rounded-lg">
+                          🔥 {u.streak} days
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ChartCard>
+          </div>
+
+          {/* Recent Activity Feed */}
+          <ChartCard title="Recent Activity">
+            {data.recent_activity.length === 0 ? (
+              <p className="text-xs text-text-muted py-6 text-center">
+                No recent activity recorded.
+              </p>
+            ) : (
+              <div className="flex flex-col divide-y divide-border-subtle">
+                {data.recent_activity.map((item) => {
+                  const eventMeta = {
+                    chat: { icon: MessageSquare, label: "Chat", color: "text-brand-primary bg-brand-primary/10 border-brand-primary/20" },
+                    summary: { icon: FileStack, label: "Summary", color: "text-accent-gold bg-accent-gold/10 border-accent-gold/20" },
+                    quiz: { icon: GraduationCap, label: "Quiz", color: "text-accent-coral bg-accent-coral/10 border-accent-coral/20" },
+                    upload: { icon: FileUp, label: "Upload", color: "text-blue-400 bg-blue-400/10 border-blue-400/20" },
+                  }[item.event_type] || { icon: Activity, label: item.event_type, color: "text-text-muted bg-white/5 border-border-subtle" };
+
+                  const Icon = eventMeta.icon;
+                  const relativeTime = formatTimeAgo(item.created_at);
+
+                  return (
+                    <div
+                      key={item.created_at + item.user_id + item.event_type}
+                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                    >
+                      <span className={`h-8 w-8 rounded-xl border flex items-center justify-center shrink-0 ${eventMeta.color}`}>
+                        <Icon className="h-4.5 w-4.5" />
+                      </span>
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-extrabold text-white truncate">
+                            {item.full_name}
+                          </span>
+                          <span className="text-[10px] text-text-muted">
+                            ({item.email})
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-text-muted truncate mt-0.5">
+                          {eventMeta.label}
+                          {item.doc_filename && (
+                            <>
+                              {" on "}
+                              <span className="text-white font-semibold">{item.doc_filename}</span>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-text-muted shrink-0">
+                        {relativeTime}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </ChartCard>
