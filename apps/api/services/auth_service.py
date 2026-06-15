@@ -122,11 +122,16 @@ class AuthService:
         #     transfers the title instead of leaving a second "ghost" super admin.
         super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
         is_configured_super = bool(super_admin_email) and (email == super_admin_email)
-        if is_configured_super and user.role != "super_admin":
-            user.role = "super_admin"
-            user.is_pro = True
-            
-            # Demote any ghost super admins immediately
+        if is_configured_super:
+            if user.role != "super_admin":
+                user.role = "super_admin"
+                user.is_pro = True
+
+            # Demote any ghost super admins on every login — not only when this
+            # account is healing up from a lower role. A title transfer (env email
+            # changed) can leave the previous holder stamped super_admin while the
+            # new configured account is already super_admin, so the demotion must
+            # run regardless of this user's current role.
             await self._db.execute(
                 update(User)
                 .where(User.role == "super_admin", User.id != user.id)
