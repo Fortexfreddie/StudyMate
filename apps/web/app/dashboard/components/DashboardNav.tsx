@@ -27,7 +27,6 @@ export function DashboardNav() {
     { label: "Home", icon: Home, href: "/dashboard" },
     { label: "Upload", icon: Upload, href: "/dashboard/upload" },
     { label: "History", icon: History, href: "/dashboard/history" },
-    { label: "Leaderboard", icon: Trophy, href: "/dashboard/leaderboard" },
     ...(isAdmin
       ? [{ label: "Admin", icon: Shield, href: "/dashboard/admin" }]
       : []),
