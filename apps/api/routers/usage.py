@@ -35,4 +35,7 @@ async def get_usage(
         is_pro=current_user.effective_is_pro,
         usage_by_type=summary.by_type,
         reset_time=summary.reset_time.isoformat(),
+        pages_used_today=summary.pages_used_today,
+        page_limit=summary.page_limit,
+        pages_remaining=max(0, summary.page_limit - summary.pages_used_today),
     )

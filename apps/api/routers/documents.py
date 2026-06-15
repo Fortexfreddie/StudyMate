@@ -1,8 +1,10 @@
 """Documents router — handles uploading, listing, and deleting academic PDFs."""
 
+import io
 import logging
 from uuid import UUID, uuid4
 
+import pypdf
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -12,7 +14,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +34,11 @@ from models.schemas import (
     UploadResponse,
 )
 from services.activity_service import record_activity
+from services.page_quota_service import (
+    reconcile_pages,
+    release_pages,
+    reserve_pages,
+)
 from services.pdf_processor import PDFProcessor
 from services.vector_store import VectorStore
 
@@ -44,6 +50,8 @@ async def _process_document_ingestion(
     doc_id: UUID,
     file_bytes: bytes,
     filename: str,
+    user_id: UUID,
+    reserved_pages: int,
 ) -> None:
     """Background task: parse → embed → index a document, then flip its status.
 
@@ -51,6 +59,11 @@ async def _process_document_ingestion(
     embedding work no longer blocks the request and can't trip the platform's
     request timeout. Creates its own DB session, embedder, and vector store
     because the request-scoped ones are gone once the response is returned.
+
+    ``reserved_pages`` is the page-quota hold placed inline by ``upload_document``.
+    On success it is reconciled to the real extractable page count (a scanned or
+    partial PDF may yield fewer pages); on *any* failure the full hold is released
+    so a failed upload doesn't permanently consume the user's daily page budget.
 
     On any failure the document row is marked ``status="failed"`` with a
     human-readable ``error_message``, and any partially-written vectors are
@@ -61,7 +74,9 @@ async def _process_document_ingestion(
     pdf_processor = PDFProcessor()
 
     async def _mark_failed(message: str) -> None:
-        """Best-effort: flip the row to failed and purge any orphan vectors."""
+        """Flip the row to failed, purge orphan vectors, and refund the page hold."""
+        # Refund the full page reservation — ingestion produced no usable document.
+        await release_pages(user_id, reserved_pages)
         try:
             await vector_store.delete_by_doc_id(str(doc_id))
         except Exception:
@@ -120,18 +135,25 @@ async def _process_document_ingestion(
         return
 
     # Success — record real counts and flip to ready in a short transaction.
+    real_pages = len(set(c.page_number for c in chunks))
     try:
         async with async_session() as session:
             row = await session.get(Document, doc_id)
             if row is None:
-                # Row was deleted (e.g. user cancelled) while we processed — clean up.
+                # Row was deleted (e.g. user cancelled) while we processed — clean up
+                # and refund the page hold since the document no longer exists.
                 await vector_store.delete_by_doc_id(str(doc_id))
+                await release_pages(user_id, reserved_pages)
                 return
-            row.page_count = len(set(c.page_number for c in chunks))
+            row.page_count = real_pages
             row.chunk_count = len(chunks)
             row.status = "ready"
             row.error_message = None
             await session.commit()
+        # True the page-quota hold up to the actual extractable page count (the
+        # inline reservation used the raw PDF page count, which may be higher for a
+        # partially-scanned document).
+        await reconcile_pages(user_id, reserved_pages, real_pages)
         logger.info("Document %s ingested: %d chunks ready.", doc_id, len(chunks))
     except Exception:
         logger.exception("Failed to finalize doc %s after indexing.", doc_id)
@@ -208,7 +230,39 @@ async def upload_document(
             detail="File must be a PDF document.",
         )
 
-    # 2. Create the document row up front in the "processing" state and record the
+    # 2. Read the page count from the PDF *inline* (cheap, local, no embedding) and
+    #    reserve it against the user's daily page quota BEFORE doing any expensive
+    #    work or persisting anything. Uploads consume the embedding model, whose
+    #    Google-side quota is separate from generation tokens — so this is its own
+    #    page-based daily limit. The reservation is reconciled to the real
+    #    extractable page count (or released) by the background task.
+    try:
+        page_count_estimate = len(pypdf.PdfReader(io.BytesIO(file_bytes)).pages)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a valid PDF document.",
+        ) from e
+    if page_count_estimate == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PDF contains no readable pages.",
+        )
+
+    allowed, pages_used, page_limit = await reserve_pages(
+        current_user.id, current_user.effective_is_pro, page_count_estimate
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Daily upload limit reached ({pages_used}/{page_limit} pages). "
+                "Your upload allowance resets at midnight UTC. Upgrade to Pro for a "
+                "larger daily limit."
+            ),
+        )
+
+    # 3. Create the document row up front in the "processing" state and record the
     #    study-activity for today, then commit. The heavy lifting happens after the
     #    response is sent.
     doc_id = uuid4()
@@ -230,14 +284,24 @@ async def upload_document(
     except Exception as e:
         logger.exception("Failed to create processing document row.")
         await db.rollback()
+        # The page hold was placed before this commit — refund it so a failed
+        # upload doesn't permanently consume the user's daily allowance.
+        await release_pages(current_user.id, page_count_estimate)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start document upload. Please try again.",
         ) from e
 
-    # 3. Schedule the parse → embed → index pipeline to run after the response.
+    # 4. Schedule the parse → embed → index pipeline to run after the response. The
+    #    task reconciles the page hold to the real page count (or releases it on
+    #    failure), so it needs the user id and the reserved estimate.
     background_tasks.add_task(
-        _process_document_ingestion, doc_id, file_bytes, filename
+        _process_document_ingestion,
+        doc_id,
+        file_bytes,
+        filename,
+        current_user.id,
+        page_count_estimate,
     )
 
     return UploadResponse(

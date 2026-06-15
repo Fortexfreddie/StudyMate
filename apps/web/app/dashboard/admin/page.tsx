@@ -221,6 +221,19 @@ export default function AdminOverviewPage() {
               info="Total tokens consumed by all users today since 00:00 UTC."
             />
             <StatTile
+              icon={FileText}
+              label="Lifetime pages"
+              value={formatCompact(data.lifetime_pages)}
+              info="Cumulative number of PDF pages uploaded and embedded across the platform."
+            />
+            <StatTile
+              icon={FileText}
+              label="Pages today"
+              value={formatCompact(data.pages_today_counter)}
+              hint="counter"
+              info="Total pages uploaded by all users today since 00:00 UTC."
+            />
+            <StatTile
               icon={Activity}
               label="Active 30d"
               value={formatNumber(data.active_users_30d)}
@@ -402,9 +415,14 @@ export default function AdminOverviewPage() {
                         {u.email}
                       </span>
                     </div>
-                    <span className="text-[10px] font-black text-brand-primary shrink-0 bg-brand-primary/5 border border-brand-primary/15 px-2.5 py-1 rounded-lg">
-                      {formatNumber(u.document_count)} docs
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-[10px] font-black text-brand-primary shrink-0 bg-brand-primary/5 border border-brand-primary/15 px-2.5 py-1 rounded-lg">
+                        {formatNumber(u.document_count)} docs
+                      </span>
+                      <span className="text-[9px] font-black text-accent-gold shrink-0 bg-accent-gold/5 border border-accent-gold/15 px-2 py-0.5 rounded-md">
+                        {formatNumber(u.page_count)} pages
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

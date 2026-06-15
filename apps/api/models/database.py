@@ -330,6 +330,42 @@ class DailyTokenUsage(Base):
     )
 
 
+class DailyPageUsage(Base):
+    """Atomic per-user, per-day **page** counter used to enforce upload quotas.
+
+    The document-upload analogue of ``DailyTokenUsage``: a single mutable running
+    total of PDF pages a user has uploaded today, per ``(user_id, usage_date)``.
+    Uploads consume the embedding model — a different Google quota than the
+    generation tokens tracked by ``DailyTokenUsage`` — so the two are counted
+    separately. Enforcement reserves the page count atomically *before* scheduling
+    ingestion (via ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING``) so concurrent
+    uploads can never collectively overshoot the limit, then reconciles to the real
+    extractable page count after parsing (or releases the hold on failure). See
+    ``services/page_quota_service.py``.
+    """
+
+    __tablename__ = "daily_page_usage"
+    __table_args__ = (
+        UniqueConstraint("user_id", "usage_date", name="uq_daily_page_usage_day"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Running total of pages reserved/uploaded today. Reservations bump this up
+    # front; reconciliation adjusts it by (actual - estimate); failures release it.
+    reserved_pages: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class RefreshToken(Base):
     """Stores hashed active refresh tokens to enforce rotation & revoking."""
 

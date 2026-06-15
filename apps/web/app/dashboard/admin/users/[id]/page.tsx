@@ -253,6 +253,7 @@ export default function AdminUserDetailPage() {
                 label="Avg quiz score"
                 value={profile.total_quizzes > 0 ? `${profile.average_quiz_score}%` : "—"}
               />
+              <MetaRow label="Lifetime pages" value={formatNumber(profile.total_pages)} />
               <MetaRow label="Lifetime tokens" value={formatNumber(profile.lifetime_tokens)} />
             </div>
 
@@ -359,6 +360,16 @@ export default function AdminUserDetailPage() {
               icon={Clock}
               label="Requests"
               value={formatNumber(usage.request_count)}
+            />
+            <UsageTile
+              icon={FileText}
+              label="Total pages"
+              value={formatNumber(usage.total_pages)}
+            />
+            <UsageTile
+              icon={FileStack}
+              label="Documents"
+              value={formatNumber(usage.document_count)}
             />
           </div>
 

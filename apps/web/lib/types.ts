@@ -355,6 +355,7 @@ export interface TopUploader {
   full_name: string;
   email: string;
   document_count: number;
+  page_count: number;
 }
 
 export interface AdminOverview {
@@ -377,10 +378,14 @@ export interface AdminOverview {
   tokens_today_counter: number;
   tokens_by_type: Record<string, number>;
   tokens_by_model: Record<string, number>;
+  lifetime_pages: number;
+  pages_today_logged: number;
+  pages_today_counter: number;
   daily_signups: DailyCount[];
   daily_documents: DailyCount[];
   daily_active_users: DailyCount[];
   daily_tokens: DailyTokenTrend[];
+  daily_pages: DailyCount[];
   top_uploaders: TopUploader[];
 }
 
@@ -394,6 +399,7 @@ export interface AdminUserListItem {
   is_pro: boolean;
   role: string;
   document_count: number;
+  page_count: number;
   created_at: string;
   last_active: string | null; // ISO date (YYYY-MM-DD) or null if never active
 }
@@ -441,7 +447,10 @@ export interface AdminUserUsageResponse {
   request_count: number;
   tokens_by_type: Record<string, number>;
   tokens_by_model: Record<string, number>;
+  total_pages: number;
+  document_count: number;
   daily_tokens: DailyTokenTrend[];
+  daily_pages: DailyCount[];
 }
 
 export interface AdminUserUsageParams {
@@ -463,6 +472,7 @@ export interface AdminUserProfileResponse {
   last_active: string | null; // ISO date (YYYY-MM-DD)
   last_login_at: string | null; // populated once login tracking lands (Phase 4)
   total_documents: number;
+  total_pages: number;
   total_chunks: number;
   total_chats: number;
   total_summaries: number;
@@ -542,4 +552,9 @@ export interface UsageResponse {
   is_pro: boolean;
   usage_by_type: Record<string, number>;
   reset_time: string;
+  // Upload (page) quota — a separate daily dimension from tokens. Uploads consume
+  // the embedding model, not the generation model. Resets at midnight UTC too.
+  pages_used_today: number;
+  page_limit: number;
+  pages_remaining: number;
 }

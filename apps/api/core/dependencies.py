@@ -71,8 +71,18 @@ async def get_current_user(
 async def get_current_admin(
     user: User = Depends(get_current_user),  # noqa: B008
 ) -> User:
-    """Require an admin or super_admin. Reuses the user already loaded above."""
-    if not user.is_admin_or_super:
+    """Require an admin or super_admin. Reuses the user already loaded above.
+    
+    Dynamically strips super_admin privileges if the env variable changed.
+    """
+    super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
+    is_configured_super = bool(super_admin_email) and (user.email == super_admin_email)
+    
+    # If they are a DB super_admin but NOT the configured env super_admin, they are functionally demoted to user
+    if user.role == "super_admin" and bool(super_admin_email) and not is_configured_super:
+        raise ForbiddenError("Admin access required.")
+
+    if not user.is_admin_or_super and not is_configured_super:
         raise ForbiddenError("Admin access required.")
     return user
 
@@ -80,9 +90,16 @@ async def get_current_admin(
 async def get_current_super_admin(
     user: User = Depends(get_current_user),  # noqa: B008
 ) -> User:
-    """Require the super_admin — for role changes and user deletion."""
-    if user.role != "super_admin":
+    """Require the super_admin — for role changes and user deletion.
+    
+    Dynamically enforces that only the configured env SUPER_ADMIN_EMAIL has access.
+    """
+    super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
+    is_configured_super = bool(super_admin_email) and (user.email == super_admin_email)
+
+    if not is_configured_super:
         raise ForbiddenError("Super admin access required.")
+        
     return user
 
 

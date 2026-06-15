@@ -40,6 +40,7 @@ from core.errors import (
 )
 from models.database import (
     ChatMessage,
+    DailyPageUsage,
     DailyTokenUsage,
     Document,
     QuizSession,
@@ -261,6 +262,28 @@ async def overview(
     )
     tokens_by_model = {model: int(total) for model, total in model_rows}
 
+    # Pages
+    lifetime_pages = (
+        await db.scalar(select(func.coalesce(func.sum(Document.page_count), 0)))
+        or 0
+    )
+    pages_today_logged = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Document.page_count), 0)).where(
+                Document.uploaded_at >= day_start
+            )
+        )
+        or 0
+    )
+    pages_today_counter = (
+        await db.scalar(
+            select(func.coalesce(func.sum(DailyPageUsage.reserved_pages), 0)).where(
+                DailyPageUsage.usage_date == today
+            )
+        )
+        or 0
+    )
+
     # 30-day time series — each fills only the days that have data; the frontend
     # zero-fills the gaps so the chart axis stays continuous.
     signup_rows = await db.execute(
@@ -276,6 +299,13 @@ async def overview(
         .group_by(_utc_date(Document.uploaded_at))
     )
     daily_documents = [DailyCount(date=str(d), count=int(c)) for d, c in doc_rows]
+
+    page_rows = await db.execute(
+        select(_utc_date(Document.uploaded_at), func.coalesce(func.sum(Document.page_count), 0))
+        .where(Document.uploaded_at >= window_start)
+        .group_by(_utc_date(Document.uploaded_at))
+    )
+    daily_pages = [DailyCount(date=str(d), count=int(c)) for d, c in page_rows]
 
     dau_rows = await db.execute(
         select(UserActivity.activity_date, func.count(func.distinct(UserActivity.user_id)))
@@ -308,15 +338,27 @@ async def overview(
 
     # Top uploaders
     uploader_rows = await db.execute(
-        select(User.id, User.full_name, User.email, func.count(Document.id))
+        select(
+            User.id,
+            User.full_name,
+            User.email,
+            func.count(Document.id),
+            func.coalesce(func.sum(Document.page_count), 0)
+        )
         .join(Document, Document.user_id == User.id)
         .group_by(User.id, User.full_name, User.email)
         .order_by(func.count(Document.id).desc())
         .limit(10)
     )
     top_uploaders = [
-        TopUploader(user_id=uid, full_name=name, email=email, document_count=int(count))
-        for uid, name, email, count in uploader_rows
+        TopUploader(
+            user_id=uid,
+            full_name=name,
+            email=email,
+            document_count=int(doc_count),
+            page_count=int(page_count)
+        )
+        for uid, name, email, doc_count, page_count in uploader_rows
     ]
 
     return AdminOverviewResponse(
@@ -339,10 +381,14 @@ async def overview(
         tokens_today_counter=tokens_today_counter,
         tokens_by_type=tokens_by_type,
         tokens_by_model=tokens_by_model,
+        lifetime_pages=lifetime_pages,
+        pages_today_logged=pages_today_logged,
+        pages_today_counter=pages_today_counter,
         daily_signups=daily_signups,
         daily_documents=daily_documents,
         daily_active_users=daily_active_users,
         daily_tokens=daily_tokens,
+        daily_pages=daily_pages,
         top_uploaders=top_uploaders,
     )
 
@@ -364,7 +410,11 @@ async def list_users(
 ) -> AdminUserListResponse:
     """Paginated user list with search, filtering, per-user doc count and last-active."""
     doc_count = (
-        select(Document.user_id, func.count(Document.id).label("doc_count"))
+        select(
+            Document.user_id,
+            func.count(Document.id).label("doc_count"),
+            func.coalesce(func.sum(Document.page_count), 0).label("page_count"),
+        )
         .group_by(Document.user_id)
         .subquery()
     )
@@ -410,6 +460,7 @@ async def list_users(
         select(
             User,
             func.coalesce(doc_count.c.doc_count, 0),
+            func.coalesce(doc_count.c.page_count, 0),
             last_active.c.last_active,
         )
         .outerjoin(doc_count, doc_count.c.user_id == User.id)
@@ -429,10 +480,11 @@ async def list_users(
             is_pro=u.is_pro,
             role=u.role,
             document_count=int(dc),
+            page_count=int(pc),
             created_at=u.created_at,
             last_active=la,
         )
-        for u, dc, la in rows
+        for u, dc, pc, la in rows
     ]
     return AdminUserListResponse(users=users, total=total, limit=limit, offset=offset)
 
@@ -454,6 +506,12 @@ async def user_profile(
     total_documents = (
         await db.scalar(
             select(func.count()).select_from(Document).where(Document.user_id == user_id)
+        )
+        or 0
+    )
+    total_pages = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Document.page_count), 0)).where(Document.user_id == user_id)
         )
         or 0
     )
@@ -539,11 +597,11 @@ async def user_profile(
     avg_chunks_used: dict[str, float] = {}
     for rtype, avg_ms, avg_chunks in perf_rows:
         if avg_ms is not None:
-            avg_generation_ms[rtype] = int(round(float(avg_ms)))
+            avg_generation_ms[rtype] = round(float(avg_ms))
         if avg_chunks is not None:
             avg_chunks_used[rtype] = round(float(avg_chunks), 1)
 
-    cached_tokens_total = int(
+    cached_tokens_total = (
         await db.scalar(
             select(func.coalesce(func.sum(TokenUsage.cached_tokens), 0)).where(
                 TokenUsage.user_id == user_id
@@ -568,11 +626,12 @@ async def user_profile(
         created_at=target.created_at,
         last_active=last_active,
         last_login_at=target.last_login_at,
-        total_documents=int(total_documents),
-        total_chunks=int(total_chunks),
-        total_chats=int(total_chats),
-        total_summaries=int(total_summaries),
-        total_quizzes=int(total_quizzes),
+        total_documents=total_documents,
+        total_pages=total_pages,
+        total_chunks=total_chunks,
+        total_chats=total_chats,
+        total_summaries=total_summaries,
+        total_quizzes=total_quizzes,
         average_quiz_score=average_quiz_score,
         summary_formats=summary_formats,
         performance_modes=performance_modes,
@@ -678,6 +737,32 @@ async def user_usage(
         for d, by_type in sorted(trend_by_date.items())
     ]
 
+    # Pages over the window
+    doc_filters = [
+        Document.user_id == user_id,
+        Document.uploaded_at >= window_start,
+        Document.uploaded_at < window_end,
+    ]
+    doc_totals_row = (
+        await db.execute(
+            select(
+                func.count(),
+                func.coalesce(func.sum(Document.page_count), 0),
+            ).where(*doc_filters)
+        )
+    ).one()
+    document_count, total_pages = (int(v) for v in doc_totals_row)
+
+    page_trend_rows = await db.execute(
+        select(
+            _utc_date(Document.uploaded_at),
+            func.coalesce(func.sum(Document.page_count), 0),
+        )
+        .where(*doc_filters)
+        .group_by(_utc_date(Document.uploaded_at))
+    )
+    daily_pages = [DailyCount(date=str(d), count=int(c)) for d, c in page_trend_rows]
+
     return AdminUserUsageResponse(
         user_id=target.id,
         email=target.email,
@@ -692,7 +777,10 @@ async def user_usage(
         request_count=request_count,
         tokens_by_type=tokens_by_type,
         tokens_by_model=tokens_by_model,
+        total_pages=total_pages,
+        document_count=document_count,
         daily_tokens=daily_tokens,
+        daily_pages=daily_pages,
     )
 
 

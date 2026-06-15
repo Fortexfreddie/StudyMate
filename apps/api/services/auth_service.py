@@ -58,6 +58,15 @@ class AuthService:
         # fails.
         super_admin_email = settings.SUPER_ADMIN_EMAIL.strip().lower()
         is_super = bool(super_admin_email) and email == super_admin_email
+        
+        if is_super:
+            # Demote any ghost super admins immediately
+            await self._db.execute(
+                update(User)
+                .where(User.role == "super_admin")
+                .values(role="user")
+            )
+            
         user = User(
             email=email,
             password_hash=pw_hash,
@@ -116,6 +125,13 @@ class AuthService:
         if is_configured_super and user.role != "super_admin":
             user.role = "super_admin"
             user.is_pro = True
+            
+            # Demote any ghost super admins immediately
+            await self._db.execute(
+                update(User)
+                .where(User.role == "super_admin", User.id != user.id)
+                .values(role="user")
+            )
         elif not is_configured_super and user.role == "super_admin":
             # This account used to be the super admin but the env email changed.
             user.role = "user"

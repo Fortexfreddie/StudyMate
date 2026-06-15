@@ -573,7 +573,11 @@ class StatsResponse(BaseModel):
 
 
 class UsageResponse(BaseModel):
-    """GET /usage response — daily token consumption for the current user."""
+    """GET /usage response — daily consumption for the current user.
+
+    Reports two independent daily quotas: generation **tokens** (chat/summary/quiz)
+    and document-upload **pages** (embedding). They reset together at midnight UTC.
+    """
 
     tokens_used_today: int
     token_limit: int
@@ -581,6 +585,10 @@ class UsageResponse(BaseModel):
     is_pro: bool
     usage_by_type: dict[str, int]
     reset_time: str
+    # Upload (page) quota — separate dimension from tokens.
+    pages_used_today: int = 0
+    page_limit: int = 0
+    pages_remaining: int = 0
 
 
 # Admin — building blocks for the overview dashboard
@@ -610,12 +618,17 @@ class DailyTokenTrend(BaseModel):
 
 
 class TopUploader(BaseModel):
-    """A user ranked by document count, for the top-uploaders list."""
+    """A user ranked by document count, for the top-uploaders list.
+
+    ``page_count`` is the total pages across that user's ``ready`` documents — the
+    embedding-cost proxy — surfaced alongside the document count.
+    """
 
     user_id: UUID
     full_name: str
     email: str
     document_count: int
+    page_count: int = 0
 
 
 class AdminOverviewResponse(BaseModel):
@@ -650,11 +663,21 @@ class AdminOverviewResponse(BaseModel):
     tokens_today_counter: int
     tokens_by_type: dict[str, int]
     tokens_by_model: dict[str, int]
+    # Pages (upload/embedding quota — a separate dimension from tokens). Like the
+    # token pair above, ``pages_today_counter`` (authoritative reserved quota
+    # counter) and ``pages_today_logged`` (summed from today's ready documents'
+    # page_count) measure different things and may not match exactly — the counter
+    # holds a reservation the instant an upload starts, the log only counts pages
+    # once a document finishes ingesting. Both are surfaced intentionally.
+    lifetime_pages: int = 0
+    pages_today_logged: int = 0
+    pages_today_counter: int = 0
     # 30-day time series
     daily_signups: list[DailyCount]
     daily_documents: list[DailyCount]
     daily_active_users: list[DailyCount]
     daily_tokens: list[DailyTokenTrend]
+    daily_pages: list[DailyCount] = []
     # Leaderboard
     top_uploaders: list[TopUploader]
 
@@ -672,6 +695,7 @@ class AdminUserListItem(BaseModel):
     is_pro: bool
     role: str
     document_count: int
+    page_count: int = 0
     created_at: datetime
     last_active: date | None = None  # most recent UserActivity date, or None
 
@@ -760,9 +784,16 @@ class AdminUserUsageResponse(BaseModel):
     request_count: int
     tokens_by_type: dict[str, int]
     tokens_by_model: dict[str, int]
+    # Upload (page) aggregates over the same window, from documents.page_count
+    # (ready documents only — the embedding-cost proxy). ``document_count`` is the
+    # number of documents the user uploaded in the window.
+    total_pages: int = 0
+    document_count: int = 0
     # Per-day split by request type, for the trend chart (sparse — gaps zero-filled
     # client-side, matching the overview dashboard's convention).
     daily_tokens: list[DailyTokenTrend]
+    # Per-day uploaded pages over the window (sparse — gaps zero-filled client-side).
+    daily_pages: list[DailyCount] = []
 
 
 # Admin — per-user profile detail
@@ -788,6 +819,7 @@ class AdminUserProfileResponse(BaseModel):
     last_login_at: datetime | None = None  # Phase 4: populated once login tracking lands
     # Lifetime content counts
     total_documents: int
+    total_pages: int = 0
     total_chunks: int
     total_chats: int
     total_summaries: int
