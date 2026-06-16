@@ -7,6 +7,7 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { User } from "@/lib/types";
 import {
   api,
@@ -14,6 +15,8 @@ import {
   clearTokens,
   getAccessToken,
   getRefreshToken,
+  AUTH_EXPIRED_EVENT,
+  type AuthExpiredReason,
 } from "@/lib/api";
 
 interface AuthContextValue {
@@ -36,6 +39,25 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+
+  // Single global handler for terminal auth failures (expired session or a
+  // suspension enforced mid-session). The API layer emits this when a request's
+  // 401 can't be recovered; we clear state once and redirect to login, carrying a
+  // reason so the login screen can show the right message — rather than leaving a
+  // stray error on whatever page happened to make the failing request.
+  useEffect(() => {
+    function onAuthExpired(event: Event) {
+      const reason: AuthExpiredReason =
+        (event as CustomEvent<{ reason?: AuthExpiredReason }>).detail?.reason ??
+        "expired";
+      clearTokens();
+      setUser(null);
+      router.replace(`/login?reason=${reason}`);
+    }
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+  }, [router]);
 
   useEffect(() => {
     async function hydrate() {

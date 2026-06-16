@@ -7,6 +7,9 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  CheckCircle2,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -22,6 +25,47 @@ import { AdminTabs } from "../components/AdminTabs";
 import { EmptySearchIllustration } from "@/components/shared/EmptySearchIllustration";
 
 const PAGE_SIZE = 20;
+
+// Small pill reflecting a document's processing state. `ready` = indexed and
+// searchable; `processing` = parsing/embedding in the background; `failed` = the
+// background task errored (chunks won't be available).
+function StatusBadge({ status }: { status: AdminDocumentListItem["status"] }) {
+  const config = {
+    ready: {
+      icon: CheckCircle2,
+      label: "Ready",
+      className: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+      spin: false,
+    },
+    processing: {
+      icon: Loader2,
+      label: "Processing",
+      className: "text-accent-gold bg-accent-gold/10 border-accent-gold/20",
+      spin: true,
+    },
+    failed: {
+      icon: AlertTriangle,
+      label: "Failed",
+      className: "text-red-400 bg-red-500/10 border-red-500/20",
+      spin: false,
+    },
+  }[status] ?? {
+    icon: AlertTriangle,
+    label: status,
+    className: "text-text-muted bg-white/5 border-border-subtle",
+    spin: false,
+  };
+
+  const Icon = config.icon;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wide ${config.className}`}
+    >
+      <Icon className={`h-3 w-3 ${config.spin ? "animate-spin" : ""}`} />
+      {config.label}
+    </span>
+  );
+}
 
 export default function AdminDocumentsPage() {
   const [searchInput, setSearchInput] = useState("");
@@ -182,9 +226,12 @@ export default function AdminDocumentsPage() {
                         </span>
                       </div>
                     </div>
-                    <div className="text-[11px] text-text-muted">
-                      {doc.page_count} pages • {doc.chunk_count} chunks •{" "}
-                      {formatUploadedAt(doc.uploaded_at)}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <StatusBadge status={doc.status} />
+                      <span className="text-[11px] text-text-muted">
+                        {doc.page_count ?? "—"} pages • {doc.chunk_count ?? "—"} chunks •{" "}
+                        {formatUploadedAt(doc.uploaded_at)}
+                      </span>
                     </div>
                     <div className="border-t border-border-subtle pt-3 flex justify-end">
                       <button
@@ -208,6 +255,7 @@ export default function AdminDocumentsPage() {
                         <th className="font-extrabold px-4 py-4">Owner</th>
                         <th className="font-extrabold px-4 py-4 text-center">Pages</th>
                         <th className="font-extrabold px-4 py-4 text-center">Chunks</th>
+                        <th className="font-extrabold px-4 py-4">Status</th>
                         <th className="font-extrabold px-4 py-4">Uploaded</th>
                         <th className="font-extrabold px-6 py-4 text-right">Actions</th>
                       </tr>
@@ -231,8 +279,11 @@ export default function AdminDocumentsPage() {
                               </span>
                             </div>
                           </td>
-                          <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.page_count}</td>
-                          <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.chunk_count}</td>
+                          <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.page_count ?? "—"}</td>
+                          <td className="px-4 py-4 text-text-muted text-center font-bold">{doc.chunk_count ?? "—"}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <StatusBadge status={doc.status} />
+                          </td>
                           <td className="px-4 py-4 text-text-muted whitespace-nowrap">
                             {formatUploadedAt(doc.uploaded_at)}
                           </td>
@@ -295,7 +346,7 @@ export default function AdminDocumentsPage() {
               <div className="mt-2">
                 Owner: {toDelete.owner_name} ({toDelete.owner_email})
                 <br />
-                {toDelete.page_count} pages • {toDelete.chunk_count} chunks
+                {toDelete.page_count ?? "—"} pages • {toDelete.chunk_count ?? "—"} chunks
               </div>
               <p className="mt-2">
                 This permanently removes the document and purges all indexed vectors.

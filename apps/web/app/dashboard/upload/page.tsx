@@ -104,8 +104,8 @@ export default function UploadPage() {
 
           <UploadIllustration />
 
-          <div className="flex flex-col gap-1 mt-2">
-            <span className="text-sm sm:text-base font-extrabold text-white">
+          <div className="flex flex-col gap-1 mt-2 w-full min-w-0 px-2">
+            <span className="text-sm sm:text-base font-extrabold text-white truncate max-w-full">
               {selectedFile ? selectedFile.name : "Tap to select a PDF file"}
             </span>
             <span className="text-xs text-text-muted">

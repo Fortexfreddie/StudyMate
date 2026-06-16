@@ -571,8 +571,9 @@ export interface AdminUserActivityParams {
 export interface AdminDocumentListItem {
   doc_id: string;
   filename: string;
-  page_count: number;
-  chunk_count: number;
+  page_count: number | null;
+  chunk_count: number | null;
+  status: DocumentStatus;
   uploaded_at: string;
   owner_id: string;
   owner_name: string;

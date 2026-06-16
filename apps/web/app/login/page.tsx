@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock } from "lucide-react";
 import { Input } from "@/components/shared/Input";
@@ -11,6 +11,26 @@ import { LoginIllustration } from "./components/LoginIllustration";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { validateEmail, validatePassword } from "@/lib/validation";
 import { ApiClientError } from "@/lib/api";
+
+// Banner shown when the user landed on /login because their session ended. Reads
+// `?reason=` set by AuthProvider's global auth-expired handler. Wrapped in
+// Suspense by the parent since useSearchParams opts the route into CSR bailout.
+function SessionNotice() {
+  const params = useSearchParams();
+  const reason = params.get("reason");
+  if (reason !== "suspended" && reason !== "expired") return null;
+
+  const message =
+    reason === "suspended"
+      ? "Your account has been suspended. Please contact support if you believe this is a mistake."
+      : "Your session has expired. Please log in again.";
+
+  return (
+    <div className="bg-error-text/10 border border-error-text/20 text-error-text text-xs font-semibold rounded-xl p-3 leading-snug">
+      {message}
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -82,6 +102,10 @@ export default function LoginPage() {
 
         {/* Responsive Login Card */}
         <div className="w-full rounded-3xl bg-card-bg border border-border-subtle p-5 sm:p-6 md:p-8 shadow-xl shadow-black/50 flex flex-col gap-5">
+          <Suspense fallback={null}>
+            <SessionNotice />
+          </Suspense>
+
           {errors.global && (
             <div className="bg-error-text/10 border border-error-text/20 text-error-text text-xs font-semibold rounded-xl p-3 leading-snug">
               {errors.global}

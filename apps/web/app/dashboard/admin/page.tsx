@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
+  ChevronRight,
   Users,
   ShieldCheck,
   FileText,
@@ -160,15 +162,17 @@ function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: () => voi
             </p>
           ) : (
             data.users.map((u) => (
-              <div
+              <Link
                 key={u.user_id}
-                className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0"
+                href={`/dashboard/admin/users/${u.user_id}`}
+                onClick={onClose}
+                className="flex items-center gap-3 py-2 px-2 -mx-2 rounded-xl border-b border-white/[0.02] last:border-0 hover:bg-white/[0.03] transition-colors cursor-pointer group"
               >
                 <div className="h-8.5 w-8.5 rounded-full bg-brand-primary/10 border border-brand-primary/20 flex items-center justify-center text-brand-primary font-bold text-xs uppercase">
                   {u.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
                 </div>
                 <div className="flex flex-col min-w-0 flex-1">
-                  <span className="text-xs font-extrabold text-white truncate">
+                  <span className="text-xs font-extrabold text-white truncate group-hover:text-brand-primary transition-colors">
                     {u.full_name}
                   </span>
                   <span className="text-[10px] text-text-muted truncate mt-0.5">
@@ -178,7 +182,8 @@ function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: () => voi
                 <span className="text-[10px] text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 px-2 py-0.5 rounded-md font-bold shrink-0 animate-pulse">
                   Online
                 </span>
-              </div>
+                <ChevronRight className="h-4 w-4 text-text-muted shrink-0 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+              </Link>
             ))
           )}
         </div>
@@ -483,15 +488,16 @@ export default function AdminOverviewPage() {
             ) : (
               <div className="flex flex-col divide-y divide-border-subtle">
                 {data.top_uploaders.map((u, i) => (
-                  <div
+                  <Link
                     key={u.user_id}
-                    className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                    href={`/dashboard/admin/users/${u.user_id}`}
+                    className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0 -mx-2 px-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
                   >
                     <span className="h-6 w-6 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-[10px] font-black text-text-muted shrink-0 shadow-sm">
                       {i + 1}
                     </span>
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-xs font-extrabold text-white truncate">
+                      <span className="text-xs font-extrabold text-white truncate group-hover:text-brand-primary transition-colors">
                         {u.full_name}
                       </span>
                       <span className="text-[11px] text-text-muted truncate mt-0.5">
@@ -506,7 +512,7 @@ export default function AdminOverviewPage() {
                         {formatNumber(u.page_count)} pages
                       </span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -522,15 +528,16 @@ export default function AdminOverviewPage() {
               ) : (
                 <div className="flex flex-col divide-y divide-border-subtle">
                   {data.top_token_users.map((u, i) => (
-                    <div
+                    <Link
                       key={u.user_id}
-                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                      href={`/dashboard/admin/users/${u.user_id}`}
+                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0 -mx-2 px-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
                     >
                       <span className="h-6 w-6 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-[10px] font-black text-text-muted shrink-0 shadow-sm">
                         {i + 1}
                       </span>
                       <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-xs font-extrabold text-white truncate">
+                        <span className="text-xs font-extrabold text-white truncate group-hover:text-brand-primary transition-colors">
                           {u.full_name}
                         </span>
                         <span className="text-[11px] text-text-muted truncate mt-0.5">
@@ -545,7 +552,7 @@ export default function AdminOverviewPage() {
                           {formatNumber(u.request_count)} reqs
                         </span>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -560,15 +567,16 @@ export default function AdminOverviewPage() {
               ) : (
                 <div className="flex flex-col divide-y divide-border-subtle">
                   {data.top_streak_users.map((u, i) => (
-                    <div
+                    <Link
                       key={u.user_id}
-                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                      href={`/dashboard/admin/users/${u.user_id}`}
+                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0 -mx-2 px-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
                     >
                       <span className="h-6 w-6 rounded-lg bg-surface-raised border border-border-subtle flex items-center justify-center text-[10px] font-black text-text-muted shrink-0 shadow-sm">
                         {i + 1}
                       </span>
                       <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-xs font-extrabold text-white truncate">
+                        <span className="text-xs font-extrabold text-white truncate group-hover:text-brand-primary transition-colors">
                           {u.full_name}
                         </span>
                         <span className="text-[11px] text-text-muted truncate mt-0.5">
@@ -580,7 +588,7 @@ export default function AdminOverviewPage() {
                           🔥 {u.streak} days
                         </span>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -607,16 +615,17 @@ export default function AdminOverviewPage() {
                   const relativeTime = formatTimeAgo(item.created_at);
 
                   return (
-                    <div
+                    <Link
                       key={item.created_at + item.user_id + item.event_type}
-                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0"
+                      href={`/dashboard/admin/users/${item.user_id}`}
+                      className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0 -mx-2 px-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
                     >
                       <span className={`h-8 w-8 rounded-xl border flex items-center justify-center shrink-0 ${eventMeta.color}`}>
                         <Icon className="h-4.5 w-4.5" />
                       </span>
                       <div className="flex flex-col min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-extrabold text-white truncate">
+                          <span className="text-xs font-extrabold text-white truncate group-hover:text-brand-primary transition-colors">
                             {item.full_name}
                           </span>
                           <span className="text-[10px] text-text-muted">
@@ -636,7 +645,7 @@ export default function AdminOverviewPage() {
                       <span className="text-[10px] text-text-muted shrink-0">
                         {relativeTime}
                       </span>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>

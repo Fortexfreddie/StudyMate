@@ -77,6 +77,20 @@ export function clearTokens(): void {
   localStorage.removeItem(REFRESH_KEY);
 }
 
+// Broadcast a terminal auth failure so a single global listener (AuthProvider)
+// can reset state and redirect — instead of each calling screen rendering a
+// stray "session expired" / "suspended" error inline. `reason` distinguishes a
+// suspension (show a dedicated message) from an ordinary expired session.
+export const AUTH_EXPIRED_EVENT = "studymate:auth-expired";
+export type AuthExpiredReason = "suspended" | "expired";
+
+function emitAuthExpired(reason: AuthExpiredReason): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { reason } })
+  );
+}
+
 class ApiClientError extends Error {
   status: number;
   detail: string;
@@ -171,6 +185,12 @@ async function request<T>(
                 refreshDetail = JSON.stringify(refreshDetail);
               }
               clearTokens();
+              const reason: AuthExpiredReason =
+                typeof refreshDetail === "string" &&
+                refreshDetail.toLowerCase().includes("suspend")
+                  ? "suspended"
+                  : "expired";
+              emitAuthExpired(reason);
               throw new ApiClientError(401, refreshDetail);
             }
           } catch {
@@ -184,6 +204,7 @@ async function request<T>(
       }
     }
     clearTokens();
+    emitAuthExpired("expired");
     throw new ApiClientError(401, "Session expired. Please log in again.");
   }
 
