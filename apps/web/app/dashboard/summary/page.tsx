@@ -30,6 +30,7 @@ import type {
   Flashcard,
   ConceptItem,
   MindMap,
+  MindMapChild,
   StudyGuide,
 } from "@/lib/types";
 
@@ -682,32 +683,111 @@ function CheatSheetView({ data, link }: { data: CheatSheet; link: LinkFn }) {
   );
 }
 
+// Branch accents cycle through THEME TOKENS only (never hardcoded hex) so the map
+// adapts to every theme — midnight, obsidian, nord-ice, forest, etc. `soft` derives a
+// tinted fill from the same token via color-mix, so it tracks the active palette too.
+const MINDMAP_BRANCH_VARS = [
+  "--color-brand-primary",
+  "--color-accent-coral",
+  "--color-accent-gold",
+  "--color-status-summary",
+] as const;
+
+function mindMapAccent(idx: number): { node: string; soft: string } {
+  const v = MINDMAP_BRANCH_VARS[idx % MINDMAP_BRANCH_VARS.length];
+  return {
+    node: `var(${v})`,
+    soft: `color-mix(in srgb, var(${v}) 14%, transparent)`,
+  };
+}
+
+/** Normalize a leaf to {label, detail} — older saved maps stored bare strings. */
+function normalizeMindMapChild(
+  child: MindMapChild | string
+): { label: string; detail: string } {
+  if (typeof child === "string") return { label: child, detail: "" };
+  return { label: child.label ?? "", detail: child.detail ?? "" };
+}
+
 function MindMapView({ data, link }: { data: MindMap; link: LinkFn }) {
   return (
-    <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-6 flex flex-col items-center shadow-md animate-in fade-in slide-in-from-bottom-3 duration-500">
-      <span className="text-[9px] font-black text-accent-coral uppercase tracking-widest mb-6">
+    <div className="w-full bg-card-bg border border-border-subtle rounded-3xl p-5 sm:p-7 flex flex-col items-center shadow-md overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-500">
+      <span className="text-[9px] font-black text-accent-coral uppercase tracking-widest mb-5">
         Visual Branch Map
       </span>
-      <div className="px-4 py-3 rounded-2xl bg-brand-primary border border-brand-primary text-black font-extrabold text-xs text-center shadow-md select-none max-w-[220px] transition-transform duration-300 hover:scale-105 cursor-default">
+
+      {/* Root node */}
+      <div className="relative px-5 py-3 rounded-2xl bg-brand-primary text-brand-primary-fg font-black text-xs sm:text-sm text-center shadow-lg shadow-brand-primary/20 select-none max-w-[260px] transition-transform duration-300 hover:scale-[1.03] cursor-default z-10">
         {data.root}
       </div>
-      <div className="w-[2px] bg-brand-primary/30 h-6" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full mt-1">
-        {data.branches.map((branch, idx) => (
-          <div key={idx} className="flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${(idx + 1) * 75}ms` }}>
-            <div className="px-3 py-2 rounded-xl bg-card-bg border border-border-subtle text-white font-extrabold text-[10px] text-center select-none shadow transition duration-200 hover:border-brand-primary/30 hover:scale-103 cursor-default">
-              {branch.label}
-            </div>
-            <div className="w-[1.5px] bg-border-subtle h-4" />
-            <div className="flex flex-col gap-1.5 w-full text-center">
-              {branch.children.map((child, cIdx) => (
-                <span key={cIdx} className="text-[10px] text-text-muted px-2 py-1 bg-surface/30 rounded-lg transition duration-200 hover:text-white hover:bg-surface/50 cursor-default">
-                  {link(child)}
+      {data.summary && (
+        <p className="text-[10px] sm:text-[11px] text-text-muted text-center max-w-[420px] mt-2.5 leading-relaxed">
+          {link(data.summary)}
+        </p>
+      )}
+
+      {/* Trunk connector from root into the branch field */}
+      <div className="w-[2px] bg-gradient-to-b from-brand-primary/60 to-border-subtle h-7 mt-3" />
+
+      {/* Branch field: stacked rows on mobile, balanced columns on desktop. Each
+          branch animates in with a stagger and draws a themed connector spine. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
+        {data.branches.map((branch, idx) => {
+          const accent = mindMapAccent(idx);
+          const children = branch.children.map(normalizeMindMapChild);
+          return (
+            <div
+              key={idx}
+              className="flex flex-col items-stretch rounded-2xl border border-border-subtle/70 bg-surface/20 p-3.5 animate-in fade-in slide-in-from-bottom-3 fill-mode-both"
+              style={{ animationDelay: `${(idx + 1) * 90}ms`, animationDuration: "450ms" }}
+            >
+              {/* Branch header pill */}
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: accent.node }}
+                />
+                <span className="text-[11px] sm:text-xs font-extrabold text-white leading-snug">
+                  {branch.label}
                 </span>
-              ))}
+              </div>
+
+              {/* Children as a connected sub-tree: a themed spine runs down the left,
+                  each leaf taps off it with a small elbow. */}
+              <div className="relative pl-5 mt-1.5">
+                <span
+                  className="absolute left-1 top-0 h-full w-[2px] rounded-full"
+                  style={{ backgroundColor: accent.node, opacity: 0.4 }}
+                  aria-hidden="true"
+                />
+                <div className="flex flex-col gap-2">
+                  {children.map((child, cIdx) => (
+                    <div
+                      key={cIdx}
+                      className="relative rounded-xl px-3 py-2 transition duration-200 hover:translate-x-0.5 cursor-default"
+                      style={{ backgroundColor: accent.soft }}
+                    >
+                      {/* elbow connector from the spine into this leaf */}
+                      <span
+                        className="absolute -left-4 top-1/2 h-[2px] w-4"
+                        style={{ backgroundColor: accent.node, opacity: 0.4 }}
+                        aria-hidden="true"
+                      />
+                      <span className="block text-[11px] font-bold text-white leading-snug">
+                        {child.label}
+                      </span>
+                      {child.detail && (
+                        <span className="block text-[10px] text-text-muted leading-relaxed mt-0.5">
+                          {link(child.detail)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

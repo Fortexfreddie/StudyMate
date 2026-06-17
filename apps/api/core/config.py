@@ -126,6 +126,13 @@ class Settings(BaseSettings):
     # Retrieval
     DEFAULT_TOP_K: int = 5
     RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.35
+    # Hard ceiling on chunks pulled for a full-document (sequential) summary. Unlike
+    # top_k — which caps *similarity* retrieval — full-document mode reads the whole
+    # document in page order, so it must not be bound by the user's retrieval slider.
+    # This ceiling is a safety bound only: it stops a pathologically large document
+    # from overflowing the LLM context window and spiking token cost. A typical
+    # lecture PDF is well under this, so it is never truncated in practice.
+    FULL_DOCUMENT_MAX_CHUNKS: int = 500
 
     # Quiz
     DEFAULT_QUIZ_QUESTIONS: int = 5

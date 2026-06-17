@@ -20,6 +20,10 @@ from services.pdf_processor import DocumentChunk
 
 logger = logging.getLogger(__name__)
 
+# Page size for paginated scrolls. Qdrant returns at most one page per scroll call,
+# so full-document retrieval walks pages of this size via next_page_offset.
+_SCROLL_PAGE_SIZE = 256
+
 
 class VectorStore:
     """Handles async CRUD operations and semantic search against Qdrant collection."""
@@ -158,37 +162,49 @@ class VectorStore:
                 "Vector store is unavailable. Try again."
             ) from e
 
-    async def get_chunks_by_doc_id(self, doc_id: str, limit: int = 30) -> list[dict]:
-        """Retrieve chunks belonging to a specific document ordered by page number (not by vector similarity)."""
-        try:
-            response, _ = await self._client.scroll(
-                collection_name=self._collection,
-                scroll_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key="doc_id",
-                            match=MatchValue(value=doc_id),
-                        )
-                    ]
-                ),
-                limit=limit,
-                with_payload=True,
-                with_vectors=False,
-            )
+    async def get_chunks_by_doc_id(
+        self, doc_id: str, limit: int = settings.FULL_DOCUMENT_MAX_CHUNKS
+    ) -> list[dict]:
+        """Retrieve chunks belonging to a specific document ordered by page number (not by vector similarity).
 
+        A single Qdrant ``scroll`` call returns at most one page of points, so this
+        paginates via ``next_page_offset`` to collect the *whole* document — full
+        documents routinely have more chunks than one page holds. ``limit`` is a hard
+        ceiling (defaulting to ``FULL_DOCUMENT_MAX_CHUNKS``) that bounds the total
+        collected, protecting the LLM context window on pathologically large docs.
+        """
+        doc_filter = Filter(
+            must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
+        )
+        try:
             matched_chunks: list[dict] = []
-            for point in response:
-                payload = point.payload or {}
-                matched_chunks.append(
-                    {
-                        "chunk_id": payload.get("chunk_id"),
-                        "doc_id": payload.get("doc_id"),
-                        "filename": payload.get("filename"),
-                        "page_number": payload.get("page_number"),
-                        "text": payload.get("text"),
-                        "score": 1.0,
-                    }
+            next_offset = None
+            while len(matched_chunks) < limit:
+                # Cap the page size so we never overshoot the ceiling.
+                page_size = min(_SCROLL_PAGE_SIZE, limit - len(matched_chunks))
+                response, next_offset = await self._client.scroll(
+                    collection_name=self._collection,
+                    scroll_filter=doc_filter,
+                    limit=page_size,
+                    offset=next_offset,
+                    with_payload=True,
+                    with_vectors=False,
                 )
+                for point in response:
+                    payload = point.payload or {}
+                    matched_chunks.append(
+                        {
+                            "chunk_id": payload.get("chunk_id"),
+                            "doc_id": payload.get("doc_id"),
+                            "filename": payload.get("filename"),
+                            "page_number": payload.get("page_number"),
+                            "text": payload.get("text"),
+                            "score": 1.0,
+                        }
+                    )
+                # No more pages to fetch.
+                if next_offset is None or not response:
+                    break
 
             # Sort by page number logically
             def get_page(c: dict) -> int:

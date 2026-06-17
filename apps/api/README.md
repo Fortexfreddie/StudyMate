@@ -332,7 +332,7 @@ Implemented across `retriever.py` + `generator.py`, called by chat/summary/quiz:
 1. **Embed query** — the user's query/topic is embedded with `gemini-embedding-2`.
 2. **Retrieve** — Qdrant cosine search returns the top-k chunks for the user
    (filtered by `doc_id` when supplied), dropping anything below the
-   `RETRIEVAL_SIMILARITY_THRESHOLD` (0.35). If `full_document` is true for a summary, similarity search is bypassed entirely in favor of page-sequential document chunks.
+   `RETRIEVAL_SIMILARITY_THRESHOLD` (0.35). If `full_document` is true for a summary, both similarity search and the `top_k` slider are bypassed: every chunk for the document is read page-sequentially, bounded only by the `FULL_DOCUMENT_MAX_CHUNKS` ceiling (500).
 3. **Generate** — `generator.py` builds a prompt with a strict grounding
    `SYSTEM_PROMPT` (no outside knowledge, admit gaps transparently without refusing, no fabrication) plus the
    retrieved context, and calls Gemini with **JSON mode** enforced.
@@ -519,6 +519,7 @@ ones touched by this integration:
 | `MAX_UPLOAD_SIZE_MB` | `20` | Upload size cap; enforced via bounded chunked reads (oversized files rejected without full buffering) |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | accepts a comma-separated string in `.env` (add the Vercel URL for prod) |
 | `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.35` | min cosine score to keep a chunk |
+| `FULL_DOCUMENT_MAX_CHUNKS` | `500` | safety ceiling on chunks read for a `full_document` summary (bypasses `top_k`; bounds the LLM context window) |
 
 > **TODO — explicit caching (when on a single key):** The multi-key fallback above
 > (`GOOGLE_API_KEY_2/3`) is a free-tier daily-quota mitigation. **When the app moves to a

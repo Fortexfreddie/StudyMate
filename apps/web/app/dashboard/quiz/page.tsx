@@ -42,6 +42,7 @@ function QuizContent() {
   const [topK, setTopK] = useState<number>(10);
   const [maxK, setMaxK] = useState<number>(20);
   const [perfMode, setPerfMode] = useState<string>("high");
+  const [fullDoc, setFullDoc] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Generated session
@@ -83,6 +84,19 @@ function QuizContent() {
         setSessionId(detail.id);
         setTopic(detail.topic);
         setQuestions(detail.questions);
+        setSources(detail.sources ?? []);
+
+        // A generated-but-never-submitted session is resumable: drop the user back
+        // into the playable quiz with a clean answer slate, rather than showing a
+        // bogus 0/N results screen for questions they never answered.
+        if (!detail.is_submitted) {
+          setAnswers(new Array(detail.questions.length).fill(undefined));
+          setCurrentIndex(0);
+          setSelectedIndex(null);
+          setStep("quiz");
+          setRestoring(false);
+          return;
+        }
 
         // Map answers to QuizResult[]
         const mappedResults: QuizResult[] = detail.answers.map((ans) => ({
@@ -125,10 +139,13 @@ function QuizContent() {
     setStep("generating");
     try {
       const res = await api.quiz.generate({
-        topic: topic.trim() || "Key concepts from this document",
+        topic: fullDoc
+          ? "Full Document Quiz"
+          : topic.trim() || "Key concepts from this document",
         doc_id: docId,
         num_questions: questionCount,
         top_k: topK,
+        full_document: fullDoc,
       });
       if (res.questions.length === 0) {
         setError("No questions could be generated from this document.");
@@ -269,14 +286,45 @@ function QuizContent() {
 
             <div className="h-[1px] w-full bg-border-subtle" />
 
+            {/* Full Document Quiz Toggle */}
+            {docId && (
+              <div className="flex items-center justify-between bg-surface/30 border border-border-subtle/50 rounded-2xl p-4">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-bold text-white inline-flex items-center gap-1.5">
+                    Full Document Quiz
+                    <InfoTooltip label="What is Full Document Quiz?">
+                      Generate questions from the entire document sequentially instead of searching for a specific topic. Highly recommended for a comprehensive assessment that covers the whole PDF.
+                    </InfoTooltip>
+                  </span>
+                  <span className="text-[10px] text-text-muted">
+                    Bypasses similarity search to quiz you on the whole PDF.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFullDoc(!fullDoc)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    fullDoc ? "bg-brand-primary" : "bg-surface-raised"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      fullDoc ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
             {/* Topic (optional) */}
-            <div className="flex flex-col gap-2">
+            <div className={`flex flex-col gap-2 transition-opacity duration-200 ${fullDoc ? "opacity-50 pointer-events-none" : ""}`}>
               <span className="text-xs font-bold text-text-muted">
                 Topic <span className="font-normal">(optional)</span>
               </span>
               <input
                 type="text"
-                value={topic}
+                value={fullDoc ? "Full Document Quiz" : topic}
+                disabled={fullDoc}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="e.g. Binary search trees"
                 className="w-full bg-surface border border-border-subtle rounded-2xl py-3.5 px-4 text-sm font-semibold text-white placeholder:text-text-muted/65 focus:outline-none focus:border-brand-primary/30 transition"
@@ -284,7 +332,7 @@ function QuizContent() {
             </div>
 
             {/* Context Depth (K) */}
-            <div className="flex flex-col gap-2">
+            <div className={`flex flex-col gap-2 transition-opacity duration-200 ${fullDoc ? "opacity-50 pointer-events-none" : ""}`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-text-muted inline-flex items-center gap-1">
                   Context Window Depth (K)
@@ -295,7 +343,7 @@ function QuizContent() {
                   </InfoTooltip>
                 </span>
                 <span className="text-xs font-extrabold text-brand-primary">
-                  {topK} / {maxK} Chunks
+                  {fullDoc ? "All Chunks" : `${topK} / ${maxK} Chunks`}
                 </span>
               </div>
               <input
@@ -303,6 +351,7 @@ function QuizContent() {
                 min={5}
                 max={maxK}
                 value={topK}
+                disabled={fullDoc}
                 onChange={(e) => setTopK(Number(e.target.value))}
                 className="w-full h-1 bg-surface-raised rounded-lg appearance-none cursor-pointer accent-brand-primary"
               />

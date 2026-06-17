@@ -64,21 +64,25 @@ class Retriever:
     async def retrieve_document_sequential(
         self,
         doc_id: uuid.UUID,
-        top_k: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Retrieve chunks from a specific document ordered by page number, bypass similarity threshold."""
-        target_top_k = top_k if top_k is not None else settings.DEFAULT_TOP_K
+        """Retrieve the *entire* document ordered by page number, bypassing the
+        similarity threshold and the ``top_k`` retrieval slider.
+
+        Full-document mode must read the whole document, not a slider-sized slice, so
+        it intentionally ignores ``top_k`` and relies on the ``FULL_DOCUMENT_MAX_CHUNKS``
+        safety ceiling enforced by the vector store. ``top_k`` only governs similarity
+        retrieval (see ``retrieve_relevant_chunks``).
+        """
         doc_id_str = str(doc_id)
 
         logger.info(
-            "Performing sequential document retrieval for doc_id: %s (limit: %d)",
+            "Performing sequential full-document retrieval for doc_id: %s (ceiling: %d)",
             doc_id_str,
-            target_top_k,
+            settings.FULL_DOCUMENT_MAX_CHUNKS,
         )
 
         matched_chunks = await self.vector_store.get_chunks_by_doc_id(
             doc_id=doc_id_str,
-            limit=target_top_k,
         )
 
         logger.info("Retrieved %d sequential chunks from Qdrant.", len(matched_chunks))

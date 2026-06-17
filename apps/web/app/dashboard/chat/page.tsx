@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FileText, Send, MessageSquare, AlertTriangle } from "lucide-react";
-import { AIAssistantIcon, SleekLightningIcon } from "@/components/shared/Icons";
+import { SleekLightningIcon } from "@/components/shared/Icons";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { GeneratingState } from "@/components/dashboard/GeneratingState";
 import { CollapsibleSources, RichMarkdown } from "@/components/shared/SourceReferences";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { api, ApiClientError } from "@/lib/api";
@@ -167,37 +168,35 @@ function ChatContent() {
         className="pb-4 border-b border-border-subtle shrink-0"
       />
 
-      <div className="flex-1 overflow-y-auto py-6 flex flex-col gap-5 px-1 scrollbar-none scroll-smooth">
-        {/* Greeting / empty state */}
-        {historyLoaded && messages.length === 0 && (
-          <div className="flex gap-3 max-w-[85%] self-start items-start animate-in fade-in slide-in-from-bottom-2 duration-250">
-            <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
-              <AIAssistantIcon className="h-4.5 w-4.5" />
-            </div>
-            <div className="p-3.5 px-4 rounded-2xl rounded-tl-sm text-xs sm:text-sm leading-relaxed bg-surface-raised border border-border-subtle text-white shadow-sm">
-              Hi! Ask me anything about{" "}
-              {docId ? "this document" : "your uploaded documents"} and I&apos;ll answer
-              using only what&apos;s in {docId ? "it" : "them"}.
-            </div>
-          </div>
-        )}
-
-        {messages.map((msg) => {
-          const isAI = msg.sender === "ai";
-          return (
-            <div
-              key={msg.id}
-              className={`flex gap-3 max-w-[85%] ${
-                isAI ? "self-start items-start" : "self-end items-end flex-row-reverse"
-              } animate-in fade-in slide-in-from-bottom-2 duration-250`}
-            >
-              {isAI && (
-                <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 mt-0.5 shadow">
-                  <AIAssistantIcon className="h-4.5 w-4.5" />
+      {!historyLoaded ? (
+        <GeneratingState
+          title="Loading Chat..."
+          subtitle="Fetching your conversation history"
+        />
+      ) : (
+        <>
+          <div className="flex-1 overflow-y-auto py-6 flex flex-col gap-5 px-1 scrollbar-none scroll-smooth">
+            {/* Greeting / empty state */}
+            {historyLoaded && messages.length === 0 && (
+              <div className="flex max-w-[85%] self-start items-start animate-in fade-in slide-in-from-bottom-2 duration-250">
+                <div className="p-3.5 px-4 rounded-2xl rounded-tl-sm text-xs sm:text-sm leading-relaxed bg-surface-raised border border-border-subtle text-white shadow-sm">
+                  Hi! Ask me anything about{" "}
+                  {docId ? "this document" : "your uploaded documents"} and I&apos;ll answer
+                  using only what&apos;s in {docId ? "it" : "them"}.
                 </div>
-              )}
+              </div>
+            )}
 
-              <div className="flex flex-col gap-1.5 min-w-0">
+            {messages.map((msg) => {
+              const isAI = msg.sender === "ai";
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex max-w-[85%] ${
+                    isAI ? "self-start items-start" : "self-end items-end flex-row-reverse"
+                  } animate-in fade-in slide-in-from-bottom-2 duration-250`}
+                >
+                  <div className="flex flex-col gap-1.5 min-w-0">
                 {/* Context-insufficient banner */}
                 {isAI && msg.contextSufficient === false && (
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-accent-coral">
@@ -255,10 +254,7 @@ function ChatContent() {
         })}
 
         {isTyping && (
-          <div className="flex gap-3 items-center self-start max-w-[80%] pl-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <div className="h-7 w-7 rounded-full bg-brand-primary flex items-center justify-center text-accent-gold-fg shrink-0 shadow animate-pulse">
-              <AIAssistantIcon className="h-4.5 w-4.5" />
-            </div>
+          <div className="flex items-center self-start max-w-[80%] pl-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="bg-surface-raised border border-border-subtle rounded-2xl px-4 py-3 text-xs text-text-muted flex items-center gap-1 shadow-sm">
               <span className="font-semibold">AI is searching your document</span>
               <span className="flex gap-0.5 ml-0.5">
@@ -323,6 +319,8 @@ function ChatContent() {
           </button>
         </div>
       </form>
+      </>
+      )}
     </div>
   );
 }

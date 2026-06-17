@@ -155,13 +155,21 @@ export interface CheatSheet {
   definitions: CheatSheetDefinition[];
 }
 
+export interface MindMapChild {
+  label: string;
+  detail: string;
+}
+
 export interface MindMapBranch {
   label: string;
-  children: string[];
+  // Rich {label, detail} leaves. Older saved summaries stored bare strings, so the
+  // union keeps those renderable; the UI normalizes both shapes.
+  children: (MindMapChild | string)[];
 }
 
 export interface MindMap {
   root: string;
+  summary?: string;
   branches: MindMapBranch[];
 }
 
@@ -202,6 +210,7 @@ export interface QuizRequest {
   doc_id?: string;
   num_questions?: number;
   top_k?: number;
+  full_document?: boolean;
 }
 
 export interface QuizResponse {
@@ -259,6 +268,8 @@ export interface QuizHistoryItem {
   topic: string;
   total_questions: number;
   score: number;
+  // false for a generated-but-unanswered session (resumable); true once graded.
+  is_submitted: boolean;
   created_at: string;
 }
 
@@ -312,8 +323,11 @@ export interface QuizDetailResponse {
   topic: string;
   total_questions: number;
   score: number;
+  // false for a generated-but-unanswered session (resumable); true once graded.
+  is_submitted: boolean;
   answers: QuizDetailAnswer[];
   questions: QuizQuestion[];
+  sources: Source[];
   created_at: string;
 }
 
