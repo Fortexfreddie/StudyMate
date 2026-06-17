@@ -55,6 +55,16 @@ and leave the client hanging. Poll `GET /documents/{doc_id}` until `status` is `
 `page_count` / `chunk_count` are `null` until processing completes. `status` is one of
 `processing` | `ready` | `failed`.
 
+**Deduplication:** uploads are deduplicated per user by content hash (SHA-256 of the
+PDF bytes). If you re-upload byte-identical content you already have (e.g. from a second
+tab while the first upload is still processing), the server returns your **existing**
+document instead of re-processing it — so the page quota and embedding cost are not
+charged twice and no duplicate row is created. In that case the response is **`200 OK`**
+(not `202`) and reflects the existing document's real `status` / counts (which may
+already be `ready`). Matching is on bytes only — a rename of the same content still
+deduplicates, and a previously `failed` upload is not treated as a duplicate so it can be
+retried.
+
 **Errors (inline, synchronous):**
 - `400` — not a PDF (missing `%PDF` header), empty file, or wrong extension
 - `413` — file too large (> 20MB)
@@ -186,10 +196,10 @@ Generate a structured summary of a topic from a document. Response is saved to s
 ```
 
 - `doc_id` — optional. Omit to search all documents.
-- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc.
+- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc. **Ignored when `full_document` is `true`** (full-document mode reads the whole document, not a top_k-sized slice).
 - `format` — optional. Default: `bullets`. One of: `bullets`, `key_concepts`,
   `study_guide`, `flashcards`, `cheat_sheet`, `mind_map`.
-- `full_document` — optional. Default: `false`. If `true`, the similarity threshold is bypassed and the entire document is read page-sequentially to build the summary.
+- `full_document` — optional. Default: `false`. If `true`, the similarity threshold **and** `top_k` are bypassed and the *entire* document is read page-sequentially to build the summary — bounded only by the `FULL_DOCUMENT_MAX_CHUNKS` server-side safety ceiling (500), which protects the LLM context window on very large documents.
 
 **Response 201:**
 ```json
@@ -243,13 +253,15 @@ Generate multiple-choice questions from a topic in a document. Creates a quiz se
   "topic": "Retrieval-Augmented Generation",
   "doc_id": "uuid",
   "num_questions": 5,
-  "top_k": 5
+  "top_k": 5,
+  "full_document": false
 }
 ```
 
-- `doc_id` — optional. Omit to search all documents.
-- `num_questions` — optional. Default: 5, max: 30 (configurable via `MAX_QUIZ_QUESTIONS`).
-- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc.
+- `doc_id` — optional. Omit to search all documents. **Required when `full_document` is `true`.**
+- `num_questions` — optional. Default: 5, max: 30 (configurable via `MAX_QUIZ_QUESTIONS`). Applies in both modes.
+- `top_k` — optional. Defaults to the performance mode's value (10 for `high`). See top of doc. **Ignored when `full_document` is `true`.**
+- `full_document` — optional. Default: `false`. If `true`, the topic, similarity threshold, and `top_k` are bypassed and questions are drawn from the *entire* document read page-sequentially — bounded only by the `FULL_DOCUMENT_MAX_CHUNKS` server-side safety ceiling (500). Requires `doc_id` (a global full-document quiz is rejected with `400`).
 
 **Response 201:**
 ```json
@@ -281,8 +293,10 @@ Generate multiple-choice questions from a topic in a document. Creates a quiz se
 ```
 
 **Errors:**
-- `400` — num_questions out of range, empty topic
+- `400` — num_questions out of range, empty topic, or `full_document` requested without a `doc_id`
 - `401` — not authenticated
+- `404` — topic not found in document(s) (similarity mode) / document not found
+- `409` — `full_document` requested but the document has no indexed content yet (still processing or failed ingestion)
 - `422` — Gemini returned unparseable quiz JSON (after retry)
 - `503` — generation service unavailable
 
@@ -576,6 +590,7 @@ Get the current user's quiz session history.
       "topic": "Retrieval-Augmented Generation",
       "total_questions": 5,
       "score": 4,
+      "is_submitted": true,
       "created_at": "2026-05-25T11:00:00Z"
     }
   ],
@@ -584,6 +599,8 @@ Get the current user's quiz session history.
   "offset": 0
 }
 ```
+
+- `is_submitted` — `false` for a session that was generated but whose answers were never submitted (a resumable draft; `score` is a placeholder `0` in that case). `true` once the quiz has been submitted and graded. Clients should not present an unsubmitted session as a `0/N` result.
 
 ---
 
@@ -597,6 +614,7 @@ Get detailed results for a specific quiz session.
   "topic": "Retrieval-Augmented Generation",
   "total_questions": 5,
   "score": 4,
+  "is_submitted": true,
   "answers": [
     {
       "question_index": 0,
@@ -608,6 +626,8 @@ Get detailed results for a specific quiz session.
   "created_at": "2026-05-25T11:00:00Z"
 }
 ```
+
+- `is_submitted` — `false` if the session is an unanswered draft. When `false`, `answers` is empty and the client should resume the quiz (re-open it in the playable state) rather than render results.
 
 **Errors:**
 - `404` — session_id not found

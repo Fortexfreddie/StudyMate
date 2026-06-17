@@ -95,12 +95,18 @@ export default function HistoryPage() {
 
     for (const s of quizData?.sessions ?? []) {
       const t = formatDate(s.created_at);
+      // An unsubmitted session is a resumable draft, not a graded result — label it
+      // as such and don't show a misleading 0/N score (no answers were given yet).
       merged.push({
         key: `quiz-${s.id}`,
-        title: `${s.topic} — ${s.score}/${s.total_questions}`,
+        title: s.is_submitted
+          ? `${s.topic} — ${s.score}/${s.total_questions}`
+          : `${s.topic} — Not finished`,
         type: "quiz",
-        status: "Quiz Completed",
-        statusColor: "bg-emerald-400/10 text-emerald-400 border-emerald-400/10",
+        status: s.is_submitted ? "Quiz Completed" : "Quiz · Resume",
+        statusColor: s.is_submitted
+          ? "bg-emerald-400/10 text-emerald-400 border-emerald-400/10"
+          : "bg-amber-400/10 text-amber-400 border-amber-400/10",
         ...t,
         href: s.doc_id
           ? `/dashboard/quiz?session=${s.id}&doc=${s.doc_id}`

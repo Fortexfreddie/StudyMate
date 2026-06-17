@@ -119,12 +119,22 @@ SUMMARY_FORMAT_SPECS: dict[str, dict[str, str]] = {
     "mind_map": {
         "schema_hint": (
             '{"root": "Central topic", '
-            '"branches": [{"label": "Sub-topic", "children": ["leaf", "leaf"]}]}'
+            '"summary": "One sentence framing what this map covers.", '
+            '"branches": [{"label": "Sub-topic", "children": '
+            '[{"label": "Key point", "detail": "One grounded sentence explaining it."}]}]}'
         ),
         "instructions": (
-            "Produce a mind map: a `root` central topic and 3–5 `branches`, each with "
-            "a label and 2–4 short child leaf strings. Cover all major sub-topics "
-            "mentioned in the context."
+            "Produce a RICH, informative mind map — this must be as substantive as the "
+            "other formats, not a sparse skeleton.\n"
+            "• `root`: the central topic (a few words).\n"
+            "• `summary`: ONE sentence framing what the whole map covers.\n"
+            "• `branches`: 4–6 major sub-topics. Each branch has a short `label` and "
+            "2–4 `children`.\n"
+            "• Each child is an object with a short `label` (the key point, a few words) "
+            "AND a `detail`: ONE concise, grounded sentence that actually explains the "
+            "point — definitions, why it matters, or how it works. Never leave `detail` "
+            "empty.\n"
+            "Cover all major sub-topics mentioned in the context across the branches."
         ),
     },
 }
@@ -793,12 +803,24 @@ class Generator:
             branches = data["branches"]
             if not isinstance(branches, list):
                 raise ValueError("mind_map requires a list of branches.")
+
+            def _coerce_child(c: Any) -> dict[str, str]:
+                # Children may arrive as the rich {label, detail} object or, from older
+                # generations, a bare string leaf. Normalize both to {label, detail}.
+                if isinstance(c, dict):
+                    return {
+                        "label": str(c.get("label", "")).strip(),
+                        "detail": str(c.get("detail", "")).strip(),
+                    }
+                return {"label": str(c).strip(), "detail": ""}
+
             return {
                 "root": str(data["root"]).strip(),
+                "summary": str(data.get("summary", "")).strip(),
                 "branches": [
                     {
                         "label": str(b["label"]).strip(),
-                        "children": [str(c).strip() for c in b["children"]],
+                        "children": [_coerce_child(c) for c in b["children"]],
                     }
                     for b in branches
                 ],

@@ -178,6 +178,7 @@ async def get_quiz_history(
             topic=sess.topic,
             total_questions=sess.total_questions,
             score=sess.score,
+            is_submitted=sess.is_submitted,
             created_at=sess.created_at,
         )
         for sess in sessions
@@ -244,8 +245,10 @@ async def get_quiz_detail(
         topic=session.topic,
         total_questions=session.total_questions,
         score=session.score,
+        is_submitted=session.is_submitted,
         answers=response_answers,
         questions=session.questions,
+        sources=_coerce_sources(session.sources),
         created_at=session.created_at,
     )
 

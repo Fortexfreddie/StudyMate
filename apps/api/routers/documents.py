@@ -1,5 +1,6 @@
 """Documents router — handles uploading, listing, and deleting academic PDFs."""
 
+import hashlib
 import io
 import logging
 from uuid import UUID, uuid4
@@ -11,6 +12,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -170,6 +172,7 @@ async def upload_document(
     request: Request,
     file: UploadFile,
     background_tasks: BackgroundTasks,
+    response: Response,
     current_user: User = Depends(get_current_user),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> UploadResponse:
@@ -230,6 +233,42 @@ async def upload_document(
             detail="File must be a PDF document.",
         )
 
+    # 1.5. Deduplicate re-uploads. Hash the exact bytes and check whether this user
+    #     already has a document with the same content. If so, return that existing
+    #     document instead of re-parsing/embedding identical content — this prevents
+    #     a double page-quota charge and wasted embedding cost when a user uploads the
+    #     same PDF twice (e.g. from a second tab while the first is still processing).
+    #     A previously *failed* upload is NOT treated as a duplicate, so the user can
+    #     retry it. Matching is on bytes only (filename is ignored): a rename of the
+    #     same content is still the same document. NULL-hash legacy rows never match.
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
+    dup_result = await db.execute(
+        select(Document).where(
+            Document.user_id == current_user.id,
+            Document.content_hash == content_hash,
+            Document.status != "failed",
+        )
+    )
+    existing = dup_result.scalars().first()
+    if existing is not None:
+        logger.info(
+            "Duplicate upload by user %s (hash match on doc %s, status=%s) — "
+            "returning existing document instead of re-processing.",
+            current_user.id,
+            existing.id,
+            existing.status,
+        )
+        # Reflect the existing document's real state. It may already be "ready", so a
+        # 202 ("accepted, processing") would be misleading — return 200 instead.
+        response.status_code = status.HTTP_200_OK
+        return UploadResponse(
+            doc_id=existing.id,
+            filename=existing.filename,
+            page_count=existing.page_count,
+            chunk_count=existing.chunk_count,
+            status=existing.status,
+        )
+
     # 2. Read the page count from the PDF *inline* (cheap, local, no embedding) and
     #    reserve it against the user's daily page quota BEFORE doing any expensive
     #    work or persisting anything. Uploads consume the embedding model, whose
@@ -272,6 +311,7 @@ async def upload_document(
         id=doc_id,
         user_id=current_user.id,
         filename=filename,
+        content_hash=content_hash,
         page_count=None,
         chunk_count=None,
         status="processing",

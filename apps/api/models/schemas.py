@@ -296,17 +296,30 @@ class CheatSheet(BaseModel):
     definitions: list[CheatSheetDefinition]
 
 
-class MindMapBranch(BaseModel):
-    """A first-level branch of a mind map, with leaf children."""
+class MindMapChild(BaseModel):
+    """A leaf of a mind-map branch: a short key point with a grounded explanation."""
 
     label: str
-    children: list[str]
+    detail: str = ""
+
+
+class MindMapBranch(BaseModel):
+    """A first-level branch of a mind map, with leaf children.
+
+    Children are normally rich ``MindMapChild`` objects. Older saved summaries stored
+    children as bare strings, so the union keeps those rows renderable; the frontend
+    normalizes both shapes.
+    """
+
+    label: str
+    children: list[MindMapChild | str]
 
 
 class MindMap(BaseModel):
     """Structured mind-map output."""
 
     root: str
+    summary: str = ""
     branches: list[MindMapBranch]
 
 
@@ -362,9 +375,11 @@ class QuizGenerateRequest(BaseModel):
         le=30,
         description=(
             "Number of context chunks to retrieve. "
-            "If omitted, defaults to the performance mode's optimal value."
+            "If omitted, defaults to the performance mode's optimal value. "
+            "Ignored when full_document is true."
         ),
     )
+    full_document: bool = False
 
     @field_validator("num_questions")
     @classmethod
@@ -509,6 +524,8 @@ class QuizHistoryItem(BaseModel):
     topic: str
     total_questions: int
     score: int
+    # False for a generated-but-unanswered session (resumable); True once graded.
+    is_submitted: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -542,8 +559,11 @@ class QuizDetailResponse(BaseModel):
     topic: str
     total_questions: int
     score: int
+    # False for a generated-but-unanswered session (resumable); True once graded.
+    is_submitted: bool
     answers: list[QuizAnswerDetail]
     questions: list[QuizQuestion]
+    sources: list[SourceInfo] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

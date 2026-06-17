@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     # --- Retrieval ---
     DEFAULT_TOP_K: int = 5
     RETRIEVAL_SIMILARITY_THRESHOLD: float = 0.35
+    FULL_DOCUMENT_MAX_CHUNKS: int = 500
 
     # --- Quiz ---
     DEFAULT_QUIZ_QUESTIONS: int = 5
@@ -136,6 +137,7 @@ settings = Settings()
 | `MAX_UPLOAD_SIZE_MB` | `20` | Maximum PDF upload size |
 | `DEFAULT_TOP_K` | `5` | Default chunks to retrieve |
 | `RETRIEVAL_SIMILARITY_THRESHOLD` | `0.35` | Minimum similarity score |
+| `FULL_DOCUMENT_MAX_CHUNKS` | `500` | Safety ceiling on chunks read for a `full_document` summary (bypasses `top_k` and the threshold; bounds the LLM context window) |
 | `DEFAULT_QUIZ_QUESTIONS` | `5` | Default MCQs per quiz request |
 | `MAX_QUIZ_QUESTIONS` | `30` | Maximum MCQs per quiz request (authoritative — enforced via `field_validator`) |
 

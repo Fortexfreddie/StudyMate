@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Upload, Loader2 } from "lucide-react";
+import { FileText, Upload, Loader2, AlertTriangle } from "lucide-react";
 import { UploadIllustration } from "./components/UploadIllustration";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Button } from "@/components/shared/Button";
@@ -118,6 +118,17 @@ export default function UploadPage() {
           <div className="mt-4 px-3 py-1 rounded-full bg-surface border border-accent-gold/15">
             <span className="text-[10px] sm:text-xs font-bold text-accent-gold/90">
               PDF only • Max {MAX_UPLOAD_SIZE_MB}MB
+            </span>
+          </div>
+        </div>
+
+        {/* Image processing notice */}
+        <div className="bg-accent-gold/10 border border-accent-gold/20 rounded-3xl p-4.5 flex items-start gap-3">
+          <AlertTriangle className="h-4.5 w-4.5 text-accent-gold shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-extrabold text-white">Image Processing Notice</span>
+            <span className="text-[11px] text-text-muted leading-relaxed">
+              We do not process images. Any PDF document containing only images will not be processed. For PDFs with mixed images and text, only the text will be extracted.
             </span>
           </div>
         </div>

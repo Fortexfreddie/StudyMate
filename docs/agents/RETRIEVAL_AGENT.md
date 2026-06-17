@@ -62,7 +62,7 @@ class RetrievedChunk:
     ▼
 6. Return chunks (ordered by similarity_score DESC)
 
-*Note: For sequential full-document retrieval (used in full-document summaries), the similarity search and thresholding steps are bypassed. Instead, the agent scrolls through all chunks for the document ordered by page number.*
+*Note: For sequential full-document retrieval (used in full-document summaries **and full-document quizzes**), the similarity search and thresholding steps are bypassed, and the `top_k` retrieval slider is ignored. Instead, the agent paginates through every chunk for the document (up to the `FULL_DOCUMENT_MAX_CHUNKS` safety ceiling) ordered by page number.*
 ```
 
 ---
@@ -72,7 +72,7 @@ class RetrievedChunk:
 - Chunks with a similarity score below **0.35** are discarded, even if they are in the top-k.
 - If all top-k results fall below the threshold, return an empty list and let the generation layer handle the "no relevant context found" case gracefully.
 - This threshold is configurable via `RETRIEVAL_SIMILARITY_THRESHOLD` in `core/config.py`.
-- **Bypass for Full Document:** When `full_document=True` is requested during summary generation, this thresholding filter is entirely bypassed, and chunks are retrieved page-sequentially to synthesize a complete overview.
+- **Bypass for Full Document:** When `full_document=True` is requested during summary **or quiz** generation, this thresholding filter is entirely bypassed and the `top_k` slider is ignored. Every chunk for the document is retrieved page-sequentially — bounded only by the `FULL_DOCUMENT_MAX_CHUNKS` ceiling in `core/config.py` (a safety bound that protects the LLM context window on very large documents) — to synthesize a complete overview (summary) or draw questions from the whole document (quiz).
 
 ---
 

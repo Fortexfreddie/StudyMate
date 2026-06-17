@@ -182,7 +182,7 @@ local `isLoading`/`error` state in the component.
 | **Documents** | `documents.list` | — | loading/empty/error states; cards link to detail |
 | **Document detail** | `documents.get` | `documents.remove` | **polls `documents.get` every 3s while `status:"processing"`**; live processing banner / failed banner with `error_message`; quiz/summary/chat actions gated until `status:"ready"`; confirm-to-delete danger zone |
 | **Chat** | `documents.get`, `history.chatHistory` | `chat.send` | renders `sources` + a "limited context" notice on `context_sufficient:false`; inline `Source #N` citations in the answer are clickable and scroll to / highlight the matching source card |
-| **Quiz** | — | `quiz.generate` → `quiz.submit` | presets 5/10/15/20/30 (cap 30) with a "larger quizzes take longer" hint; **server-graded**; per-question review with explanations |
+| **Quiz** | — | `quiz.generate` → `quiz.submit` | presets 5/10/15/20/30 (cap 30) with a "larger quizzes take longer" hint; full-document toggle (quiz the whole PDF page-sequentially, bypassing topic/similarity search); **server-graded**; per-question review with explanations |
 | **Summary** | `documents.get` | `summary.generate` | 6 format selector; renders each `structured` shape, falls back to plain text; supports full-document sequential overview summaries (bypassing similarity search); renders `sources` cards with clickable inline `Source #N` citations |
 | **History** | `history.chatHistory`, `history.quizHistory` | — | merges chat/summary/quiz into one sortable, filterable, searchable timeline |
 | **Profile** | `auth` (context), `stats.get`, `usage.get` | `auth.updateProfile` | name + major persist server-side; stats + streak real; daily token usage telemetry card; theme + performance saved to `localStorage` |
@@ -193,8 +193,9 @@ local `isLoading`/`error` state in the component.
 ### Example flow — Quiz (the most involved)
 
 ```
-setup  → user picks topic (optional) + count (≤30)
-       → api.quiz.generate({ topic, doc_id, num_questions })
+setup  → user picks topic (optional) + count (≤30), or toggles Full Document
+       → api.quiz.generate({ topic, doc_id, num_questions, full_document })
+         (full_document bypasses topic/top_k and quizzes the whole PDF)
 generating → indeterminate GeneratingState (real RAG call, no fake %)
 quiz   → render questions[].options; user selects per question
        → last question OR "Submit Now" → api.quiz.submit(session_id, { answers })

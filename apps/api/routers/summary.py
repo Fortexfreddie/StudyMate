@@ -169,9 +169,11 @@ async def generate_summary(
 
     # 3. Retrieve matching chunks from Qdrant for context
     if payload.full_document and payload.doc_id is not None:
+        # Full-document mode reads the whole document page-sequentially — it
+        # intentionally ignores effective_top_k (the similarity-retrieval slider)
+        # and is bounded only by the FULL_DOCUMENT_MAX_CHUNKS safety ceiling.
         matched_chunks = await retriever.retrieve_document_sequential(
             doc_id=payload.doc_id,
-            top_k=effective_top_k,
         )
     else:
         matched_chunks = await retriever.retrieve_relevant_chunks(

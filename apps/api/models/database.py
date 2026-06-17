@@ -15,6 +15,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -139,12 +140,23 @@ class Document(Base):
     """
 
     __tablename__ = "documents"
+    # Speeds up the per-user dedup lookup (find an existing doc by content hash).
+    __table_args__ = (
+        Index("ix_documents_user_content_hash", "user_id", "content_hash"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    # SHA-256 hex digest of the uploaded PDF bytes. Used to deduplicate re-uploads:
+    # if the same user re-uploads byte-identical content (e.g. from a second tab),
+    # the existing document is returned instead of re-parsing/embedding it — which
+    # would otherwise double-charge the page quota and embedding cost. Scoped per
+    # user (the index is on (user_id, content_hash)). NULL on rows that predate this
+    # column; those simply never match and are treated as unique.
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # page_count / chunk_count are NULL while a document is still "processing" —
     # they're only known once the background embedding task finishes parsing.
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -213,7 +225,16 @@ class QuizSession(Base):
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
     questions: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    sources: Mapped[list[dict[str, object]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
     score: Mapped[int] = mapped_column(Integer, default=0)
+    # NULL until the user submits answers. Distinguishes a generated-but-abandoned
+    # session (resumable) from a graded one — score=0 alone is ambiguous (a real
+    # submission can also score 0). Set once, at submit time.
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -222,6 +243,11 @@ class QuizSession(Base):
     answers: Mapped[list["QuizAnswer"]] = relationship(
         back_populates="session", passive_deletes=True
     )
+
+    @property
+    def is_submitted(self) -> bool:
+        """Whether the quiz has been answered and graded (vs. a resumable draft)."""
+        return self.submitted_at is not None
 
 
 class QuizAnswer(Base):

@@ -3,6 +3,8 @@
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import func, select
@@ -72,6 +74,15 @@ async def generate_quiz(
         payload.top_k if payload.top_k is not None else generator.default_top_k
     )
 
+    # Full-document mode is inherently single-document: it reads one whole PDF
+    # page-sequentially. A global (doc_id-less) full-document request is meaningless,
+    # so reject it before any work — mirrors the summary router.
+    if payload.full_document and payload.doc_id is None:
+        raise StudyMateError(
+            "A specific document must be selected to generate a full document quiz.",
+            status_code=400,
+        )
+
     # 1.5. Verify document ownership / retrieve allowed doc IDs for security
     user_doc_ids = None
     if payload.doc_id is not None:
@@ -94,21 +105,36 @@ async def generate_quiz(
                 status_code=400,
             )
 
-    # 2. Retrieve highly relevant grounding context chunks
-    matched_chunks = await retriever.retrieve_relevant_chunks(
-        query=payload.topic,
-        doc_id=payload.doc_id,
-        doc_ids=user_doc_ids,
-        top_k=effective_top_k,
-    )
+    # 2. Retrieve grounding context chunks. Full-document mode reads the whole
+    #    document page-sequentially (bypassing the topic, similarity threshold, and
+    #    top_k slider); otherwise we do topic-driven similarity retrieval.
+    if payload.full_document and payload.doc_id is not None:
+        matched_chunks = await retriever.retrieve_document_sequential(
+            doc_id=payload.doc_id,
+        )
+    else:
+        matched_chunks = await retriever.retrieve_relevant_chunks(
+            query=payload.topic,
+            doc_id=payload.doc_id,
+            doc_ids=user_doc_ids,
+            top_k=effective_top_k,
+        )
 
-    # 2.5. Bail out early if retrieval found nothing relevant (topic absent from the
-    #      document, or everything fell below the similarity threshold). Unlike chat
-    #      and summary — which can honestly degrade to a "limited context" answer —
-    #      a quiz must produce structured questions or none at all. Calling the LLM
-    #      against empty context only burns tokens and fights the zero-fabrication
-    #      system prompt, so reject *before* reserving tokens or generating.
+    # 2.5. Bail out early if retrieval found nothing. Unlike chat and summary — which
+    #      can honestly degrade to a "limited context" answer — a quiz must produce
+    #      structured questions or none at all. Calling the LLM against empty context
+    #      only burns tokens and fights the zero-fabrication system prompt, so reject
+    #      *before* reserving tokens or generating. The cause differs by mode, so the
+    #      message does too: a full-document quiz with no chunks means the document
+    #      isn't indexed yet (still processing / failed ingestion), not a missing topic.
     if not matched_chunks:
+        if payload.full_document:
+            raise StudyMateError(
+                "This document has no indexed content to build a quiz from yet. If you "
+                "just uploaded it, wait for processing to finish; otherwise it may have "
+                "failed to process — try re-uploading it.",
+                status_code=409,
+            )
         raise StudyMateError(
             "Couldn't find enough relevant information in your document(s) to build "
             "a quiz on this topic. Try a topic covered by the material, or upload a "
@@ -158,13 +184,43 @@ async def generate_quiz(
         chunks_used=len(matched_chunks),
     )
 
-    # 6. Store the full session in the database
+    # 6. Map matched chunks into both the API source schema and a JSON-serializable
+    #    blob persisted on the session, so a quiz reopened from history can show the
+    #    same citations (mirrors summary history).
+    sources: list[SourceInfo] = []
+    sources_dict: list[dict[str, Any]] = []
+    for chunk in matched_chunks:
+        filename = chunk.get("filename") or "Unknown Document"
+        page = int(chunk.get("page_number") or 1)
+        score = float(chunk.get("score") or 0.0)
+        text = chunk.get("text") or ""
+        preview = text[:200] + "..." if len(text) > 200 else text
+
+        sources.append(
+            SourceInfo(
+                filename=filename,
+                page_number=page,
+                similarity_score=score,
+                text_preview=preview,
+            )
+        )
+        sources_dict.append(
+            {
+                "filename": filename,
+                "page_number": page,
+                "similarity_score": score,
+                "text_preview": text,
+            }
+        )
+
+    # 7. Store the full session in the database
     db_session = QuizSession(
         user_id=current_user.id,
         doc_id=payload.doc_id,
         topic=payload.topic,
         total_questions=len(generated_questions),
         questions=generated_questions,
+        sources=sources_dict,
         score=0,
     )
     db.add(db_session)
@@ -177,24 +233,7 @@ async def generate_quiz(
     await db.commit()
     await db.refresh(db_session)
 
-    # 6. Map sources to API schema
-    sources: list[SourceInfo] = []
-    for chunk in matched_chunks:
-        filename = chunk.get("filename") or "Unknown Document"
-        page = int(chunk.get("page_number") or 1)
-        score = float(chunk.get("score") or 0.0)
-        text = chunk.get("text") or ""
-
-        sources.append(
-            SourceInfo(
-                filename=filename,
-                page_number=page,
-                similarity_score=score,
-                text_preview=text[:200] + "..." if len(text) > 200 else text,
-            )
-        )
-
-    # 7. Format the Pydantic quiz questions list for the response
+    # 8. Format the Pydantic quiz questions list for the response
     response_questions = [
         QuizQuestion(
             question=item["question"],
@@ -327,8 +366,10 @@ async def submit_quiz(
         )
         db.add(db_answer)
 
-    # 4. Update and commit quiz session score
+    # 4. Update and commit quiz session score + mark it submitted (stamps the
+    #    session as graded so it is no longer surfaced as a resumable draft).
     session.score = correct_count
+    session.submitted_at = datetime.now(UTC)
     await record_activity(db, current_user.id)
     await db.commit()
 
